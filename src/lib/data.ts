@@ -66,9 +66,9 @@ export const tasksMock: Task[] = [
     assigned_to: "1",
     priority: "high",
     project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3),
-    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2),
-    completed_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2),
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
+    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
+    completed_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
     dependencies: []
   },
   {
@@ -79,8 +79,8 @@ export const tasksMock: Task[] = [
     assigned_to: "3",
     priority: "medium",
     project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2),
-    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 3),
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
+    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
     dependencies: ["task-1"]
   },
   {
@@ -91,8 +91,8 @@ export const tasksMock: Task[] = [
     assigned_to: "2",
     priority: "high",
     project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 1),
-    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 2),
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 1).toISOString(),
+    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
     dependencies: ["task-1"]
   },
   {
@@ -103,8 +103,8 @@ export const tasksMock: Task[] = [
     assigned_to: "4",
     priority: "low",
     project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 12),
-    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 12),
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
+    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
     dependencies: ["task-2", "task-3"]
   }
 ];
@@ -114,15 +114,21 @@ export const projectMock: Project = {
   id: "project-1",
   name: "AI Developer Platform",
   description: "An intelligent platform for collaborative software development with AI agents",
+  mode: "existing",
+  techStack: {
+    frontend: "React",
+    backend: "Node.js",
+    database: "PostgreSQL",
+    deployment: "AWS"
+  },
   status: "in_progress",
   progress: 35,
   tech_stack: ["React", "TypeScript", "Node.js", "Express", "PostgreSQL"],
-  source_type: "git",
-  source_url: "https://github.com/example/ai-dev-platform",
+  sourceType: "git",
+  sourceUrl: "https://github.com/example/ai-dev-platform",
   requirements: "Building a scalable platform for AI-driven software development...",
-  created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7),
-  updated_at: new Date(Date.now() - 1000 * 60 * 60 * 3),
-  mode: "existing"
+  created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString(),
+  updated_at: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString()
 };
 
 // Message mock data
@@ -133,7 +139,7 @@ export const messagesMock: Message[] = [
     sender: "You",
     type: "text",
     project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 30)
+    created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString()
   },
   {
     id: "msg-2",
@@ -141,7 +147,7 @@ export const messagesMock: Message[] = [
     sender: "Architect Agent",
     type: "text",
     project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 28)
+    created_at: new Date(Date.now() - 1000 * 60 * 28).toISOString()
   },
   {
     id: "msg-3",
@@ -149,7 +155,7 @@ export const messagesMock: Message[] = [
     sender: "You",
     type: "text",
     project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 25)
+    created_at: new Date(Date.now() - 1000 * 60 * 25).toISOString()
   },
   {
     id: "msg-4",
@@ -158,7 +164,7 @@ export const messagesMock: Message[] = [
     type: "code",
     code_language: "typescript",
     project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 20)
+    created_at: new Date(Date.now() - 1000 * 60 * 20).toISOString()
   }
 ];
 
@@ -173,8 +179,8 @@ export const codeFilesMock: CodeFile[] = [
     created_by: "Backend Agent",
     last_modified_by: "Backend Agent",
     project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24),
-    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 12)
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString()
   },
   {
     id: "file-2",
@@ -185,7 +191,7 @@ export const codeFilesMock: CodeFile[] = [
     created_by: "Frontend Agent",
     last_modified_by: "Frontend Agent",
     project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 18),
-    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 6)
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
+    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString()
   }
 ];
