@@ -114,7 +114,7 @@ const Index = () => {
 
   const handleStartAgent = (agentId: string) => {
     const agent = agents.find(a => a.id === agentId);
-    if (!agent) return;
+    if (!agent || !activeProject) return;
     
     updateAgentMutation.mutate({ 
       id: agentId, 
@@ -123,6 +123,29 @@ const Index = () => {
     });
     
     toast.success(`${agent.name} started working`);
+
+    if (activeProject.source_url && activeProject.source_url.includes('github.com')) {
+      const analysisToast = toast.loading(`${agent.name} is analyzing your GitHub repository...`);
+      
+      import('@/lib/openrouter').then(module => {
+        module.analyzeGitHubAndCreateTasks(agent, activeProject)
+          .then(success => {
+            toast.dismiss(analysisToast);
+            
+            if (success) {
+              toast.success(`${agent.name} has analyzed your GitHub repo and created tasks`);
+              queryClient.invalidateQueries({ queryKey: ['tasks', activeProject.id] });
+            } else {
+              toast.error(`${agent.name} encountered an issue analyzing your GitHub repo`);
+            }
+          })
+          .catch(error => {
+            console.error('Error during GitHub analysis:', error);
+            toast.dismiss(analysisToast);
+            toast.error(`Failed to analyze GitHub repository: ${error.message}`);
+          });
+      });
+    }
     
     let progress = 10;
     const interval = setInterval(() => {

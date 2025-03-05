@@ -27,7 +27,7 @@ serve(async (req) => {
   try {
     const { prompt, agentType, projectContext = {} } = await req.json();
     
-    console.log(`Processing request for ${agentType} agent`);
+    console.log(`Processing request for ${agentType} agent with project context: ${JSON.stringify(projectContext)}`);
     
     // Different system prompts based on agent type
     const systemPrompts = {
@@ -49,11 +49,18 @@ serve(async (req) => {
       
       // Add specific GitHub context if available
       if (projectContext.source_url && projectContext.source_url.includes('github.com')) {
-        fullSystemPrompt += ` Please analyze the GitHub repository at ${projectContext.source_url} and provide specific suggestions for improvements based on your role as the ${agentType} agent. Collaborate with other agents to create a comprehensive improvement plan.`;
+        fullSystemPrompt += ` Please analyze the GitHub repository at ${projectContext.source_url} and provide specific suggestions for improvements based on your role as the ${agentType} agent. When creating tasks, list them clearly with numbers (1., 2., etc.) or bullet points. Each task should have a clear title and description. Collaborate with other agents to create a comprehensive improvement plan.`;
       }
     }
     
+    // Add specific task generation instructions if this looks like a GitHub analysis request
+    if (prompt.includes('list') && prompt.includes('task') && projectContext.source_url) {
+      fullSystemPrompt += ` Format your response as a numbered list of specific, actionable tasks. Each task should start with a clear, concise title followed by a brief description of what needs to be done and why it would improve the project.`;
+    }
+    
     console.log('Sending request to OpenRouter API with model: google/gemini-2.0-flash-thinking-exp:free');
+    console.log('System prompt:', fullSystemPrompt);
+    
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
