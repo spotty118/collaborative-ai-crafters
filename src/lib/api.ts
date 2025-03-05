@@ -1,4 +1,5 @@
-import { supabase } from "@/integrations/supabase/client";
+
+import { supabase } from "@/lib/supabase";
 import { 
   Project, Agent, Task, Message, CodeFile, 
   AgentType, AgentStatus, TaskStatus, TaskPriority,

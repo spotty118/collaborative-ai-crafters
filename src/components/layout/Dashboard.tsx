@@ -7,7 +7,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { SendHorizontal, Play } from "lucide-react";
+import { SendHorizontal } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 interface DashboardProps {
   agents: Agent[];
@@ -71,8 +72,10 @@ const Dashboard: React.FC<DashboardProps> = ({
         <div className="mb-4 bg-white p-3 rounded-md border">
           <h3 className="font-medium">{project.name}</h3>
           <p className="text-sm text-gray-600 mt-1">{project.description}</p>
-          <div className="mt-2 inline-block px-2 py-1 bg-gray-100 rounded text-xs text-gray-700">
-            {project.mode === 'new' ? 'New Project' : 'Existing Project'}
+          <div className="mt-2">
+            <Badge variant="secondary" className="text-xs">
+              {project.mode === 'existing' ? 'Existing Project' : 'New Project'}
+            </Badge>
           </div>
         </div>
         
@@ -80,6 +83,11 @@ const Dashboard: React.FC<DashboardProps> = ({
         {isLoading.agents ? (
           <div className="flex justify-center py-8">
             <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
+          </div>
+        ) : agents.length === 0 ? (
+          <div className="text-center py-4 text-gray-500 bg-white rounded-md border p-4">
+            <p>No agents available</p>
+            <p className="text-xs mt-2">There are no agents configured for this project.</p>
           </div>
         ) : (
           <div className="grid gap-3">
@@ -173,6 +181,11 @@ const Dashboard: React.FC<DashboardProps> = ({
             {isLoading.tasks ? (
               <div className="flex justify-center py-8">
                 <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
+              </div>
+            ) : tasks.length === 0 ? (
+              <div className="text-center py-8 text-gray-500 bg-white rounded-md border p-4">
+                <p>No tasks available</p>
+                <p className="text-xs mt-2">Tasks will appear here when agents create them.</p>
               </div>
             ) : (
               <TaskList 
