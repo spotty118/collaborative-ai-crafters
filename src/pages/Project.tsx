@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -13,6 +14,8 @@ import { CodeFile, Message, Project as ProjectType, Agent, Task } from "@/lib/ty
 import { useGitHub } from "@/contexts/GitHubContext";
 import { FileEditor } from "@/components/FileEditor";
 import { toast } from "sonner";
+import { AlertCircle, CheckCircle2, XCircle } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const Project: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -23,6 +26,7 @@ const Project: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<CodeFile | null>(null);
   const [githubToken, setGithubToken] = useState("");
   const [isVerifyingGithub, setIsVerifyingGithub] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   const github = useGitHub();
   const queryClient = useQueryClient();
@@ -98,29 +102,14 @@ const Project: React.FC = () => {
 
   useEffect(() => {
     if (project?.sourceUrl && githubToken && !github.isConnected && !github.isConnecting) {
-      setIsVerifyingGithub(true);
-      try {
-        github.connect(project.sourceUrl, githubToken)
-          .then(() => {
-            toast.success('Successfully connected to GitHub repository');
-            setIsVerifyingGithub(false);
-          })
-          .catch((error) => {
-            console.error('Failed to connect to GitHub:', error);
-            toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
-            setIsVerifyingGithub(false);
-          });
-      } catch (error) {
-        console.error('Failed to connect to GitHub:', error);
-        toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
-        setIsVerifyingGithub(false);
-      }
+      handleConnectGitHub();
     }
-  }, [project?.sourceUrl, githubToken, github]);
+  }, [project?.sourceUrl, githubToken, github.isConnected, github.isConnecting]);
 
   useEffect(() => {
     if (github.isConnected && githubToken) {
       localStorage.setItem(`github-token-${id}`, githubToken);
+      setConnectionError(null);
     }
   }, [github.isConnected, githubToken, id]);
 
@@ -192,21 +181,26 @@ const Project: React.FC = () => {
   const handleConnectGitHub = async () => {
     if (!project?.sourceUrl) {
       toast.error('No GitHub repository URL configured');
+      setConnectionError('No GitHub repository URL configured');
       return;
     }
 
     if (!githubToken) {
       toast.error('Please enter a GitHub token');
+      setConnectionError('GitHub token is required');
       return;
     }
 
     try {
       setIsVerifyingGithub(true);
+      setConnectionError(null);
       await github.connect(project.sourceUrl, githubToken);
       toast.success('Successfully connected to GitHub');
       setIsVerifyingGithub(false);
     } catch (error) {
-      toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      toast.error('Failed to connect to GitHub: ' + errorMessage);
+      setConnectionError(errorMessage);
       setIsVerifyingGithub(false);
     }
   };
@@ -585,7 +579,10 @@ const Project: React.FC = () => {
           <TabsList className="grid grid-cols-3 w-full max-w-md">
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="code">Code Files</TabsTrigger>
-            <TabsTrigger value="settings">Settings</TabsTrigger>
+            <TabsTrigger value="settings">
+              Settings
+              {!github.isConnected && <span className="ml-2 inline-flex h-2 w-2 rounded-full bg-red-500"></span>}
+            </TabsTrigger>
           </TabsList>
           
           <TabsContent value="code" className="flex-1 p-4">
@@ -684,18 +681,12 @@ const Project: React.FC = () => {
                 </div>
                 
                 {project?.sourceUrl && (
-                  <div>
-                    <h3 className="text-base font-medium mb-4">GitHub Integration</h3>
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span>Connection Status:</span>
-                        <span className={`px-2 py-1 rounded text-sm ${github.isConnected ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                          {github.isConnecting || isVerifyingGithub ? 'Connecting...' : github.isConnected ? 'Connected' : 'Not Connected'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-start">
-                        <span className="font-medium w-32">Repository:</span>
+                  <div className="border rounded-lg p-5 bg-slate-50">
+                    <h3 className="text-lg font-medium mb-4">GitHub Integration</h3>
+                    
+                    <div className="mb-4">
+                      <div className="flex items-center mb-2">
+                        <span className="font-medium mr-2">Repository:</span>
                         <a 
                           href={project.sourceUrl} 
                           target="_blank" 
@@ -705,16 +696,58 @@ const Project: React.FC = () => {
                           {project.sourceUrl}
                         </a>
                       </div>
+                      
+                      <div className="flex items-center space-x-2 mb-4">
+                        <span className="font-medium">Status:</span>
+                        {github.isConnecting || isVerifyingGithub ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            <svg className="w-4 h-4 mr-1.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Connecting...
+                          </span>
+                        ) : github.isConnected ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <CheckCircle2 className="w-4 h-4 mr-1" />
+                            Connected
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            <XCircle className="w-4 h-4 mr-1" />
+                            Not Connected
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {connectionError && (
+                      <Alert variant="destructive" className="mb-4">
+                        <AlertCircle className="h-4 w-4 mr-2" />
+                        <AlertDescription>{connectionError}</AlertDescription>
+                      </Alert>
+                    )}
 
-                      <div className="space-y-2">
-                        <Label htmlFor="github-token">GitHub Personal Access Token</Label>
-                        <Input
-                          id="github-token"
-                          type="password"
-                          value={githubToken}
-                          onChange={(e) => setGithubToken(e.target.value)}
-                          placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                        />
+                    <div className="space-y-4">
+                      <div className="space-y-2 bg-white p-4 rounded-md border">
+                        <Label htmlFor="github-token" className="text-sm font-medium">GitHub Personal Access Token</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            id="github-token"
+                            type="password"
+                            value={githubToken}
+                            onChange={(e) => setGithubToken(e.target.value)}
+                            placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                            className="flex-1"
+                          />
+                          <Button 
+                            onClick={handleConnectGitHub} 
+                            disabled={github.isConnecting || isVerifyingGithub}
+                            size="sm"
+                          >
+                            {github.isConnecting || isVerifyingGithub ? 'Connecting...' : github.isConnected ? 'Reconnect' : 'Connect'}
+                          </Button>
+                        </div>
                         <p className="text-xs text-gray-500 mt-1">
                           Create a personal access token with 'repo' scope at{" "}
                           <a
@@ -726,13 +759,16 @@ const Project: React.FC = () => {
                             GitHub Settings
                           </a>
                         </p>
-                        <Button 
-                          onClick={handleConnectGitHub} 
-                          className="mt-2"
-                          disabled={github.isConnecting || isVerifyingGithub}
-                        >
-                          {github.isConnecting || isVerifyingGithub ? 'Connecting...' : github.isConnected ? 'Reconnect GitHub' : 'Connect GitHub'}
-                        </Button>
+                      </div>
+                      
+                      <div className="bg-white p-4 rounded-md border">
+                        <h4 className="font-medium mb-2">Connection Instructions</h4>
+                        <ol className="list-decimal pl-5 space-y-2 text-sm">
+                          <li>Go to <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">GitHub Settings → Developer Settings → Personal Access Tokens → Tokens (classic)</a></li>
+                          <li>Generate a new token with <strong>repo</strong> scope</li>
+                          <li>Copy the token and paste it in the input field above</li>
+                          <li>Click the "Connect" button</li>
+                        </ol>
                       </div>
                     </div>
                   </div>
