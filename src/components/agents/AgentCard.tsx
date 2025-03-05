@@ -5,17 +5,25 @@ import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress";
 import AgentStatus from "./AgentStatus";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, PlayCircle, PauseCircle } from "lucide-react";
+import { MessageSquare, PlayCircle, PauseCircle, RefreshCw } from "lucide-react";
 
 interface AgentCardProps {
   agent: Agent;
   onChat: (agentId: string) => void;
   onStart: (agentId: string) => void;
   onStop: (agentId: string) => void;
+  onRestart?: (agentId: string) => void;
   isActive?: boolean;
 }
 
-const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, isActive = false }) => {
+const AgentCard: React.FC<AgentCardProps> = ({ 
+  agent, 
+  onChat, 
+  onStart, 
+  onStop, 
+  onRestart,
+  isActive = false 
+}) => {
   const [isHovered, setIsHovered] = useState(false);
   const [progressValue, setProgressValue] = useState(0);
   const [animating, setAnimating] = useState(false);
@@ -83,6 +91,9 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, i
     }
   };
 
+  // Determine if restart button should be shown
+  const showRestart = onRestart && (agent.status === "completed" || agent.status === "failed");
+
   return (
     <Card 
       className={`agent-card overflow-hidden border-t-4 ${getAgentColorClass()} transition-all duration-300 ease-in-out agent-card-shadow hover:translate-y-[-4px] ${isActive ? 'ring-2 ring-primary/50' : ''}`}
@@ -121,7 +132,18 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, i
           <MessageSquare className="mr-1 h-3.5 w-3.5" />
           Chat
         </Button>
-        {agent.status === "idle" || agent.status === "failed" ? (
+        
+        {showRestart ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
+            onClick={() => onRestart(agent.id)}
+          >
+            <RefreshCw className="mr-1 h-3.5 w-3.5" />
+            Restart
+          </Button>
+        ) : agent.status === "idle" || agent.status === "failed" ? (
           <Button
             variant="outline"
             size="sm"

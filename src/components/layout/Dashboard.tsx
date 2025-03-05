@@ -17,6 +17,7 @@ interface DashboardProps {
   activeChat: string | null;
   onStartAgent: (agentId: string) => void;
   onStopAgent: (agentId: string) => void;
+  onRestartAgent?: (agentId: string) => void;
   onChatWithAgent: (agentId: string) => void;
   onSendMessage: (message: string) => void;
   onExecuteTask?: (taskId: string, agentId: string) => void;
@@ -39,6 +40,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   activeChat,
   onStartAgent,
   onStopAgent,
+  onRestartAgent,
   onChatWithAgent,
   onSendMessage,
   onExecuteTask,
@@ -108,6 +110,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 onChat={onChatWithAgent}
                 onStart={onStartAgent}
                 onStop={onStopAgent}
+                onRestart={onRestartAgent}
                 isActive={activeChat === agent.id}
               />
             ))}
