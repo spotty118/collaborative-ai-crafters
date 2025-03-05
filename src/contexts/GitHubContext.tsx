@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { GitHubService } from '@/lib/github';
 import { 
@@ -20,7 +19,7 @@ interface GitHubContextType {
   availableBranches: string[];
   connect: (url: string, token: string, branch?: string) => Promise<boolean>;
   disconnect: () => void;
-  createOrUpdateFile: (path: string, content: string, message: string) => Promise<void>;
+  createOrUpdateFile: (path: string, content: string, message: string) => Promise<boolean>;
   getFileContent: (path: string) => Promise<string>;
   deleteFile: (path: string, message: string) => Promise<void>;
   commitChanges: (commit: GitHubCommit) => Promise<void>;
@@ -46,7 +45,6 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [availableBranches, setAvailableBranches] = useState<string[]>([]);
   const [isInitializing, setIsInitializing] = useState(true);
 
-  // Check GitHub service initialization status on mount
   useEffect(() => {
     const checkInitialization = async () => {
       try {
@@ -55,7 +53,6 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           setCurrentBranchState(getCurrentBranch());
           console.log('GitHub service was already initialized');
           
-          // Fetch available branches
           try {
             const github = getGitHubService();
             const branches = await github.listBranches();
@@ -86,17 +83,14 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       console.log(`Connecting to GitHub repo: ${url}`);
       const service = initGitHubService(url, token, branch);
       
-      // Test the connection
       const connectionSuccessful = await service.testConnection();
       if (!connectionSuccessful) {
         throw new Error('Could not connect to GitHub repository. Please check your URL and token.');
       }
       
-      // Fetch available branches
       const branches = await service.listBranches();
       setAvailableBranches(branches);
       
-      // Set the branch state to the current branch
       const branchToUse = branch || 'main';
       setCurrentBranchState(branchToUse);
       
@@ -142,13 +136,11 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return false;
       }
       
-      // Test the connection
       const connectionSuccessful = await service.testConnection();
       if (!connectionSuccessful) {
         throw new Error('Could not connect to GitHub repository during refresh');
       }
       
-      // Refresh available branches
       const branches = await service.listBranches();
       setAvailableBranches(branches);
       
@@ -177,20 +169,18 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, []);
 
-  const createOrUpdateFile = useCallback(async (path: string, content: string, message: string) => {
+  const createOrUpdateFile = useCallback(async (path: string, content: string, message: string): Promise<boolean> => {
     try {
       console.log(`Attempting to create/update file: ${path} on branch: ${currentBranch}`);
       if (!isConnected) {
         throw new Error('GitHub is not connected');
       }
       
-      // Double-check that the service is initialized
       if (!isGitHubServiceInitialized()) {
         throw new Error('GitHub service is not properly initialized');
       }
       
       const github = getGitHubService();
-      // Use normalized path
       const normalizedPath = path.replace(/^[/\\]+/, '').replace(/\\/g, '/');
       
       await github.createOrUpdateFile(normalizedPath, content, message, currentBranch);
@@ -210,7 +200,6 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       
       const github = getGitHubService();
-      // Use normalized path
       const normalizedPath = path.replace(/^[/\\]+/, '').replace(/\\/g, '/');
       
       const content = await github.getFileContent(normalizedPath, currentBranch);
@@ -228,7 +217,6 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       
       const github = getGitHubService();
-      // Use normalized path
       const normalizedPath = path.replace(/^[/\\]+/, '').replace(/\\/g, '/');
       
       await github.deleteFile(normalizedPath, message, currentBranch);
@@ -269,13 +257,11 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         throw new Error('GitHub is not connected');
       }
       
-      // Double-check that the service is initialized
       if (!isGitHubServiceInitialized()) {
         throw new Error('GitHub service is not properly initialized');
       }
       
       const github = getGitHubService();
-      // Use normalized path if provided
       const normalizedPath = path ? path.replace(/^[/\\]+/, '').replace(/\\/g, '/') : '';
       
       return await github.listFiles(normalizedPath, currentBranch);
@@ -292,7 +278,6 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         throw new Error('GitHub is not connected');
       }
       
-      // Double-check that the service is initialized
       if (!isGitHubServiceInitialized()) {
         throw new Error('GitHub service is not properly initialized');
       }

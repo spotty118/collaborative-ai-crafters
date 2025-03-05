@@ -15,6 +15,7 @@ import { FileEditor } from "@/components/FileEditor";
 import { toast } from "sonner";
 import { GitHubTester } from '@/components/GitHubTester';
 import { isGitHubServiceInitialized } from "@/lib/services/GitHubService";
+import { parseCodeBlocks } from "@/lib/codeParser";
 
 const Project: React.FC = () => {
   const { id } = useParams<{ id: string }>();
