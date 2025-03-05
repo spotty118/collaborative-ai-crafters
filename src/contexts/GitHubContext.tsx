@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { GitHubService } from '@/lib/github';
 import { 
   getGitHubService, 
@@ -7,7 +7,9 @@ import {
   clearGitHubService, 
   isGitHubServiceInitialized,
   getCurrentBranch,
-  setCurrentBranch
+  setCurrentBranch,
+  getRepositoryInfo,
+  reinitializeGitHubService
 } from '@/lib/services/GitHubService';
 import { GitHubConfig, GitHubFile, GitHubCommit } from '@/lib/types';
 import { toast } from 'sonner';
@@ -15,13 +17,17 @@ import { toast } from 'sonner';
 interface GitHubContextType {
   isConnected: boolean;
   currentBranch: string;
-  connect: (url: string, token: string, branch?: string) => void;
+  availableBranches: string[];
+  connect: (url: string, token: string, branch?: string) => Promise<boolean>;
   disconnect: () => void;
   createOrUpdateFile: (path: string, content: string, message: string) => Promise<void>;
   getFileContent: (path: string) => Promise<string>;
   deleteFile: (path: string, message: string) => Promise<void>;
   commitChanges: (commit: GitHubCommit) => Promise<void>;
   setBranch: (branch: string) => void;
+  refreshConnection: () => Promise<boolean>;
+  listFiles: (path?: string) => Promise<{name: string, path: string, type: string}[]>;
+  listBranches: () => Promise<string[]>;
 }
 
 const GitHubContext = createContext<GitHubContextType | null>(null);
@@ -37,45 +43,73 @@ export const useGitHub = () => {
 export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [currentBranch, setCurrentBranchState] = useState('main');
+  const [availableBranches, setAvailableBranches] = useState<string[]>([]);
+  const [isInitializing, setIsInitializing] = useState(true);
 
   // Initialize from localStorage if available
-  React.useEffect(() => {
+  useEffect(() => {
     // Check if we already have an initialized service
     if (isGitHubServiceInitialized()) {
       setIsConnected(true);
       setCurrentBranchState(getCurrentBranch());
       console.log('GitHub service was already initialized');
+      
+      // Fetch available branches
+      const github = getGitHubService();
+      github.listBranches()
+        .then(branches => {
+          setAvailableBranches(branches);
+          console.log('Available branches:', branches);
+        })
+        .catch(error => {
+          console.error('Failed to fetch branches:', error);
+        })
+        .finally(() => {
+          setIsInitializing(false);
+        });
+    } else {
+      setIsInitializing(false);
     }
   }, []);
 
-  const connect = useCallback((url: string, token: string, branch?: string) => {
+  const connect = useCallback(async (url: string, token: string, branch?: string): Promise<boolean> => {
     try {
+      setIsInitializing(true);
+      
       if (!url || !token) {
         throw new Error('GitHub URL and token are required');
       }
 
-      // Extract owner and repo from GitHub URL
-      const match = url.match(/github\.com\/([^/]+)\/([^/]+)/);
-      if (!match) {
-        throw new Error('Invalid GitHub repository URL');
+      console.log(`Connecting to GitHub repo: ${url}`);
+      const service = initGitHubService(url, token, branch);
+      
+      // Test the connection
+      const connectionSuccessful = await service.testConnection();
+      if (!connectionSuccessful) {
+        throw new Error('Could not connect to GitHub repository. Please check your URL and token.');
       }
-
-      const [, owner, repo] = match;
-      if (!owner || !repo) {
-        throw new Error('Could not extract owner and repository from URL');
-      }
-
-      console.log(`Connecting to GitHub repo: ${owner}/${repo}`);
-      initGitHubService(url, token, branch);
+      
+      // Fetch available branches
+      const branches = await service.listBranches();
+      setAvailableBranches(branches);
+      
+      // Set the branch state to the current branch
+      const branchToUse = branch || 'main';
+      setCurrentBranchState(branchToUse);
+      
       setIsConnected(true);
-      setCurrentBranchState(branch || 'main');
       toast.success('Successfully connected to GitHub repository');
+      
+      return true;
     } catch (error) {
       console.error('Failed to connect to GitHub:', error);
       setIsConnected(false);
       clearGitHubService();
       toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
-      throw error;
+      
+      return false;
+    } finally {
+      setIsInitializing(false);
     }
   }, []);
 
@@ -83,7 +117,51 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     clearGitHubService();
     setIsConnected(false);
     setCurrentBranchState('main');
+    setAvailableBranches([]);
     toast.info('Disconnected from GitHub repository');
+  }, []);
+
+  const refreshConnection = useCallback(async (): Promise<boolean> => {
+    try {
+      setIsInitializing(true);
+      
+      if (!isGitHubServiceInitialized()) {
+        console.log('GitHub service not initialized, cannot refresh');
+        return false;
+      }
+      
+      const info = getRepositoryInfo();
+      console.log('Refreshing GitHub connection with:', info);
+      
+      const service = reinitializeGitHubService();
+      if (!service) {
+        console.error('Failed to reinitialize GitHub service');
+        return false;
+      }
+      
+      // Test the connection
+      const connectionSuccessful = await service.testConnection();
+      if (!connectionSuccessful) {
+        throw new Error('Could not connect to GitHub repository during refresh');
+      }
+      
+      // Refresh available branches
+      const branches = await service.listBranches();
+      setAvailableBranches(branches);
+      
+      setIsConnected(true);
+      toast.success('Successfully refreshed GitHub connection');
+      
+      return true;
+    } catch (error) {
+      console.error('Failed to refresh GitHub connection:', error);
+      setIsConnected(false);
+      toast.error('Failed to refresh GitHub connection: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      
+      return false;
+    } finally {
+      setIsInitializing(false);
+    }
   }, []);
 
   const setBranch = useCallback((branch: string) => {
@@ -167,9 +245,42 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, [isConnected, currentBranch]);
 
+  const listFiles = useCallback(async (path?: string) => {
+    try {
+      if (!isConnected) {
+        throw new Error('GitHub is not connected');
+      }
+      
+      const github = getGitHubService();
+      return await github.listFiles(path, currentBranch);
+    } catch (error) {
+      console.error(`Failed to list files in ${path || 'root'}:`, error);
+      toast.error('Failed to list files: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      throw error;
+    }
+  }, [isConnected, currentBranch]);
+
+  const listBranches = useCallback(async () => {
+    try {
+      if (!isConnected) {
+        throw new Error('GitHub is not connected');
+      }
+      
+      const github = getGitHubService();
+      const branches = await github.listBranches();
+      setAvailableBranches(branches);
+      return branches;
+    } catch (error) {
+      console.error('Failed to list branches:', error);
+      toast.error('Failed to list branches: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      throw error;
+    }
+  }, [isConnected]);
+
   const value = {
     isConnected,
     currentBranch,
+    availableBranches,
     connect,
     disconnect,
     createOrUpdateFile,
@@ -177,7 +288,18 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     deleteFile,
     commitChanges,
     setBranch,
+    refreshConnection,
+    listFiles,
+    listBranches
   };
+
+  if (isInitializing) {
+    return (
+      <GitHubContext.Provider value={value}>
+        {children}
+      </GitHubContext.Provider>
+    );
+  }
 
   return <GitHubContext.Provider value={value}>{children}</GitHubContext.Provider>;
 };
