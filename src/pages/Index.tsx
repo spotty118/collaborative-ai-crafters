@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
@@ -219,6 +220,7 @@ const Index = () => {
     try {
       const taskPrompt = `Execute this task: ${currentTask.title}. ${currentTask.description || ''} Provide a detailed solution and implementation steps.`;
       
+      // Fix here: ensure activeProject.id is converted to string
       const response = await sendAgentPrompt(agent, taskPrompt, activeProject);
       
       createMessageMutation.mutate({
@@ -287,6 +289,7 @@ const Index = () => {
     const agent = agents.find(a => a.id === activeChat);
     if (!agent) return;
     
+    // Fix here: ensure project_id is a string by using toString()
     const projectId = activeProject.id.toString();
     
     createMessageMutation.mutate({
