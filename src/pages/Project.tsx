@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -7,14 +6,22 @@ import Header from "@/components/layout/Header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import Dashboard from "@/components/layout/Dashboard";
 import { sendAgentPrompt } from "@/lib/openrouter";
-import { MessageDB } from "@/lib/types";
+import { Message, CodeFile } from "@/lib/types";
+import { useGitHub } from "@/contexts/GitHubContext";
+import { FileEditor } from "@/components/FileEditor";
 import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 
 const Project = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [activeChat, setActiveChat] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<CodeFile | null>(null);
+  const [githubToken, setGithubToken] = useState("");
+  const github = useGitHub();
   const queryClient = useQueryClient();
 
   const { 
@@ -54,6 +61,46 @@ const Project = () => {
     enabled: !!id && activeTab === "code"
   });
 
+  const handleFileClick = async (file: CodeFile) => {
+    if (!github.isConnected) {
+      toast.error('GitHub is not connected. Please configure GitHub access in project settings.');
+      return;
+    }
+
+    try {
+      const content = await github.getFileContent(file.path);
+      setSelectedFile({
+        ...file,
+        content
+      });
+    } catch (error) {
+      toast.error('Failed to load file content: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
+  const handleCloseFile = () => {
+    setSelectedFile(null);
+  };
+
+  const handleConnectGitHub = async () => {
+    if (!project?.source_url) {
+      toast.error('No GitHub repository URL configured');
+      return;
+    }
+
+    if (!githubToken) {
+      toast.error('Please enter a GitHub token');
+      return;
+    }
+
+    try {
+      github.connect(project.source_url, githubToken);
+      toast.success('Successfully connected to GitHub');
+    } catch (error) {
+      toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
   const { 
     data: messages = [], 
     isLoading: loadingMessages 
@@ -64,7 +111,7 @@ const Project = () => {
   });
 
   const createMessageMutation = useMutation({
-    mutationFn: (messageData: MessageDB) => {
+    mutationFn: (messageData: Message) => {
       return createMessage(messageData);
     },
     onSuccess: () => {
@@ -162,7 +209,6 @@ const Project = () => {
       <Header
         onNewProject={() => navigate("/")}
         onImportProject={() => navigate("/")}
-        // No need to pass activeProjectId as it will use the route param
       />
       
       <div className="bg-white border-b px-4 py-3">
@@ -213,17 +259,29 @@ const Project = () => {
               <p className="text-gray-500 mb-4">No code files have been generated yet.</p>
               <p className="text-sm text-gray-400">Files will appear here as the agents generate code.</p>
             </div>
+          ) : selectedFile ? (
+            <FileEditor
+              file={selectedFile}
+              onClose={handleCloseFile}
+            />
           ) : (
             <div className="grid md:grid-cols-2 gap-4 p-4">
               {files.map(file => (
-                <div key={file.id} className="border rounded-md p-3 hover:bg-gray-50">
+                <div
+                  key={file.id}
+                  className="border rounded-md p-3 hover:bg-gray-50 cursor-pointer"
+                  onClick={() => handleFileClick(file)}
+                >
                   <div className="flex justify-between items-start mb-2">
                     <h3 className="font-medium">{file.name}</h3>
                     <span className="text-xs bg-gray-100 px-2 py-1 rounded">{file.language || 'Unknown'}</span>
                   </div>
                   <p className="text-sm text-gray-600 truncate">{file.path}</p>
-                  <div className="mt-2 text-xs text-gray-500">
+                  <div className="mt-2 flex justify-between items-center text-xs text-gray-500">
                     Created by: {file.created_by}
+                    <button className="px-2 py-1 text-blue-600 hover:bg-blue-50 rounded">
+                      Open
+                    </button>
                   </div>
                 </div>
               ))}
@@ -271,28 +329,56 @@ const Project = () => {
             </div>
             
             {project.source_type && (
-              <div>
-                <h3 className="text-base font-medium mb-2">Source Information</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center">
-                    <span className="font-medium w-32">Type:</span>
-                    <span className="capitalize">{project.source_type}</span>
-                  </div>
-                  {project.source_url && (
+              <>
+                <div>
+                  <h3 className="text-base font-medium mb-2">Source Information</h3>
+                  <div className="space-y-2">
                     <div className="flex items-center">
-                      <span className="font-medium w-32">URL:</span>
-                      <a 
-                        href={project.source_url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline truncate max-w-md"
-                      >
-                        {project.source_url}
-                      </a>
+                      <span className="font-medium w-32">Type:</span>
+                      <span className="capitalize">{project.source_type}</span>
                     </div>
-                  )}
+                    {project.source_url && (
+                      <div className="flex items-center">
+                        <span className="font-medium w-32">URL:</span>
+                        <a 
+                          href={project.source_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline truncate max-w-md"
+                        >
+                          {project.source_url}
+                        </a>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+
+                <div>
+                  <h3 className="text-base font-medium mb-4">GitHub Integration</h3>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span>Status:</span>
+                      <span className={`px-2 py-1 rounded text-sm ${github.isConnected ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                        {github.isConnected ? 'Connected' : 'Not Connected'}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="github-token">GitHub Personal Access Token</Label>
+                      <Input
+                        id="github-token"
+                        type="password"
+                        value={githubToken}
+                        onChange={(e) => setGithubToken(e.target.value)}
+                        placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                      />
+                      <Button onClick={handleConnectGitHub} className="mt-2">
+                        {github.isConnected ? 'Reconnect GitHub' : 'Connect GitHub'}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
           </div>
         </div>
