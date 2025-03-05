@@ -1,20 +1,25 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import Dashboard from "@/components/layout/Dashboard";
 import { sendAgentPrompt } from "@/lib/openrouter";
-import { Message, CodeFile } from "@/lib/types";
+import { CodeFile, Message, Project as ProjectType } from "@/lib/types";
 import { useGitHub } from "@/contexts/GitHubContext";
 import { FileEditor } from "@/components/FileEditor";
 import { toast } from "sonner";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
 
-const Project = () => {
+interface HandleChatParams {
+  agentId: string;
+  message: string;
+}
+
+const Project: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -28,7 +33,7 @@ const Project = () => {
     data: project,
     isLoading: loadingProject,
     error: projectError 
-  } = useQuery({
+  } = useQuery<ProjectType>({
     queryKey: ['project', id],
     queryFn: () => id ? getProject(id) : Promise.resolve(null),
     enabled: !!id
@@ -52,18 +57,64 @@ const Project = () => {
     enabled: !!id
   });
 
+  const {
+    data: messages = [],
+    isLoading: loadingMessages
+  } = useQuery<Message[]>({
+    queryKey: ['messages', id, activeChat],
+    queryFn: () => id ? getMessages(id) : Promise.resolve([]),
+    enabled: !!id && !!activeChat
+  });
+
   const { 
     data: files = [], 
     isLoading: loadingFiles 
-  } = useQuery({
+  } = useQuery<CodeFile[]>({
     queryKey: ['files', id],
     queryFn: () => id ? getCodeFiles(id) : Promise.resolve([]),
     enabled: !!id && activeTab === "code"
   });
 
+  const createMessageMutation = useMutation({
+    mutationFn: (messageData: Message) => createMessage(messageData),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', id] });
+    }
+  });
+
+  // Try to connect GitHub when project loads or token changes
+  useEffect(() => {
+    if (project?.sourceUrl && githubToken && !github.isConnected) {
+      try {
+        github.connect(project.sourceUrl, githubToken);
+      } catch (error) {
+        console.error('Failed to connect to GitHub:', error);
+        toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      }
+    }
+  }, [project?.sourceUrl, githubToken, github]);
+
+  // Save GitHub token to local storage when connected
+  useEffect(() => {
+    if (github.isConnected && githubToken) {
+      localStorage.setItem(`github-token-${id}`, githubToken);
+    }
+  }, [github.isConnected, githubToken, id]);
+
+  // Load GitHub token from local storage on mount
+  useEffect(() => {
+    if (id) {
+      const savedToken = localStorage.getItem(`github-token-${id}`);
+      if (savedToken) {
+        setGithubToken(savedToken);
+      }
+    }
+  }, [id]);
+
   const handleFileClick = async (file: CodeFile) => {
     if (!github.isConnected) {
       toast.error('GitHub is not connected. Please configure GitHub access in project settings.');
+      setActiveTab('settings');
       return;
     }
 
@@ -83,7 +134,7 @@ const Project = () => {
   };
 
   const handleConnectGitHub = async () => {
-    if (!project?.source_url) {
+    if (!project?.sourceUrl) {
       toast.error('No GitHub repository URL configured');
       return;
     }
@@ -94,30 +145,12 @@ const Project = () => {
     }
 
     try {
-      github.connect(project.source_url, githubToken);
+      await github.connect(project.sourceUrl, githubToken);
       toast.success('Successfully connected to GitHub');
     } catch (error) {
       toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };
-
-  const { 
-    data: messages = [], 
-    isLoading: loadingMessages 
-  } = useQuery({
-    queryKey: ['messages', id, activeChat],
-    queryFn: () => id ? getMessages(id) : Promise.resolve([]),
-    enabled: !!id && !!activeChat
-  });
-
-  const createMessageMutation = useMutation({
-    mutationFn: (messageData: Message) => {
-      return createMessage(messageData);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages', id] });
-    }
-  });
 
   const handleChatWithAgent = (agentId: string) => {
     const agent = agents.find(a => a.id === agentId);
@@ -221,7 +254,7 @@ const Project = () => {
         </Tabs>
       </div>
 
-      <TabsContent value="dashboard" className="flex-1 mt-0" defaultChecked={activeTab === "dashboard"}>
+      <TabsContent value="dashboard" className="flex-1 mt-0">
         <Dashboard
           agents={agents}
           tasks={tasks}
@@ -234,7 +267,7 @@ const Project = () => {
           project={{
             name: project.name,
             description: project.description,
-            mode: project.source_type ? 'existing' : 'new'
+            mode: project.sourceType ? 'existing' : 'new'
           }}
           isLoading={{
             agents: loadingAgents,
@@ -244,7 +277,7 @@ const Project = () => {
         />
       </TabsContent>
 
-      <TabsContent value="code" className="flex-1 p-4" defaultChecked={activeTab === "code"}>
+      <TabsContent value="code" className="flex-1 p-4">
         <div className="bg-white rounded-lg border h-full">
           <div className="border-b px-4 py-3 flex justify-between items-center">
             <h2 className="font-semibold">Code Files</h2>
@@ -290,7 +323,7 @@ const Project = () => {
         </div>
       </TabsContent>
 
-      <TabsContent value="settings" className="flex-1 p-4" defaultChecked={activeTab === "settings"}>
+      <TabsContent value="settings" className="flex-1 p-4">
         <div className="bg-white rounded-lg border p-6 max-w-2xl mx-auto">
           <h2 className="text-xl font-semibold mb-6">Project Settings</h2>
           
@@ -328,57 +361,55 @@ const Project = () => {
               </div>
             </div>
             
-            {project.source_type && (
-              <>
-                <div>
-                  <h3 className="text-base font-medium mb-2">Source Information</h3>
+            {project.sourceUrl && (
+              <div>
+                <h3 className="text-base font-medium mb-4">GitHub Integration</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span>Connection Status:</span>
+                    <span className={`px-2 py-1 rounded text-sm ${github.isConnected ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                      {github.isConnected ? 'Connected' : 'Not Connected'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-start">
+                    <span className="font-medium w-32">Repository:</span>
+                    <a 
+                      href={project.sourceUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline truncate max-w-md"
+                    >
+                      {project.sourceUrl}
+                    </a>
+                  </div>
+
                   <div className="space-y-2">
-                    <div className="flex items-center">
-                      <span className="font-medium w-32">Type:</span>
-                      <span className="capitalize">{project.source_type}</span>
-                    </div>
-                    {project.source_url && (
-                      <div className="flex items-center">
-                        <span className="font-medium w-32">URL:</span>
-                        <a 
-                          href={project.source_url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline truncate max-w-md"
-                        >
-                          {project.source_url}
-                        </a>
-                      </div>
-                    )}
+                    <Label htmlFor="github-token">GitHub Personal Access Token</Label>
+                    <Input
+                      id="github-token"
+                      type="password"
+                      value={githubToken}
+                      onChange={(e) => setGithubToken(e.target.value)}
+                      placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Create a personal access token with 'repo' scope at{" "}
+                      <a
+                        href="https://github.com/settings/tokens"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-500 hover:underline"
+                      >
+                        GitHub Settings
+                      </a>
+                    </p>
+                    <Button onClick={handleConnectGitHub} className="mt-2">
+                      {github.isConnected ? 'Reconnect GitHub' : 'Connect GitHub'}
+                    </Button>
                   </div>
                 </div>
-
-                <div>
-                  <h3 className="text-base font-medium mb-4">GitHub Integration</h3>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span>Status:</span>
-                      <span className={`px-2 py-1 rounded text-sm ${github.isConnected ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                        {github.isConnected ? 'Connected' : 'Not Connected'}
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="github-token">GitHub Personal Access Token</Label>
-                      <Input
-                        id="github-token"
-                        type="password"
-                        value={githubToken}
-                        onChange={(e) => setGithubToken(e.target.value)}
-                        placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                      />
-                      <Button onClick={handleConnectGitHub} className="mt-2">
-                        {github.isConnected ? 'Reconnect GitHub' : 'Connect GitHub'}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </>
+              </div>
             )}
           </div>
         </div>

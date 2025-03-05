@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { GitHubService, createGitHubService } from '@/lib/github';
+import { GitHubService } from '@/lib/github';
+import { getGitHubService, initGitHubService, clearGitHubService } from '@/lib/services/GitHubService';
 import { GitHubConfig, GitHubFile, GitHubCommit } from '@/lib/types';
+import { toast } from 'sonner';
 
 interface GitHubContextType {
   isConnected: boolean;
-  service: GitHubService | null;
   connect: (url: string, token: string) => void;
   disconnect: () => void;
   createOrUpdateFile: (path: string, content: string, message: string) => Promise<void>;
@@ -24,63 +25,62 @@ export const useGitHub = () => {
 };
 
 export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [service, setService] = useState<GitHubService | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
 
   const connect = useCallback((url: string, token: string) => {
     try {
-      const githubService = createGitHubService(url, token);
-      setService(githubService);
+      // Extract owner and repo from GitHub URL
+      const match = url.match(/github\.com\/([^/]+)\/([^/]+)/);
+      if (!match) {
+        throw new Error('Invalid GitHub repository URL');
+      }
+
+      const [, owner, repo] = match;
+      if (!owner || !repo) {
+        throw new Error('Could not extract owner and repository from URL');
+      }
+
+      initGitHubService(url, token);
+      setIsConnected(true);
+      toast.success('Successfully connected to GitHub repository');
     } catch (error) {
       console.error('Failed to connect to GitHub:', error);
+      setIsConnected(false);
+      clearGitHubService();
       throw error;
     }
   }, []);
 
   const disconnect = useCallback(() => {
-    setService(null);
+    clearGitHubService();
+    setIsConnected(false);
+    toast.info('Disconnected from GitHub repository');
   }, []);
 
-  const createOrUpdateFile = useCallback(
-    async (path: string, content: string, message: string) => {
-      if (!service) throw new Error('GitHub service not connected');
-      await service.createOrUpdateFile(path, content, message);
-    },
-    [service]
-  );
+  const createOrUpdateFile = useCallback(async (path: string, content: string, message: string) => {
+    const github = getGitHubService();
+    await github.createOrUpdateFile(path, content, message);
+  }, []);
 
-  const getFileContent = useCallback(
-    async (path: string) => {
-      if (!service) throw new Error('GitHub service not connected');
-      return service.getFileContent(path);
-    },
-    [service]
-  );
+  const getFileContent = useCallback(async (path: string) => {
+    const github = getGitHubService();
+    return github.getFileContent(path);
+  }, []);
 
-  const deleteFile = useCallback(
-    async (path: string, message: string) => {
-      if (!service) throw new Error('GitHub service not connected');
-      await service.deleteFile(path, message);
-    },
-    [service]
-  );
+  const deleteFile = useCallback(async (path: string, message: string) => {
+    const github = getGitHubService();
+    await github.deleteFile(path, message);
+  }, []);
 
-  const commitChanges = useCallback(
-    async (commit: GitHubCommit) => {
-      if (!service) throw new Error('GitHub service not connected');
-      
-      // Process all files in the commit
-      await Promise.all(
-        commit.files.map(file => 
-          service.createOrUpdateFile(file.path, file.content, commit.message)
-        )
-      );
-    },
-    [service]
-  );
+  const commitChanges = useCallback(async (commit: GitHubCommit) => {
+    const github = getGitHubService();
+    for (const file of commit.files) {
+      await github.createOrUpdateFile(file.path, file.content, commit.message);
+    }
+  }, []);
 
   const value = {
-    isConnected: !!service,
-    service,
+    isConnected,
     connect,
     disconnect,
     createOrUpdateFile,

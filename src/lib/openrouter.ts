@@ -1,7 +1,9 @@
-
 import { supabase } from '@/integrations/supabase/client';
-import { Agent, Project } from './types';
+import { Agent, Project } from '@/lib/types';
 import { createTask } from './api';
+import { parseCodeBlocks, inferFilePath } from './codeParser';
+import { getGitHubService } from './services/GitHubService';
+import { toast } from 'sonner';
 
 export interface OpenRouterResponse {
   id: string;
@@ -32,17 +34,17 @@ export const sendAgentPrompt = async (
       id: project.id,
       name: project.name,
       description: project.description,
-      tech_stack: project.tech_stack,
+      techStack: project.techStack,
       status: project.status,
-      source_type: project.source_type,
-      source_url: project.source_url
+      sourceType: project.sourceType,
+      sourceUrl: project.sourceUrl
     } : {};
     
     // Add GitHub-specific analysis instructions if repo URL is available
     let enhancedPrompt = prompt;
-    if (project?.source_url && project.source_url.includes('github.com')) {
+    if (project?.sourceUrl && project.sourceUrl.includes('github.com')) {
       if (!enhancedPrompt.includes('analyze') && !enhancedPrompt.includes('repository')) {
-        enhancedPrompt = `For the GitHub repository at ${project.source_url}, ${enhancedPrompt}. Please provide specific insights based on the repository content.`;
+        enhancedPrompt = `For the GitHub repository at ${project.sourceUrl}, ${enhancedPrompt}. When providing code solutions, use markdown code blocks with language and optional file path in square brackets. Example: \`\`\`typescript [src/example.ts]\`.`;
       }
     }
     
@@ -67,7 +69,38 @@ export const sendAgentPrompt = async (
     }
 
     if (response.choices && response.choices.length > 0) {
-      return response.choices[0].message.content;
+      const content = response.choices[0].message.content;
+      
+      // Look for code blocks in the response
+      const codeBlocks = parseCodeBlocks(content);
+      
+      // If we have code blocks and project has a source URL, try to commit them
+      if (codeBlocks.length > 0 && project?.sourceUrl) {
+        try {
+          const github = getGitHubService();
+          for (const block of codeBlocks) {
+            const path = block.path || inferFilePath(block);
+            await github.createOrUpdateFile(
+              path,
+              block.content,
+              `feat: ${agent.name} generated ${path}`
+            );
+            console.log(`Successfully committed ${path} to GitHub`);
+            toast.success(`Created/updated ${path}`);
+          }
+        } catch (error) {
+          if (error instanceof Error && error.message.includes('not initialized')) {
+            console.warn('GitHub service not initialized - skipping code commits');
+          } else {
+            console.error('Error committing code to GitHub:', error);
+            toast.error('Failed to commit code to GitHub: ' + 
+              (error instanceof Error ? error.message : 'Unknown error')
+            );
+          }
+        }
+      }
+      
+      return content;
     }
 
     return 'No response generated. Please try again.';
@@ -84,24 +117,24 @@ export const analyzeGitHubAndCreateTasks = async (
   agent: Agent,
   project: Project
 ): Promise<boolean> => {
-  if (!project.source_url || !project.source_url.includes('github.com')) {
+  if (!project.sourceUrl || !project.sourceUrl.includes('github.com')) {
     console.error('No GitHub repository URL found for this project');
     return false;
   }
 
   try {
     // Create an analysis prompt based on the agent type
-    const analysisPrompts = {
-      'architect': `Analyze the GitHub repository architecture at ${project.source_url} and list 3-5 specific tasks to improve the overall architecture and project structure.`,
-      'frontend': `Analyze the GitHub repository frontend at ${project.source_url} and list 3-5 specific tasks to improve UI/UX, performance, and code quality.`,
-      'backend': `Analyze the GitHub repository backend at ${project.source_url} and list 3-5 specific tasks to improve API design, database optimization, and security.`,
-      'testing': `Analyze the GitHub repository testing at ${project.source_url} and list 3-5 specific tasks to improve test coverage and quality assurance.`,
-      'devops': `Analyze the GitHub repository DevOps setup at ${project.source_url} and list 3-5 specific tasks to improve CI/CD, deployment, and infrastructure.`
+    const analysisPrompts: Record<string, string> = {
+      'architect': `Analyze the GitHub repository architecture at ${project.sourceUrl} and list 3-5 specific tasks to improve the overall architecture and project structure.`,
+      'frontend': `Analyze the GitHub repository frontend at ${project.sourceUrl} and list 3-5 specific tasks to improve UI/UX, performance, and code quality.`,
+      'backend': `Analyze the GitHub repository backend at ${project.sourceUrl} and list 3-5 specific tasks to improve API design, database optimization, and security.`,
+      'testing': `Analyze the GitHub repository testing at ${project.sourceUrl} and list 3-5 specific tasks to improve test coverage and quality assurance.`,
+      'devops': `Analyze the GitHub repository DevOps setup at ${project.sourceUrl} and list 3-5 specific tasks to improve CI/CD, deployment, and infrastructure.`
     };
     
-    const prompt = analysisPrompts[agent.type] || `Analyze the GitHub repository at ${project.source_url} and list 3-5 specific tasks to improve it.`;
+    const prompt = analysisPrompts[agent.type] || `Analyze the GitHub repository at ${project.sourceUrl} and list 3-5 specific tasks to improve it.`;
     
-    console.log(`Agent ${agent.name} analyzing GitHub repository: ${project.source_url}`);
+    console.log(`Agent ${agent.name} analyzing GitHub repository: ${project.sourceUrl}`);
     
     // Get analysis response from AI
     const analysisResponse = await sendAgentPrompt(agent, prompt, project);
@@ -132,7 +165,11 @@ export const analyzeGitHubAndCreateTasks = async (
 /**
  * Parse tasks from AI response
  */
-function parseTasksFromAIResponse(response: string, agent: Agent, project: Project): Array<{title: string, description: string}> {
+function parseTasksFromAIResponse(
+  response: string,
+  agent: Agent,
+  project: Project
+): Array<{title: string, description: string}> {
   const tasks: Array<{title: string, description: string}> = [];
   
   // Split response by common list markers and newlines
@@ -142,7 +179,7 @@ function parseTasksFromAIResponse(response: string, agent: Agent, project: Proje
   
   for (const line of lines) {
     // Check if line starts with a number or bullet point, indicating a new task
-    const taskMatch = line.match(/^(\d+[\.\)]\s*|\-\s*|\*\s*)(.+)$/);
+    const taskMatch = line.match(/^(\d+[.)]|-|\*)\s+(.+)$/);
     
     if (taskMatch) {
       // If we have a current task, add it to the collection
@@ -168,7 +205,7 @@ function parseTasksFromAIResponse(response: string, agent: Agent, project: Proje
   
   // If we couldn't parse any tasks, create a general task based on the agent type
   if (tasks.length === 0) {
-    const fallbackTasks = {
+    const fallbackTasks: Record<string, string> = {
       'architect': 'Improve project architecture',
       'frontend': 'Enhance user interface components',
       'backend': 'Optimize API and database operations',
