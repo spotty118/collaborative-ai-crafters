@@ -1,9 +1,9 @@
-
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
 import Dashboard from "@/components/layout/Dashboard";
 import ProjectSetup from "@/components/layout/ProjectSetup";
+import GitHubConnectTester from "@/components/GitHubConnectTester";
 import GitHubWriteTester from "@/components/GitHubWriteTester";
 import { Agent, Task, Message, Project, TaskStatus } from "@/lib/types";
 import { toast } from "sonner";
@@ -391,7 +391,7 @@ const Index = () => {
           
           {showGitHubTester ? (
             <div className="p-6">
-              <GitHubWriteTester />
+              <GitHubConnectTester />
             </div>
           ) : (
             <Dashboard
