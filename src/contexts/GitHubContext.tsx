@@ -1,18 +1,27 @@
 
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { GitHubService } from '@/lib/github';
-import { getGitHubService, initGitHubService, clearGitHubService, isGitHubServiceInitialized } from '@/lib/services/GitHubService';
+import { 
+  getGitHubService, 
+  initGitHubService, 
+  clearGitHubService, 
+  isGitHubServiceInitialized,
+  getCurrentBranch,
+  setCurrentBranch
+} from '@/lib/services/GitHubService';
 import { GitHubConfig, GitHubFile, GitHubCommit } from '@/lib/types';
 import { toast } from 'sonner';
 
 interface GitHubContextType {
   isConnected: boolean;
-  connect: (url: string, token: string) => void;
+  currentBranch: string;
+  connect: (url: string, token: string, branch?: string) => void;
   disconnect: () => void;
   createOrUpdateFile: (path: string, content: string, message: string) => Promise<void>;
   getFileContent: (path: string) => Promise<string>;
   deleteFile: (path: string, message: string) => Promise<void>;
   commitChanges: (commit: GitHubCommit) => Promise<void>;
+  setBranch: (branch: string) => void;
 }
 
 const GitHubContext = createContext<GitHubContextType | null>(null);
@@ -27,17 +36,19 @@ export const useGitHub = () => {
 
 export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
+  const [currentBranch, setCurrentBranchState] = useState('main');
 
   // Initialize from localStorage if available
   React.useEffect(() => {
     // Check if we already have an initialized service
     if (isGitHubServiceInitialized()) {
       setIsConnected(true);
+      setCurrentBranchState(getCurrentBranch());
       console.log('GitHub service was already initialized');
     }
   }, []);
 
-  const connect = useCallback((url: string, token: string) => {
+  const connect = useCallback((url: string, token: string, branch?: string) => {
     try {
       if (!url || !token) {
         throw new Error('GitHub URL and token are required');
@@ -55,8 +66,9 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
 
       console.log(`Connecting to GitHub repo: ${owner}/${repo}`);
-      initGitHubService(url, token);
+      initGitHubService(url, token, branch);
       setIsConnected(true);
+      setCurrentBranchState(branch || 'main');
       toast.success('Successfully connected to GitHub repository');
     } catch (error) {
       console.error('Failed to connect to GitHub:', error);
@@ -70,25 +82,36 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const disconnect = useCallback(() => {
     clearGitHubService();
     setIsConnected(false);
+    setCurrentBranchState('main');
     toast.info('Disconnected from GitHub repository');
+  }, []);
+
+  const setBranch = useCallback((branch: string) => {
+    try {
+      setCurrentBranch(branch);
+      setCurrentBranchState(branch);
+      toast.success(`Switched to branch: ${branch}`);
+    } catch (error) {
+      toast.error('Failed to switch branch: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
   }, []);
 
   const createOrUpdateFile = useCallback(async (path: string, content: string, message: string) => {
     try {
-      console.log(`Attempting to create/update file: ${path}`);
+      console.log(`Attempting to create/update file: ${path} on branch: ${currentBranch}`);
       if (!isConnected) {
         throw new Error('GitHub is not connected');
       }
       
       const github = getGitHubService();
-      await github.createOrUpdateFile(path, content, message);
-      console.log(`Successfully created/updated file: ${path}`);
+      await github.createOrUpdateFile(path, content, message, currentBranch);
+      console.log(`Successfully created/updated file: ${path} on branch: ${currentBranch}`);
     } catch (error) {
       console.error(`Failed to create/update file ${path}:`, error);
       toast.error('Failed to save file: ' + (error instanceof Error ? error.message : 'Unknown error'));
       throw error;
     }
-  }, [isConnected]);
+  }, [isConnected, currentBranch]);
 
   const getFileContent = useCallback(async (path: string) => {
     try {
@@ -97,13 +120,13 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       
       const github = getGitHubService();
-      const content = await github.getFileContent(path);
+      const content = await github.getFileContent(path, currentBranch);
       return content;
     } catch (error) {
       console.error(`Failed to get file content for ${path}:`, error);
       throw error;
     }
-  }, [isConnected]);
+  }, [isConnected, currentBranch]);
 
   const deleteFile = useCallback(async (path: string, message: string) => {
     try {
@@ -112,14 +135,14 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       
       const github = getGitHubService();
-      await github.deleteFile(path, message);
-      console.log(`Successfully deleted file: ${path}`);
+      await github.deleteFile(path, message, currentBranch);
+      console.log(`Successfully deleted file: ${path} from branch: ${currentBranch}`);
     } catch (error) {
       console.error(`Failed to delete file ${path}:`, error);
       toast.error('Failed to delete file: ' + (error instanceof Error ? error.message : 'Unknown error'));
       throw error;
     }
-  }, [isConnected]);
+  }, [isConnected, currentBranch]);
 
   const commitChanges = useCallback(async (commit: GitHubCommit) => {
     try {
@@ -127,12 +150,12 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         throw new Error('GitHub is not connected');
       }
       
-      console.log(`Committing ${commit.files.length} files with message: ${commit.message}`);
+      console.log(`Committing ${commit.files.length} files with message: ${commit.message} to branch: ${currentBranch}`);
       const github = getGitHubService();
       
       for (const file of commit.files) {
         console.log(`Processing file: ${file.path}`);
-        await github.createOrUpdateFile(file.path, file.content, commit.message);
+        await github.createOrUpdateFile(file.path, file.content, commit.message, currentBranch);
       }
       
       console.log('All files committed successfully');
@@ -142,16 +165,18 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       toast.error('Failed to commit changes: ' + (error instanceof Error ? error.message : 'Unknown error'));
       throw error;
     }
-  }, [isConnected]);
+  }, [isConnected, currentBranch]);
 
   const value = {
     isConnected,
+    currentBranch,
     connect,
     disconnect,
     createOrUpdateFile,
     getFileContent,
     deleteFile,
     commitChanges,
+    setBranch,
   };
 
   return <GitHubContext.Provider value={value}>{children}</GitHubContext.Provider>;

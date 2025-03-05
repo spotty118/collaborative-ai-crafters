@@ -43,6 +43,7 @@ const Project: React.FC = () => {
   const [activeChat, setActiveChat] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<CodeFile | null>(null);
   const [githubToken, setGithubToken] = useState("");
+  const [githubBranch, setGithubBranch] = useState("main");
 
   const github = useGitHub();
   const queryClient = useQueryClient();
@@ -103,13 +104,13 @@ const Project: React.FC = () => {
   useEffect(() => {
     if (project?.sourceUrl && githubToken && !github.isConnected) {
       try {
-        github.connect(project.sourceUrl, githubToken);
+        github.connect(project.sourceUrl, githubToken, githubBranch);
       } catch (error) {
         console.error('Failed to connect to GitHub:', error);
         toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
       }
     }
-  }, [project?.sourceUrl, githubToken, github]);
+  }, [project?.sourceUrl, githubToken, githubBranch, github]);
 
   useEffect(() => {
     if (github.isConnected && githubToken) {
@@ -179,7 +180,7 @@ const Project: React.FC = () => {
     }
 
     try {
-      await github.connect(project.sourceUrl, githubToken);
+      await github.connect(project.sourceUrl, githubToken, githubBranch);
       toast.success('Successfully connected to GitHub');
     } catch (error) {
       toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
@@ -425,10 +426,30 @@ const Project: React.FC = () => {
                         GitHub Settings
                       </a>
                     </p>
-                    <Button onClick={handleConnectGitHub} className="mt-2">
-                      {github.isConnected ? 'Reconnect GitHub' : 'Connect GitHub'}
-                    </Button>
                   </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="github-branch">GitHub Branch</Label>
+                    <Input
+                      id="github-branch"
+                      value={githubBranch}
+                      onChange={(e) => setGithubBranch(e.target.value)}
+                      placeholder="main"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Specify the branch to use for this repository (defaults to main)
+                    </p>
+                  </div>
+                  
+                  <Button onClick={handleConnectGitHub} className="mt-2">
+                    {github.isConnected ? 'Reconnect GitHub' : 'Connect GitHub'}
+                  </Button>
+                  
+                  {github.isConnected && (
+                    <div className="mt-2 text-sm text-gray-500">
+                      Currently using branch: <span className="font-medium">{github.currentBranch}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
