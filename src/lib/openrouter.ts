@@ -1,7 +1,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project, CodeFileDB } from '@/lib/types';
-import { createTask, createCodeFile } from './api';
+import { createTask, createCodeFile, createMessage } from './api';
 import { parseCodeBlocks, inferFilePath } from './codeParser';
 import { getGitHubService } from './services/GitHubService';
 import { toast } from 'sonner';
@@ -159,6 +159,50 @@ export const sendAgentPrompt = async (
 };
 
 /**
+ * Simulate inter-agent communication by creating messages between agents
+ */
+export const simulateAgentCommunication = async (
+  sourceAgent: Agent,
+  targetAgent: Agent,
+  message: string,
+  project: Project
+): Promise<void> => {
+  if (!project.id) return;
+
+  try {
+    console.log(`${sourceAgent.name} is communicating with ${targetAgent.name}`);
+    
+    // Create a message from source agent to target agent
+    await createMessage({
+      project_id: project.id,
+      content: message,
+      sender: sourceAgent.name,
+      type: "text"
+    });
+    
+    // Get response from target agent
+    const response = await sendAgentPrompt(
+      targetAgent,
+      `Your colleague ${sourceAgent.name} says: "${message}". Please respond with your thoughts, considering your role as the ${targetAgent.type} agent.`,
+      project
+    );
+    
+    // Create a message from target agent back to source agent
+    await createMessage({
+      project_id: project.id,
+      content: response,
+      sender: targetAgent.name,
+      type: "text"
+    });
+    
+    console.log(`${targetAgent.name} responded to ${sourceAgent.name}`);
+    
+  } catch (error) {
+    console.error('Error in agent communication:', error);
+  }
+};
+
+/**
  * Analyze GitHub repository and create tasks
  */
 export const analyzeGitHubAndCreateTasks = async (
@@ -269,3 +313,69 @@ function parseTasksFromAIResponse(
   
   return tasks;
 }
+
+/**
+ * Continue agent work on completion of a task
+ */
+export const continueAgentWork = async (
+  agent: Agent, 
+  project: Project, 
+  completedTaskId?: string
+): Promise<void> => {
+  if (!project.id) return;
+  
+  try {
+    console.log(`Continuing work for ${agent.name} after task completion`);
+    
+    // First, create a message indicating the agent is continuing work
+    const statusMessage = completedTaskId 
+      ? `I've completed the assigned task and am now looking for the next steps to improve the project.`
+      : `I'm continuing my analysis of the project to identify improvements.`;
+    
+    await createMessage({
+      project_id: project.id,
+      content: statusMessage,
+      sender: agent.name,
+      type: "text"
+    });
+    
+    // Determine what other work the agent should do
+    const nextStepsPrompt = `Based on your role as the ${agent.type} agent for the project "${project.name}", what would be the next improvement you would recommend? Please provide a specific, actionable suggestion that could be implemented right away.`;
+    
+    const response = await sendAgentPrompt(agent, nextStepsPrompt, project);
+    
+    await createMessage({
+      project_id: project.id,
+      content: response,
+      sender: agent.name,
+      type: "text"
+    });
+    
+    // See if we should trigger communication with another agent
+    const otherAgentTypes = ['architect', 'frontend', 'backend', 'testing', 'devops'].filter(
+      type => type !== agent.type
+    );
+    
+    // Randomly decide if we should communicate with another agent (50% chance)
+    if (Math.random() > 0.5 && otherAgentTypes.length > 0) {
+      // Select a random agent type to communicate with
+      const randomType = otherAgentTypes[Math.floor(Math.random() * otherAgentTypes.length)];
+      
+      // Create a collaboration prompt
+      const collaborationPrompt = `As the ${agent.type} agent, I'd like to collaborate with the ${randomType} agent on improving this project. What aspects should we focus on together?`;
+      
+      await createMessage({
+        project_id: project.id,
+        content: collaborationPrompt,
+        sender: agent.name,
+        type: "text"
+      });
+      
+      console.log(`${agent.name} is initiating collaboration with ${randomType} agent`);
+      
+      // The Project page will handle the actual communication when it detects this message
+    }
+  } catch (error) {
+    console.error('Error in continuing agent work:', error);
+  }
+};

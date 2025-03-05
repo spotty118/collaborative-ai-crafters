@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -309,6 +308,12 @@ const Project: React.FC = () => {
             
             await analyzeGitHubAndCreateTasks(agent, project);
             
+            setTimeout(() => {
+              if (project && agent.status === "working") {
+                continueAgentWork(agent, project);
+              }
+            }, 5000); // Give a 5-second pause before continuing
+            
             toast.dismiss(analysisToastId);
             toast.success(`${agent.name} completed initial analysis`);
           } catch (error) {
@@ -419,6 +424,28 @@ const Project: React.FC = () => {
           
           toast.dismiss(loadingToastId);
           toast.success(`${agent.name} completed task: ${task.title}`);
+          
+          setTimeout(() => {
+            if (project && agent.status === "working") {
+              continueAgentWork(agent, project, task.id);
+            }
+          }, 5000); // Give a 5-second pause before continuing
+          
+          setTimeout(() => {
+            if (project && agent.status === "working") {
+              const otherAgents = agents.filter(a => a.id !== agent.id && a.status === "working");
+              if (otherAgents.length > 0) {
+                const randomAgent = otherAgents[Math.floor(Math.random() * otherAgents.length)];
+                simulateAgentCommunication(
+                  agent, 
+                  randomAgent, 
+                  `I've just completed the task "${task.title}". Based on your expertise as the ${randomAgent.type} agent, what should we focus on next?`,
+                  project
+                );
+              }
+            }
+          }, 8000); // Wait a bit longer before initiating communication
+          
         } else {
           await updateTaskMutation.mutate({
             taskId: task.id,
@@ -474,6 +501,21 @@ const Project: React.FC = () => {
       
       toast.dismiss(loadingToastId);
       toast.success(`${agent.name} responded`);
+      
+      setTimeout(() => {
+        if (agent.status === "working") {
+          const otherWorkingAgents = agents.filter(a => a.id !== agent.id && a.status === "working");
+          if (otherWorkingAgents.length > 0 && Math.random() > 0.7) { // 30% chance
+            const randomAgent = otherWorkingAgents[Math.floor(Math.random() * otherWorkingAgents.length)];
+            simulateAgentCommunication(
+              agent,
+              randomAgent,
+              `The user just asked me about "${message.substring(0, 50)}${message.length > 50 ? '...' : ''}". I think we should collaborate on this.`,
+              project
+            );
+          }
+        }
+      }, 5000);
       
       if (github.isConnected && response.includes('```')) {
         const codeBlocks = parseCodeBlocks(response);
