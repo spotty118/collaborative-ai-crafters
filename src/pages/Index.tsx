@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
@@ -31,7 +30,6 @@ const Index = () => {
   const [activeChat, setActiveChat] = useState<string | null>(null);
   const [isGithubConnected, setIsGithubConnected] = useState(false);
 
-  // Check if GitHub is already connected on page load
   useEffect(() => {
     checkGithubConnection();
   }, []);
