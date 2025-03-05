@@ -77,7 +77,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   return (
     <div className="flex h-[calc(100vh-73px)]">
       {/* Left sidebar with agents */}
-      <div className="w-1/4 border-r bg-gray-50 p-4">
+      <div className="w-1/4 border-r bg-gray-50 p-4 overflow-auto">
         <h2 className="text-lg font-semibold mb-3">Project</h2>
         <div className="mb-4 bg-white p-3 rounded-md border">
           <h3 className="font-medium">{project.name}</h3>
@@ -119,7 +119,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       <div className="flex-1 flex flex-col">
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-0">
           {/* Chat section */}
-          <div className="border-r flex flex-col h-full">
+          <div className="border-r flex flex-col h-full overflow-hidden">
             <div className="border-b p-4">
               <h2 className="text-lg font-semibold">
                 {activeChat 
@@ -129,8 +129,8 @@ const Dashboard: React.FC<DashboardProps> = ({
               </h2>
             </div>
             
-            <div className="flex-1 overflow-hidden flex flex-col">
-              <ScrollArea className="flex-1 h-[calc(100vh-220px)]">
+            <div className="flex-1 overflow-hidden">
+              <ScrollArea className="h-[calc(100vh-220px)]">
                 <div className="space-y-4 p-4">
                   {isLoading.messages ? (
                     <div className="flex justify-center py-8">
@@ -190,7 +190,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
           
           {/* Tasks section */}
-          <div className="p-4 bg-gray-50 overflow-auto">
+          <div className="p-4 bg-gray-50 overflow-auto h-[calc(100vh-73px)]">
             {isLoading.tasks ? (
               <div className="flex justify-center py-8">
                 <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
