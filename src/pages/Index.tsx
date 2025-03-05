@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
@@ -134,7 +135,7 @@ const Index = () => {
     
     toast.success(`${agent.name} started working`);
 
-    if (activeProject.source_url && activeProject.source_url.includes('github.com')) {
+    if (activeProject.sourceUrl && activeProject.sourceUrl.includes('github.com')) {
       const analysisToast = toast.loading(`${agent.name} is analyzing your GitHub repository...`);
       
       import('@/lib/openrouter').then(module => {
@@ -210,7 +211,7 @@ const Index = () => {
       const response = await sendAgentPrompt(agent, taskPrompt, activeProject);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id.toString(), // Ensure project_id is a string
+        project_id: activeProject.id.toString(), 
         content: `Completed task: ${currentTask.title}\n\n${response}`,
         sender: agent.name,
         type: "text"
@@ -241,7 +242,7 @@ const Index = () => {
       toast.error(`${agent.name} failed to complete task: ${currentTask.title}`);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id.toString(), // Ensure project_id is a string
+        project_id: activeProject.id.toString(),
         content: `Failed to complete task: ${currentTask.title}\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
         sender: agent.name,
         type: "text"
@@ -372,7 +373,7 @@ const Index = () => {
           project={{
             name: activeProject.name,
             description: activeProject.description,
-            mode: activeProject.source_type ? 'existing' : 'new'
+            mode: activeProject.sourceType ? 'existing' : 'new'
           }}
           isLoading={{
             agents: loadingAgents,
