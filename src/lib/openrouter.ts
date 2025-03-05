@@ -1,6 +1,7 @@
+
 import { supabase } from '@/integrations/supabase/client';
-import { Agent, Project } from '@/lib/types';
-import { createTask } from './api';
+import { Agent, Project, CodeFileDB } from '@/lib/types';
+import { createTask, createCodeFile } from './api';
 import { parseCodeBlocks, inferFilePath } from './codeParser';
 import { getGitHubService } from './services/GitHubService';
 import { toast } from 'sonner';
@@ -74,29 +75,53 @@ export const sendAgentPrompt = async (
       // Look for code blocks in the response
       const codeBlocks = parseCodeBlocks(content);
       
-      // If we have code blocks and project has a source URL, try to commit them
-      if (codeBlocks.length > 0 && project?.sourceUrl) {
+      // If we have code blocks and project has a project ID, save them as code files
+      if (codeBlocks.length > 0 && project?.id) {
         try {
-          const github = getGitHubService();
           for (const block of codeBlocks) {
             const path = block.path || inferFilePath(block);
-            await github.createOrUpdateFile(
-              path,
-              block.content,
-              `feat: ${agent.name} generated ${path}`
-            );
-            console.log(`Successfully committed ${path} to GitHub`);
-            toast.success(`Created/updated ${path}`);
+            
+            // Save to database
+            await createCodeFile({
+              name: path.split('/').pop() || 'untitled',
+              path: path,
+              content: block.content,
+              language: block.language,
+              created_by: agent.name,
+              last_modified_by: agent.name,
+              project_id: project.id
+            });
+            
+            console.log(`Saved code file: ${path}`);
+            toast.success(`Created code file: ${path}`);
+            
+            // Try to commit to GitHub if configured
+            if (project.sourceUrl && project.sourceUrl.includes('github.com')) {
+              try {
+                const github = getGitHubService();
+                await github.createOrUpdateFile(
+                  path,
+                  block.content,
+                  `feat: ${agent.name} generated ${path}`
+                );
+                console.log(`Successfully committed ${path} to GitHub`);
+              } catch (error) {
+                if (error instanceof Error && error.message.includes('not initialized')) {
+                  console.warn('GitHub service not initialized - skipping code commits');
+                } else {
+                  console.error('Error committing code to GitHub:', error);
+                  toast.error('Failed to commit code to GitHub: ' + 
+                    (error instanceof Error ? error.message : 'Unknown error')
+                  );
+                }
+              }
+            }
           }
         } catch (error) {
-          if (error instanceof Error && error.message.includes('not initialized')) {
-            console.warn('GitHub service not initialized - skipping code commits');
-          } else {
-            console.error('Error committing code to GitHub:', error);
-            toast.error('Failed to commit code to GitHub: ' + 
-              (error instanceof Error ? error.message : 'Unknown error')
-            );
-          }
+          console.error('Error saving code files:', error);
+          toast.error('Error saving code files: ' + 
+            (error instanceof Error ? error.message : 'Unknown error')
+          );
         }
       }
       

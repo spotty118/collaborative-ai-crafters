@@ -1,3 +1,4 @@
+
 interface CodeBlock {
   language: string;
   content: string;
@@ -40,13 +41,16 @@ export function inferFilePath(block: CodeBlock): string {
   // Try to find package or class name from content
   const packageMatch = block.content.match(/package\s+([.\w]+)/);
   const classMatch = block.content.match(/(?:class|interface)\s+(\w+)/);
+  const functionMatch = block.content.match(/function\s+(\w+)/);
   const defaultName = 'code';
 
-  const name = classMatch?.[1] || packageMatch?.[1]?.split('.').pop() || defaultName;
+  const name = classMatch?.[1] || functionMatch?.[1] || packageMatch?.[1]?.split('.').pop() || defaultName;
 
   const extensions: { [key: string]: string } = {
     typescript: '.ts',
+    ts: '.ts',
     javascript: '.js',
+    js: '.js',
     jsx: '.jsx',
     tsx: '.tsx',
     python: '.py',
@@ -80,5 +84,17 @@ export function inferFilePath(block: CodeBlock): string {
     .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
     .toLowerCase();
 
-  return `src/${fileName}${extension}`;
+  // For common web languages, use appropriate directories
+  let directory = 'src/';
+  if (['html', 'css', 'scss'].includes(block.language.toLowerCase())) {
+    directory = 'src/assets/';
+  } else if (['js', 'jsx', 'ts', 'tsx'].includes(block.language.toLowerCase())) {
+    const isComponent = block.content.includes('export default') && 
+                       (block.content.includes('function') || block.content.includes('class'));
+    if (isComponent) {
+      directory = 'src/components/';
+    }
+  }
+
+  return `${directory}${fileName}${extension}`;
 }

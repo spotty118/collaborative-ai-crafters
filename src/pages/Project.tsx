@@ -159,20 +159,28 @@ const Project: React.FC = () => {
   }, [id, project, agents.length, loadingAgents]);
 
   const handleFileClick = async (file: CodeFile) => {
-    if (!github.isConnected) {
-      toast.error('GitHub is not connected. Please configure GitHub access in project settings.');
-      setActiveTab('settings');
-      return;
-    }
-
-    if (!isGitHubServiceInitialized()) {
-      toast.error('GitHub service is not properly initialized. Please reconnect in project settings.');
-      setActiveTab('settings');
-      return;
-    }
-
     try {
-      const content = await github.getFileContent(file.path);
+      let content = file.content;
+      
+      if (!content && github.isConnected) {
+        try {
+          if (!isGitHubServiceInitialized()) {
+            throw new Error('GitHub service is not properly initialized');
+          }
+          
+          content = await github.getFileContent(file.path);
+          console.log(`Successfully loaded content for ${file.path} from GitHub`);
+        } catch (error) {
+          console.error(`Failed to load file content from GitHub for ${file.path}:`, error);
+          // Continue with potentially empty content, showing what we have locally
+        }
+      }
+      
+      if (!content) {
+        toast.error(`No content available for ${file.path}`);
+        return;
+      }
+      
       setSelectedFile({
         ...file,
         content
@@ -255,7 +263,6 @@ const Project: React.FC = () => {
       if (id && project) {
         const message = `I'm starting to work on this project. I'll analyze the requirements and get started.`;
         
-        // Create the initial message
         await createMessageMutation.mutate({
           project_id: id,
           content: message,
@@ -263,17 +270,14 @@ const Project: React.FC = () => {
           type: "text"
         });
         
-        // If it's a GitHub project, trigger analysis
         if (project.sourceUrl && project.sourceUrl.includes('github.com')) {
           console.log(`Starting GitHub analysis with ${agent.name}`);
           const analysisToastId = toast.loading(`${agent.name} is analyzing the GitHub repository...`);
           
           try {
-            // Send the initial prompt to OpenRouter via the agent
             const initialPrompt = `Analyze the GitHub repository at ${project.sourceUrl} and provide an initial assessment based on your role as the ${agent.type} agent.`;
             const response = await sendAgentPrompt(agent, initialPrompt, project);
             
-            // Create a message with the response
             await createMessageMutation.mutate({
               project_id: id,
               content: response,
@@ -281,7 +285,6 @@ const Project: React.FC = () => {
               type: "text"
             });
             
-            // Try to create tasks based on the analysis
             await analyzeGitHubAndCreateTasks(agent, project);
             
             toast.dismiss(analysisToastId);
@@ -382,11 +385,9 @@ const Project: React.FC = () => {
       return;
     }
     
-    // Update task status to in_progress
     const loadingToastId = toast.loading(`${agent.name} is executing task: ${task.title}...`);
     
     try {
-      // Update task status
       await updateTaskMutation.mutate({
         taskId: task.id,
         updates: {
@@ -394,7 +395,6 @@ const Project: React.FC = () => {
         }
       });
       
-      // Start the agent if not already working
       if (agent.status !== "working") {
         await updateAgentMutation.mutate({
           agentId,
@@ -405,11 +405,9 @@ const Project: React.FC = () => {
         });
       }
       
-      // Set the active chat to this agent
       setActiveChat(agentId);
       
       if (id && project) {
-        // Create a message about starting the task
         await createMessageMutation.mutate({
           project_id: id,
           content: `I'm starting to work on task: "${task.title}". ${task.description}`,
@@ -417,12 +415,10 @@ const Project: React.FC = () => {
           type: "text"
         });
         
-        // Send the task to the agent via OpenRouter
         const taskPrompt = `Execute the following task: ${task.title}. ${task.description}. Provide a detailed approach to complete this task. If code implementation is needed, provide it in markdown code blocks.`;
         
         const response = await sendAgentPrompt(agent, taskPrompt, project);
         
-        // Create a message with the agent's response
         await createMessageMutation.mutate({
           project_id: id,
           content: response,
@@ -430,7 +426,6 @@ const Project: React.FC = () => {
           type: "text"
         });
         
-        // If the response seems successful, update the task status
         if (!response.toLowerCase().includes("error") && !response.toLowerCase().includes("failed")) {
           await updateTaskMutation.mutate({
             taskId: task.id,
@@ -458,7 +453,6 @@ const Project: React.FC = () => {
       toast.error(`Failed to execute task: ${error instanceof Error ? error.message : 'Unknown error'}`);
       console.error('Error executing task:', error);
       
-      // Update task status to failed
       await updateTaskMutation.mutate({
         taskId: task.id,
         updates: {
