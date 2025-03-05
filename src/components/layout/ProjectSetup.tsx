@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ProjectMode } from "@/lib/types";
+import { ProjectMode, Project } from "@/lib/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -26,19 +26,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 interface ProjectSetupProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreateProject: (projectData: {
-    name: string;
-    description: string;
-    mode: ProjectMode;
-    techStack: {
-      frontend: string;
-      backend: string;
-      database: string;
-      deployment: string;
-    };
-    githubToken?: string;
-    repoUrl?: string;
-  }) => void;
+  onCreateProject: (projectData: Omit<Project, "id">) => void;
 }
 
 const ProjectSetup: React.FC<ProjectSetupProps> = ({

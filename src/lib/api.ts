@@ -453,3 +453,12 @@ function getAgentAvatar(agentType: AgentType): string {
     default: return '🤖';
   }
 }
+
+export const deleteProject = async (id: string): Promise<void> => {
+  const { error } = await supabase
+    .from('projects')
+    .delete()
+    .eq('id', id);
+  
+  if (error) throw error;
+};

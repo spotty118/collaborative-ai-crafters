@@ -38,7 +38,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Project, Agent, AgentType } from "@/lib/types";
+import { Project, Agent, AgentType, ProjectDB } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { sendAgentPrompt } from "@/lib/openrouter";
 import { createMessage } from "@/lib/api";
@@ -144,17 +144,19 @@ const Index: React.FC = () => {
 
   const queryClient = useQueryClient();
 
-  // Fetch projects
   const {
     data: projects,
     isLoading,
     error,
-  } = useQuery<Project[]>("projects", getProjects);
+  } = useQuery({
+    queryKey: ["projects"],
+    queryFn: getProjects
+  });
 
-  // Mutation for creating a project
-  const createProjectMutation = useMutation(createProject, {
+  const createProjectMutation = useMutation({
+    mutationFn: (projectData: Omit<Project, "id">) => createProject(projectData as ProjectDB),
     onSuccess: () => {
-      queryClient.invalidateQueries("projects");
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
       setIsProjectSetupOpen(false);
       toast.success("Project created successfully!");
     },
@@ -163,10 +165,10 @@ const Index: React.FC = () => {
     },
   });
 
-  // Mutation for deleting a project
-  const deleteProjectMutation = useMutation(deleteProject, {
+  const deleteProjectMutation = useMutation({
+    mutationFn: (id: string) => deleteProject(id),
     onSuccess: () => {
-      queryClient.invalidateQueries("projects");
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
       toast.success("Project deleted successfully!");
     },
     onError: (error: any) => {
@@ -174,29 +176,24 @@ const Index: React.FC = () => {
     },
   });
 
-  // Function to handle project creation
   const handleCreateProject = async (projectData: Omit<Project, "id">) => {
     createProjectMutation.mutate(projectData);
   };
 
-  // Function to handle project deletion
   const handleDeleteProject = async (id: string) => {
     deleteProjectMutation.mutate(id);
   };
 
-  // Function to handle tab changes
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
   };
 
-  // Function to execute a set of tasks for the selected agent
   const executeAgentTasks = async (
     agent: AgentType,
     activeProject: Project
   ) => {
     if (!activeProject) return;
 
-    // Initial message from agent
     createMessage({
       project_id: activeProject.id.toString(),
       sender: `${agent.charAt(0).toUpperCase() + agent.slice(1)} Agent`,
@@ -207,7 +204,6 @@ const Index: React.FC = () => {
     const loadingToastId = toast.loading(`${agent} agent is analyzing the project...`);
 
     try {
-      // Get agent response
       const response = await sendAgentPrompt(
         {
           id: `${agent}-agent`,
@@ -218,7 +214,6 @@ const Index: React.FC = () => {
         activeProject
       );
 
-      // Create completion message
       createMessage({
         project_id: activeProject.id.toString(),
         sender: `${agent.charAt(0).toUpperCase() + agent.slice(1)} Agent`,
@@ -235,7 +230,6 @@ const Index: React.FC = () => {
     }
   };
 
-  // Handle agent selection
   const handleAgentSelect = (agent: AgentType) => {
     setSelectedAgent(agent);
     if (activeProject) {
@@ -243,11 +237,9 @@ const Index: React.FC = () => {
     }
   };
 
-  // Handle sending a message to an agent
   const handleSendMessage = async (message: string) => {
     if (!activeProject || !selectedAgent) return;
     
-    // Add user message to the chat
     createMessage({
       project_id: activeProject.id.toString(),
       sender: "You",
@@ -259,7 +251,6 @@ const Index: React.FC = () => {
     const loadingToastId = toast.loading(`${agentName} is thinking...`);
     
     try {
-      // Get agent response
       const response = await sendAgentPrompt(
         {
           id: `${selectedAgent}-agent`,
@@ -270,7 +261,6 @@ const Index: React.FC = () => {
         activeProject
       );
       
-      // Add agent response to the chat
       createMessage({
         project_id: activeProject.id.toString(),
         sender: agentName,
@@ -284,7 +274,6 @@ const Index: React.FC = () => {
       toast.error(`Error getting response: ${error instanceof Error ? error.message : "Unknown error"}`);
       console.error("Error getting agent response:", error);
       
-      // Add error message to the chat
       createMessage({
         project_id: activeProject.id.toString(),
         sender: agentName,
@@ -302,9 +291,9 @@ const Index: React.FC = () => {
       />
 
       <ProjectSetup
-        open={isProjectSetupOpen}
+        isOpen={isProjectSetupOpen}
         onClose={() => setIsProjectSetupOpen(false)}
-        onCreate={handleCreateProject}
+        onCreateProject={handleCreateProject}
       />
 
       <div className="container mx-auto mt-8">
@@ -322,11 +311,11 @@ const Index: React.FC = () => {
               <div className="text-center">Loading projects...</div>
             ) : error ? (
               <div className="text-center text-red-500">
-                Error: {error.message}
+                Error: {(error as Error).message}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {projects?.map((project) => (
+                {projects && projects.map((project) => (
                   <ProjectCard
                     key={project.id}
                     project={project}
