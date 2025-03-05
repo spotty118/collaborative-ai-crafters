@@ -27,7 +27,7 @@ export const useGitHub = () => {
 };
 
 export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(isGitHubServiceInitialized());
   const [currentBranch, setCurrentBranch] = useState('main');
 
   // Initialize from localStorage if available

@@ -30,7 +30,9 @@ export const GitHubConnectTester: React.FC = () => {
   
   const handleConnect = async () => {
     if (!repoUrl || !token) {
-      toast.error('Please enter GitHub repository URL and token');
+      const message = 'Please enter GitHub repository URL and token';
+      setErrorMessage(message);
+      toast.error(message);
       return;
     }
     
@@ -60,7 +62,9 @@ export const GitHubConnectTester: React.FC = () => {
     }
     
     if (!filePath || !fileContent || !commitMessage) {
-      toast.error('Please fill all fields');
+      const message = 'Please fill all fields';
+      setErrorMessage(message);
+      toast.error(message);
       return;
     }
     
