@@ -190,8 +190,12 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       
       const github = getGitHubService();
-      await github.createOrUpdateFile(path, content, message, currentBranch);
-      console.log(`Successfully created/updated file: ${path} on branch: ${currentBranch}`);
+      // Use normalized path
+      const normalizedPath = path.replace(/^[/\\]+/, '').replace(/\\/g, '/');
+      
+      await github.createOrUpdateFile(normalizedPath, content, message, currentBranch);
+      console.log(`Successfully created/updated file: ${normalizedPath} on branch: ${currentBranch}`);
+      return true;
     } catch (error) {
       console.error(`Failed to create/update file ${path}:`, error);
       toast.error('Failed to save file: ' + (error instanceof Error ? error.message : 'Unknown error'));
@@ -206,7 +210,10 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       
       const github = getGitHubService();
-      const content = await github.getFileContent(path, currentBranch);
+      // Use normalized path
+      const normalizedPath = path.replace(/^[/\\]+/, '').replace(/\\/g, '/');
+      
+      const content = await github.getFileContent(normalizedPath, currentBranch);
       return content;
     } catch (error) {
       console.error(`Failed to get file content for ${path}:`, error);
@@ -221,8 +228,11 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       
       const github = getGitHubService();
-      await github.deleteFile(path, message, currentBranch);
-      console.log(`Successfully deleted file: ${path} from branch: ${currentBranch}`);
+      // Use normalized path
+      const normalizedPath = path.replace(/^[/\\]+/, '').replace(/\\/g, '/');
+      
+      await github.deleteFile(normalizedPath, message, currentBranch);
+      console.log(`Successfully deleted file: ${normalizedPath} from branch: ${currentBranch}`);
     } catch (error) {
       console.error(`Failed to delete file ${path}:`, error);
       toast.error('Failed to delete file: ' + (error instanceof Error ? error.message : 'Unknown error'));
@@ -265,7 +275,10 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       
       const github = getGitHubService();
-      return await github.listFiles(path, currentBranch);
+      // Use normalized path if provided
+      const normalizedPath = path ? path.replace(/^[/\\]+/, '').replace(/\\/g, '/') : '';
+      
+      return await github.listFiles(normalizedPath, currentBranch);
     } catch (error) {
       console.error(`Failed to list files in ${path || 'root'}:`, error);
       toast.error('Failed to list files: ' + (error instanceof Error ? error.message : 'Unknown error'));

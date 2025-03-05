@@ -172,6 +172,7 @@ const Project: React.FC = () => {
           console.log(`Successfully loaded content for ${file.path} from GitHub`);
         } catch (error) {
           console.error(`Failed to load file content from GitHub for ${file.path}:`, error);
+          toast.error(`Error loading file from GitHub: ${file.path} - ${error instanceof Error ? error.message : 'Unknown error'}`);
           // Continue with potentially empty content, showing what we have locally
         }
       }
@@ -200,13 +201,28 @@ const Project: React.FC = () => {
     const loadingToastId = toast.loading('Pushing changes to GitHub...');
 
     try {
+      let successCount = 0;
+      let errorCount = 0;
+      
       for (const file of files) {
         if (file.content) {
-          await github.createOrUpdateFile(file.path, file.content, `chore: sync ${file.path}`);
+          try {
+            await github.createOrUpdateFile(file.path, file.content, `chore: sync ${file.path}`);
+            successCount++;
+          } catch (error) {
+            console.error(`Failed to push file ${file.path}:`, error);
+            errorCount++;
+          }
         }
       }
+      
       toast.dismiss(loadingToastId);
-      toast.success('Successfully pushed changes to GitHub');
+      
+      if (errorCount === 0) {
+        toast.success(`Successfully pushed ${successCount} files to GitHub`);
+      } else {
+        toast.warning(`Pushed ${successCount} files to GitHub with ${errorCount} errors`);
+      }
     } catch (error) {
       toast.dismiss(loadingToastId);
       toast.error('Failed to push to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
@@ -451,6 +467,30 @@ const Project: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['files', id] });
       
       toast.dismiss(loadingToastId);
+      toast.success(`${agent.name} responded`);
+      
+      if (github.isConnected && response.includes('```')) {
+        const codeBlocks = parseCodeBlocks(response);
+        if (codeBlocks.length > 0) {
+          toast.info(`Detected ${codeBlocks.length} code files in response. Pushing to GitHub...`);
+          
+          try {
+            for (const block of codeBlocks) {
+              if (block.path && block.content) {
+                await github.createOrUpdateFile(
+                  block.path, 
+                  block.content, 
+                  `feat: ${agent.name} generated ${block.path}`
+                );
+              }
+            }
+            toast.success(`Successfully pushed ${codeBlocks.length} code files to GitHub`);
+          } catch (error) {
+            console.error('Error pushing code files to GitHub:', error);
+            toast.error('Error pushing code files to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
+          }
+        }
+      }
     } catch (error) {
       console.error('Error getting response from agent:', error);
       

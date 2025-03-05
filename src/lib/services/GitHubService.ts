@@ -126,3 +126,15 @@ export const reinitializeGitHubService = () => {
   }
   return null;
 };
+
+// Helper function to normalize file paths for GitHub API
+export const normalizeFilePath = (path: string): string => {
+  // Remove any leading slash or backslash
+  let normalizedPath = path.replace(/^[/\\]+/, '');
+  
+  // Replace backslashes with forward slashes (for Windows paths)
+  normalizedPath = normalizedPath.replace(/\\/g, '/');
+  
+  console.log(`Normalized path: ${path} → ${normalizedPath}`);
+  return normalizedPath;
+};

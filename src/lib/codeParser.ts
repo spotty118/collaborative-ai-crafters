@@ -12,62 +12,75 @@ interface CodeBlock {
  */
 export function parseCodeBlocks(text: string): CodeBlock[] {
   const codeBlocks: CodeBlock[] = [];
-  // Enhanced regex to better capture code blocks with path information
-  // This handles both ```language [path] and ```language syntax
-  const codeBlockRegex = /```(\w+)?\s*(?:\[([^\]]+)\])?\n([\s\S]*?)```/g;
   
-  // Also try to capture blocks that might have the path on the same line as the language
-  const altCodeBlockRegex = /```(\w+)?\s+\[([^\]]+)\]\s*\n([\s\S]*?)```/g;
+  // Enhanced regex patterns to better capture code blocks with path information
+  const patterns = [
+    // ```language [path]
+    /```(\w+)?\s*\[([^\]]+)\]\s*\n([\s\S]*?)```/g,
+    
+    // ```language
+    // path: path/to/file.ext
+    /```(\w+)?\s*\n(?:path|filepath|file path|filename):\s*([\w\/\.\-\_]+)?\s*\n([\s\S]*?)```/gi,
+    
+    // Just ```language without path (fallback)
+    /```(\w+)?\s*\n([\s\S]*?)```/g
+  ];
   
   console.log("Parsing text for code blocks...");
   
-  let match;
-  // Try the primary regex first
-  while ((match = codeBlockRegex.exec(text)) !== null) {
-    const language = match[1] || 'txt';
-    const path = match[2];
-    const content = match[3].trim();
-    
-    console.log(`Found code block - Language: ${language}, Path: ${path || 'not specified'}`);
-    
-    if (content) {
-      codeBlocks.push({ language, content, path });
-    }
-  }
-  
-  // If we didn't find any matches, try the alternative regex
-  if (codeBlocks.length === 0) {
-    while ((match = altCodeBlockRegex.exec(text)) !== null) {
-      const language = match[1] || 'txt';
-      const path = match[2];
-      const content = match[3].trim();
-      
-      console.log(`Found code block (alt format) - Language: ${language}, Path: ${path || 'not specified'}`);
-      
-      if (content) {
-        codeBlocks.push({ language, content, path });
+  // Try each pattern in order of specificity
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      // Different handling based on the pattern matched
+      if (pattern.toString().includes("path|filepath")) {
+        // Second pattern: ```language\npath: path/to/file.ext
+        const language = match[1] || 'txt';
+        const path = match[2];
+        const content = match[3].trim();
+        
+        if (content) {
+          console.log(`Found code block - Language: ${language}, Path from label: ${path || 'not specified'}`);
+          codeBlocks.push({ language, content, path });
+        }
+      } else if (pattern.toString().includes("\\[([^\\]]+)\\]")) {
+        // First pattern: ```language [path]
+        const language = match[1] || 'txt';
+        const path = match[2];
+        const content = match[3].trim();
+        
+        if (content) {
+          console.log(`Found code block - Language: ${language}, Path from brackets: ${path || 'not specified'}`);
+          codeBlocks.push({ language, content, path });
+        }
+      } else {
+        // Third pattern: simple ```language without path
+        const language = match[1] || 'txt';
+        const content = match[2].trim();
+        
+        if (content) {
+          console.log(`Found code block - Language: ${language}, No path specified`);
+          codeBlocks.push({ language, content });
+        }
       }
     }
-  }
-  
-  // If we still didn't find any with our regexes, let's try a more permissive approach
-  if (codeBlocks.length === 0) {
-    // Simple fallback regex that just looks for code blocks without paths
-    const fallbackRegex = /```(\w+)?\n([\s\S]*?)```/g;
     
-    while ((match = fallbackRegex.exec(text)) !== null) {
-      const language = match[1] || 'txt';
-      const content = match[2].trim();
-      
-      console.log(`Found code block (fallback) - Language: ${language}`);
-      
-      if (content) {
-        codeBlocks.push({ language, content });
-      }
+    // If we found blocks with this pattern, stop trying other patterns
+    if (codeBlocks.length > 0) {
+      break;
     }
   }
   
   console.log(`Total code blocks found: ${codeBlocks.length}`);
+  
+  // Infer paths for blocks without paths
+  for (let i = 0; i < codeBlocks.length; i++) {
+    if (!codeBlocks[i].path) {
+      codeBlocks[i].path = inferFilePath(codeBlocks[i]);
+      console.log(`Inferred path for block ${i+1}: ${codeBlocks[i].path}`);
+    }
+  }
+  
   return codeBlocks;
 }
 
@@ -104,6 +117,7 @@ export function inferFilePath(block: CodeBlock): string {
     jsx: '.jsx',
     tsx: '.tsx',
     python: '.py',
+    py: '.py',
     java: '.java',
     ruby: '.rb',
     go: '.go',
@@ -166,6 +180,15 @@ export function inferFilePath(block: CodeBlock): string {
       directory = 'src/lib/';
     } else if (block.content.includes('test(') || block.content.includes('describe(')) {
       directory = 'src/tests/';
+    }
+  } else if (['py', 'python'].includes(block.language.toLowerCase())) {
+    // For Python, handle common module patterns
+    if (block.content.includes('class') && block.content.includes('model')) {
+      directory = 'models/';
+    } else if (block.content.includes('def') && (block.content.includes('route') || block.content.includes('blueprint'))) {
+      directory = 'routes/';
+    } else if (block.content.includes('def') && (block.content.includes('service') || block.content.includes('utility'))) {
+      directory = 'services/';
     }
   }
 

@@ -1,4 +1,3 @@
-
 import { Octokit } from '@octokit/rest';
 
 interface GitHubConfig {
@@ -65,16 +64,19 @@ export class GitHubService {
     message: string,
     branch = 'main'
   ): Promise<void> {
-    console.log(`Creating/updating file ${path} on branch ${branch}`);
+    // Normalize the file path for GitHub API
+    const normalizedPath = path.replace(/^[/\\]+/, '').replace(/\\/g, '/');
+    
+    console.log(`Creating/updating file ${normalizedPath} on branch ${branch}`);
     try {
       // Get the current file (if it exists) to get the SHA
       let sha: string | undefined;
       try {
-        console.log(`Checking if file ${path} exists on branch ${branch}`);
+        console.log(`Checking if file ${normalizedPath} exists on branch ${branch}`);
         const { data } = await this.octokit.repos.getContent({
           owner: this.owner,
           repo: this.repo,
-          path,
+          path: normalizedPath,
           ref: branch,
         });
 
@@ -84,11 +86,13 @@ export class GitHubService {
         }
       } catch (error) {
         // File doesn't exist yet, which is fine
-        console.log(`File ${path} doesn't exist yet, will create new`);
+        console.log(`File ${normalizedPath} doesn't exist yet, will create new`);
+        // Check if parent directories exist and create if needed
+        await this.ensureDirectoryExists(normalizedPath, branch);
       }
 
       // Create or update the file
-      console.log(`Sending request to create/update ${path} on branch ${branch}`);
+      console.log(`Sending request to create/update ${normalizedPath} on branch ${branch}`);
       
       // Use browser-compatible base64 encoding
       const base64Content = btoa(unescape(encodeURIComponent(content)));
@@ -96,14 +100,14 @@ export class GitHubService {
       const response = await this.octokit.repos.createOrUpdateFileContents({
         owner: this.owner,
         repo: this.repo,
-        path,
+        path: normalizedPath,
         message,
         content: base64Content,
         branch,
         ...(sha ? { sha } : {}),
       });
       
-      console.log(`Successfully ${sha ? 'updated' : 'created'} file ${path} on branch ${branch}`);
+      console.log(`Successfully ${sha ? 'updated' : 'created'} file ${normalizedPath} on branch ${branch}`);
       console.log(`Commit URL: ${response.data.commit.html_url}`);
       return;
     } catch (error) {
@@ -120,18 +124,60 @@ export class GitHubService {
   }
 
   /**
+   * Ensure directory exists by creating a .gitkeep file if needed
+   * @param filePath Path to file that will be created
+   * @param branch Branch name
+   */
+  private async ensureDirectoryExists(filePath: string, branch: string): Promise<void> {
+    const dirPath = filePath.split('/').slice(0, -1).join('/');
+    
+    if (!dirPath) return; // No directory to create
+    
+    try {
+      // Check if directory exists
+      await this.octokit.repos.getContent({
+        owner: this.owner,
+        repo: this.repo,
+        path: dirPath,
+        ref: branch,
+      });
+      console.log(`Directory ${dirPath} already exists`);
+    } catch (error) {
+      console.log(`Directory ${dirPath} doesn't exist, creating it with a .gitkeep file`);
+      try {
+        // Create directory by adding a .gitkeep file
+        await this.octokit.repos.createOrUpdateFileContents({
+          owner: this.owner,
+          repo: this.repo,
+          path: `${dirPath}/.gitkeep`,
+          message: `chore: Create directory ${dirPath}`,
+          content: btoa(''), // empty file
+          branch,
+        });
+        console.log(`Successfully created directory ${dirPath}`);
+      } catch (dirError) {
+        console.error(`Failed to create directory ${dirPath}:`, dirError);
+        // Continue anyway, it might work if parent directory exists
+      }
+    }
+  }
+
+  /**
    * Get the contents of a file from the repository
    * @param path File path in the repository
    * @param ref Branch or commit SHA
    * @returns File content as string
    */
   async getFileContent(path: string, ref = 'main'): Promise<string> {
-    console.log(`Getting file content for ${path} from branch ${ref}`);
+    // Normalize the file path for GitHub API
+    const normalizedPath = path.replace(/^[/\\]+/, '').replace(/\\/g, '/');
+    
+    console.log(`Getting file content for ${normalizedPath} from branch ${ref}`);
     try {
       const { data } = await this.octokit.repos.getContent({
         owner: this.owner,
         repo: this.repo,
-        path,
+        path: normalizedPath,
         ref,
       });
 
@@ -142,13 +188,13 @@ export class GitHubService {
       if ('content' in data && typeof data.content === 'string') {
         // Use browser-compatible base64 decoding
         const content = decodeURIComponent(escape(atob(data.content)));
-        console.log(`Successfully retrieved file content for ${path}`);
+        console.log(`Successfully retrieved file content for ${normalizedPath}`);
         return content;
       } else {
         throw new Error('Invalid file content format received from GitHub API');
       }
     } catch (error) {
-      console.error(`Error getting file content for ${path}:`, error);
+      console.error(`Error getting file content for ${normalizedPath}:`, error);
       if (error instanceof Error) {
         console.error(`Error details: ${error.message}`);
         if ('response' in error) {
@@ -171,13 +217,16 @@ export class GitHubService {
     message: string,
     branch = 'main'
   ): Promise<void> {
-    console.log(`Deleting file ${path} on branch ${branch}`);
+    // Normalize the file path for GitHub API
+    const normalizedPath = path.replace(/^[/\\]+/, '').replace(/\\/g, '/');
+    
+    console.log(`Deleting file ${normalizedPath} on branch ${branch}`);
     try {
       // Get the current file's SHA
       const { data } = await this.octokit.repos.getContent({
         owner: this.owner,
         repo: this.repo,
-        path,
+        path: normalizedPath,
         ref: branch,
       });
 
@@ -189,14 +238,14 @@ export class GitHubService {
       await this.octokit.repos.deleteFile({
         owner: this.owner,
         repo: this.repo,
-        path,
+        path: normalizedPath,
         message,
         sha: data.sha,
         branch,
       });
-      console.log(`Successfully deleted file ${path} on branch ${branch}`);
+      console.log(`Successfully deleted file ${normalizedPath} on branch ${branch}`);
     } catch (error) {
-      console.error(`Error deleting file ${path}:`, error);
+      console.error(`Error deleting file ${normalizedPath}:`, error);
       if (error instanceof Error) {
         console.error(`Error details: ${error.message}`);
         if ('response' in error) {
@@ -215,12 +264,15 @@ export class GitHubService {
    * @returns Array of file objects
    */
   async listFiles(path: string = '', branch = 'main'): Promise<{name: string, path: string, type: string}[]> {
-    console.log(`Listing files in ${path || 'root'} on branch ${branch}`);
+    // Normalize the directory path for GitHub API
+    const normalizedPath = path.replace(/^[/\\]+/, '').replace(/\\/g, '/');
+    
+    console.log(`Listing files in ${normalizedPath || 'root'} on branch ${branch}`);
     try {
       const { data } = await this.octokit.repos.getContent({
         owner: this.owner,
         repo: this.repo,
-        path,
+        path: normalizedPath,
         ref: branch,
       });
 
@@ -234,7 +286,7 @@ export class GitHubService {
         type: item.type || 'file'
       }));
     } catch (error) {
-      console.error(`Error listing files in ${path}:`, error);
+      console.error(`Error listing files in ${normalizedPath}:`, error);
       throw error instanceof Error ? error : new Error('Failed to list files from repository');
     }
   }

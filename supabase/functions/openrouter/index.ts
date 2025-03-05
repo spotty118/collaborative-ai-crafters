@@ -53,17 +53,17 @@ serve(async (req) => {
       }
     }
     
-    // Add standard instructions for code formatting
-    fullSystemPrompt += ` IMPORTANT: When providing code examples or implementations, ALWAYS use markdown code blocks with language and file path in square brackets. Example: \`\`\`typescript [src/utils/helper.ts]\nconst helper = () => {};\n\`\`\`. This format is required for the code to be properly saved and used in the project.`;
+    // Enhanced instructions for code formatting
+    fullSystemPrompt += ` IMPORTANT: When providing code examples or implementations, ALWAYS use markdown code blocks with language and file path in square brackets. Example: \`\`\`typescript [src/utils/helper.ts]\nconst helper = () => {};\n\`\`\`. This format is required for the code to be properly saved and used in the project. Always include the file path in square brackets immediately after the language specification and before the newline that starts the code. The file path should be relative to the project root and use forward slashes.`;
     
     // Add specific task generation instructions if this looks like a GitHub analysis request
     if (prompt.includes('list') && prompt.includes('task') && projectContext.sourceUrl) {
       fullSystemPrompt += ` Format your response as a numbered list of specific, actionable tasks. Each task should start with a clear, concise title followed by a brief description of what needs to be done and why it would improve the project.`;
     }
 
-    // Add instructions for task execution
+    // Add detailed instructions for task execution
     if (prompt.includes('Execute the following task:')) {
-      fullSystemPrompt += ` Provide a detailed solution to the task. Include code snippets in markdown format with language and file path as shown: \`\`\`language [filepath]\ncode\n\`\`\`. Be thorough and practical in your implementation.`;
+      fullSystemPrompt += ` Provide a detailed solution to the task. Include code snippets in markdown format with language and file path as shown: \`\`\`language [filepath]\ncode\n\`\`\`. Be thorough and practical in your implementation. Always include the file path in your code blocks using the specified format. If you create multiple files, make sure each one is in its own separate code block with appropriate language and file path.`;
     }
     
     console.log('Sending request to OpenRouter API with model: google/gemini-2.0-flash-thinking-exp:free');
@@ -99,6 +99,18 @@ serve(async (req) => {
 
     const data = await response.json();
     console.log('OpenRouter response received successfully');
+    
+    // Process the response to extract and save code files
+    try {
+      if (data.choices && data.choices[0] && data.choices[0].message) {
+        const content = data.choices[0].message.content;
+        if (content && content.includes('```')) {
+          console.log('Detected code blocks in the response');
+        }
+      }
+    } catch (processError) {
+      console.error('Error processing response for code blocks:', processError);
+    }
     
     return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
