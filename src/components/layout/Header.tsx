@@ -1,8 +1,10 @@
 
-import React from "react";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Plus, GitBranch, Cpu, Download } from "lucide-react";
 import { toast } from "sonner";
+import { useParams } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
 
 interface HeaderProps {
   onNewProject: () => void;
@@ -10,34 +12,49 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ onNewProject, onImportProject }) => {
-  const handleDownloadProject = () => {
-    // This is a simplified example of how to download the current project files
-    // In a real implementation, we would fetch all project files and package them
+  const [isDownloading, setIsDownloading] = useState(false);
+  const { id: projectId } = useParams<{ id?: string }>();
+
+  const handleDownloadProject = async () => {
+    if (!projectId) {
+      toast.info("Please navigate to a project to download it.");
+      return;
+    }
+
+    setIsDownloading(true);
+    const toastId = toast.loading("Preparing project files for download...");
     
-    // For demonstration, we'll just show a toast notification
-    toast.info("Project download feature is coming soon!");
-    
-    // In a real implementation, you would:
-    // 1. Fetch all project files from your backend
-    // 2. Create a zip file containing these files
-    // 3. Trigger a download of this zip file
-    
-    // Example of what a real implementation might look like:
-    // fetch('/api/project/download')
-    //   .then(response => response.blob())
-    //   .then(blob => {
-    //     const url = window.URL.createObjectURL(blob);
-    //     const a = document.createElement('a');
-    //     a.href = url;
-    //     a.download = 'project.zip';
-    //     document.body.appendChild(a);
-    //     a.click();
-    //     a.remove();
-    //   })
-    //   .catch(error => {
-    //     toast.error("Failed to download project");
-    //     console.error("Download error:", error);
-    //   });
+    try {
+      // Call the Supabase Edge Function to generate the zip file
+      const { data, error } = await supabase.functions.invoke('download-project', {
+        body: { projectId },
+      });
+      
+      if (error) {
+        throw new Error(error.message);
+      }
+      
+      if (!data || !data.dataURI) {
+        throw new Error('Failed to generate project download.');
+      }
+      
+      // Create a download link from the data URI
+      const a = document.createElement('a');
+      a.href = data.dataURI;
+      a.download = data.filename || 'project.zip';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      
+      toast.dismiss(toastId);
+      toast.success("Project downloaded successfully!");
+    } catch (error) {
+      console.error("Download error:", error);
+      toast.dismiss(toastId);
+      toast.error(`Failed to download project: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   return (
@@ -53,9 +70,10 @@ const Header: React.FC<HeaderProps> = ({ onNewProject, onImportProject }) => {
             size="sm"
             className="flex items-center"
             onClick={handleDownloadProject}
+            disabled={isDownloading || !projectId}
           >
             <Download className="mr-2 h-4 w-4" />
-            Download Project
+            {isDownloading ? "Preparing..." : "Download Project"}
           </Button>
           <Button
             variant="outline"

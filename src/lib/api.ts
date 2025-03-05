@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import { 
   Project, Agent, Task, Message, CodeFile, 
@@ -107,6 +106,21 @@ export const updateProject = async (id: string, updates: Partial<ProjectDB>): Pr
     updated_at: data.updated_at,
     mode: data.source_type ? 'existing' : 'new'
   };
+};
+
+// Fix the current error by adding a function to check if a project ID exists
+export const checkProjectExists = async (id: string | number): Promise<boolean> => {
+  // Convert id to string if it's a number
+  const projectId = typeof id === 'number' ? id.toString() : id;
+  
+  const { data, error } = await supabase
+    .from('projects')
+    .select('id')
+    .eq('id', projectId)
+    .single();
+  
+  if (error) return false;
+  return !!data;
 };
 
 // Agents API
