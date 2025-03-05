@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
 import Dashboard from "@/components/layout/Dashboard";
 import ProjectSetup from "@/components/layout/ProjectSetup";
+import GitHubIntegrationDialog from "@/components/github/GitHubIntegrationDialog";
 import { Agent, Task, Message, Project, MessageDB, TaskDB } from "@/lib/types";
 import { toast } from "sonner";
 import { 
@@ -21,6 +22,7 @@ import { sendAgentPrompt } from "@/lib/openrouter";
 const Index = () => {
   const queryClient = useQueryClient();
   const [isProjectSetupOpen, setIsProjectSetupOpen] = useState(false);
+  const [isGithubDialogOpen, setIsGithubDialogOpen] = useState(false);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [activeChat, setActiveChat] = useState<string | null>(null);
 
@@ -340,6 +342,10 @@ const Index = () => {
     setIsProjectSetupOpen(false);
   };
 
+  const handleOpenGithubDialog = () => {
+    setIsGithubDialogOpen(true);
+  };
+
   if (loadingProjects && !projectsError) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -356,6 +362,8 @@ const Index = () => {
       <Header
         onNewProject={() => setIsProjectSetupOpen(true)}
         onImportProject={() => setIsProjectSetupOpen(true)}
+        onGithubPush={activeProject ? handleOpenGithubDialog : undefined}
+        hasActiveProject={!!activeProject}
       />
       
       {activeProject ? (
@@ -402,6 +410,12 @@ const Index = () => {
         isOpen={isProjectSetupOpen}
         onClose={() => setIsProjectSetupOpen(false)}
         onCreateProject={handleCreateProject}
+      />
+      
+      <GitHubIntegrationDialog
+        isOpen={isGithubDialogOpen}
+        onClose={() => setIsGithubDialogOpen(false)}
+        project={activeProject}
       />
     </div>
   );
