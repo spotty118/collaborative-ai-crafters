@@ -57,6 +57,11 @@ serve(async (req) => {
     if (prompt.includes('list') && prompt.includes('task') && projectContext.sourceUrl) {
       fullSystemPrompt += ` Format your response as a numbered list of specific, actionable tasks. Each task should start with a clear, concise title followed by a brief description of what needs to be done and why it would improve the project.`;
     }
+
+    // Add instructions for task execution
+    if (prompt.includes('Execute the following task:')) {
+      fullSystemPrompt += ` Provide a detailed solution to the task. Include code snippets in markdown format when applicable. Be thorough and practical in your implementation.`;
+    }
     
     console.log('Sending request to OpenRouter API with model: google/gemini-2.0-flash-thinking-exp:free');
     console.log('System prompt:', fullSystemPrompt);

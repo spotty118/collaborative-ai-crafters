@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, createAgents, updateAgent } from "@/lib/api";
+import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, createAgents, updateAgent, updateTask } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -99,6 +98,14 @@ const Project: React.FC = () => {
     },
     onError: (error) => {
       toast.error("Failed to create agents: " + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  });
+
+  const updateTaskMutation = useMutation({
+    mutationFn: ({ taskId, updates }: { taskId: string, updates: Partial<Task> }) => 
+      updateTask(taskId, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks', id] });
     }
   });
 
@@ -366,6 +373,101 @@ const Project: React.FC = () => {
     }
   };
 
+  const handleExecuteTask = async (taskId: string, agentId: string) => {
+    const agent = agents.find(a => a.id === agentId);
+    const task = tasks.find(t => t.id === taskId);
+    
+    if (!agent || !task) {
+      toast.error("Could not find agent or task");
+      return;
+    }
+    
+    // Update task status to in_progress
+    const loadingToastId = toast.loading(`${agent.name} is executing task: ${task.title}...`);
+    
+    try {
+      // Update task status
+      await updateTaskMutation.mutate({
+        taskId: task.id,
+        updates: {
+          status: "in_progress" as const
+        }
+      });
+      
+      // Start the agent if not already running
+      if (agent.status !== "running") {
+        await updateAgentMutation.mutate({
+          agentId,
+          updates: {
+            status: "running" as const,
+            progress: 10
+          }
+        });
+      }
+      
+      // Set the active chat to this agent
+      setActiveChat(agentId);
+      
+      if (id && project) {
+        // Create a message about starting the task
+        await createMessageMutation.mutate({
+          project_id: id,
+          content: `I'm starting to work on task: "${task.title}". ${task.description}`,
+          sender: agent.name,
+          type: "text"
+        });
+        
+        // Send the task to the agent via OpenRouter
+        const taskPrompt = `Execute the following task: ${task.title}. ${task.description}. Provide a detailed approach to complete this task. If code implementation is needed, provide it in markdown code blocks.`;
+        
+        const response = await sendAgentPrompt(agent, taskPrompt, project);
+        
+        // Create a message with the agent's response
+        await createMessageMutation.mutate({
+          project_id: id,
+          content: response,
+          sender: agent.name,
+          type: "text"
+        });
+        
+        // If the response seems successful, update the task status
+        if (!response.toLowerCase().includes("error") && !response.toLowerCase().includes("failed")) {
+          await updateTaskMutation.mutate({
+            taskId: task.id,
+            updates: {
+              status: "completed" as const
+            }
+          });
+          
+          toast.dismiss(loadingToastId);
+          toast.success(`${agent.name} completed task: ${task.title}`);
+        } else {
+          await updateTaskMutation.mutate({
+            taskId: task.id,
+            updates: {
+              status: "failed" as const
+            }
+          });
+          
+          toast.dismiss(loadingToastId);
+          toast.error(`${agent.name} encountered an error executing the task`);
+        }
+      }
+    } catch (error) {
+      toast.dismiss(loadingToastId);
+      toast.error(`Failed to execute task: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Error executing task:', error);
+      
+      // Update task status to failed
+      await updateTaskMutation.mutate({
+        taskId: task.id,
+        updates: {
+          status: "failed" as const
+        }
+      });
+    }
+  };
+
   if (!id || loadingProject || projectError) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -479,6 +581,7 @@ const Project: React.FC = () => {
               onStopAgent={handleStopAgent}
               onChatWithAgent={handleChatWithAgent}
               onSendMessage={handleSendMessage}
+              onExecuteTask={handleExecuteTask}
               project={{
                 name: project?.name || '',
                 description: project?.description || '',
