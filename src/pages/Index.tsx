@@ -1,10 +1,9 @@
-
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getProjects, createProject } from "@/lib/api";
 import Header from "@/components/layout/Header";
-import ProjectCard from "@/components/ProjectCard";
+import { ProjectCard } from "@/components/ProjectCard";
 import ProjectSetup from "@/components/layout/ProjectSetup";
 import { Project } from "@/lib/types";
 import { toast } from "sonner";
@@ -60,8 +59,9 @@ const Index: React.FC = () => {
       <main className="container mx-auto px-4 py-8">
         {showNewProject ? (
           <ProjectSetup 
-            onSubmit={handleCreateProject}
-            onCancel={() => setShowNewProject(false)}
+            isOpen={true}
+            onClose={() => setShowNewProject(false)}
+            onCreateProject={handleCreateProject}
           />
         ) : (
           <div>
