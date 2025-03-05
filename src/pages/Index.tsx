@@ -12,11 +12,11 @@ import {
   createProject, 
   createAgents,
   getAgents, 
-  updateAgent, 
   getTasks, 
   getMessages, 
   createMessage,
-  updateTask
+  updateTask,
+  updateAgent
 } from "@/lib/api";
 import { sendAgentPrompt } from "@/lib/openrouter";
 import { Button } from "@/components/ui/button";
