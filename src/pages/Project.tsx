@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, createAgents } from "@/lib/api";
+import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, createAgents, updateAgent } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Dashboard from "@/components/layout/Dashboard";
-import { sendAgentPrompt } from "@/lib/openrouter";
+import { sendAgentPrompt, analyzeGitHubAndCreateTasks } from "@/lib/openrouter";
 import { CodeFile, Message, Project as ProjectType, Agent, Task } from "@/lib/types";
 import { useGitHub } from "@/contexts/GitHubContext";
 import { FileEditor } from "@/components/FileEditor";
@@ -97,6 +97,14 @@ const Project: React.FC = () => {
     mutationFn: (messageData: Message) => createMessage(messageData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', id] });
+    }
+  });
+
+  const updateAgentMutation = useMutation({
+    mutationFn: ({ id, updates }: { id: string, updates: Partial<Agent> }) => 
+      updateAgent(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agents', id] });
     }
   });
 
@@ -207,6 +215,84 @@ const Project: React.FC = () => {
     
     setActiveChat(agentId);
     toast.info(`Chat activated with ${agent.name}`);
+  };
+
+  const handleStartAgent = async (agentId: string) => {
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent) return;
+    
+    updateAgentMutation.mutate({
+      id: agentId,
+      updates: { 
+        status: 'working',
+        progress: 10
+      }
+    });
+    
+    toast.info(`Starting ${agent.name}...`);
+    
+    try {
+      if (project?.sourceUrl && github.isConnected) {
+        const success = await analyzeGitHubAndCreateTasks(agent, project);
+        if (success) {
+          updateAgentMutation.mutate({
+            id: agentId,
+            updates: { 
+              status: 'completed',
+              progress: 100
+            }
+          });
+          
+          toast.success(`${agent.name} completed analysis and created tasks`);
+          queryClient.invalidateQueries({ queryKey: ['tasks', id] });
+        } else {
+          updateAgentMutation.mutate({
+            id: agentId,
+            updates: { 
+              status: 'failed',
+              progress: 0
+            }
+          });
+          toast.error(`${agent.name} failed to complete the task`);
+        }
+      } else {
+        setTimeout(() => {
+          updateAgentMutation.mutate({
+            id: agentId,
+            updates: { 
+              status: 'completed',
+              progress: 100
+            }
+          });
+          toast.success(`${agent.name} completed its task`);
+        }, 3000);
+      }
+    } catch (error) {
+      console.error('Error starting agent:', error);
+      updateAgentMutation.mutate({
+        id: agentId,
+        updates: { 
+          status: 'failed',
+          progress: 0
+        }
+      });
+      toast.error(`${agent.name} encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleStopAgent = (agentId: string) => {
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent) return;
+    
+    updateAgentMutation.mutate({
+      id: agentId,
+      updates: { 
+        status: 'idle',
+        progress: 0
+      }
+    });
+    
+    toast.info(`${agent.name} has been stopped`);
   };
 
   const handleSendMessage = async (message: string) => {
@@ -359,8 +445,8 @@ const Project: React.FC = () => {
               tasks={tasks}
               messages={messages}
               activeChat={activeChat}
-              onStartAgent={() => {}}
-              onStopAgent={() => {}}
+              onStartAgent={handleStartAgent}
+              onStopAgent={handleStopAgent}
               onChatWithAgent={handleChatWithAgent}
               onSendMessage={handleSendMessage}
               project={{
