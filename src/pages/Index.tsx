@@ -13,7 +13,8 @@ import {
   updateAgent, 
   getTasks, 
   getMessages, 
-  createMessage 
+  createMessage,
+  updateTask
 } from "@/lib/api";
 import { sendAgentPrompt } from "@/lib/openrouter";
 
@@ -112,6 +113,15 @@ const Index = () => {
     }
   });
 
+  const updateTaskMutation = useMutation({
+    mutationFn: (variables: { id: string } & Partial<Task>) => {
+      return updateTask(variables.id, variables);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks', activeProject?.id] });
+    }
+  });
+
   const handleStartAgent = (agentId: string) => {
     const agent = agents.find(a => a.id === agentId);
     if (!agent || !activeProject) return;
@@ -147,6 +157,18 @@ const Index = () => {
       });
     }
     
+    // Execute pending tasks assigned to this agent
+    const agentTasks = tasks.filter(task => 
+      task.assigned_to === agentId && task.status === 'pending'
+    );
+    
+    if (agentTasks.length > 0) {
+      const executionToast = toast.loading(`${agent?.name} is starting to work on ${agentTasks.length} pending tasks...`);
+      
+      // Start working on tasks one by one
+      executeAgentTasks(agent as Agent, agentTasks, executionToast);
+    }
+    
     let progress = 10;
     const interval = setInterval(() => {
       progress += 10;
@@ -165,6 +187,77 @@ const Index = () => {
         });
       }
     }, 2000);
+  };
+
+  const executeAgentTasks = async (agent: Agent, tasks: Task[], toastId: string) => {
+    if (!activeProject || tasks.length === 0) {
+      toast.dismiss(toastId);
+      return;
+    }
+
+    // Take the first task and start working on it
+    const currentTask = tasks[0];
+    const remainingTasks = tasks.slice(1);
+    
+    // Update task status to in_progress
+    updateTaskMutation.mutate({ 
+      id: currentTask.id, 
+      status: 'in_progress' 
+    });
+    
+    toast.dismiss(toastId);
+    const taskToast = toast.loading(`${agent.name} is working on task: ${currentTask.title}`);
+    
+    try {
+      // Generate prompt for the agent to work on the task
+      const taskPrompt = `Execute this task: ${currentTask.title}. ${currentTask.description || ''} Provide a detailed solution and implementation steps.`;
+      
+      // Get response from agent
+      const response = await sendAgentPrompt(agent, taskPrompt, activeProject);
+      
+      // Create a message for the agent's response
+      createMessageMutation.mutate({
+        project_id: activeProject.id,
+        content: `Completed task: ${currentTask.title}\n\n${response}`,
+        sender: agent.name,
+        type: "text"
+      });
+      
+      // Mark task as completed
+      updateTaskMutation.mutate({ 
+        id: currentTask.id, 
+        status: 'completed' 
+      });
+      
+      toast.dismiss(taskToast);
+      toast.success(`${agent.name} completed task: ${currentTask.title}`);
+      
+      // Continue with next task after a short delay
+      if (remainingTasks.length > 0) {
+        setTimeout(() => {
+          executeAgentTasks(agent, remainingTasks, toast.loading(`${agent.name} is continuing with next task...`));
+        }, 1000);
+      }
+    } catch (error) {
+      console.error('Error executing task:', error);
+      
+      // Mark task as failed
+      updateTaskMutation.mutate({ 
+        id: currentTask.id, 
+        status: 'failed' 
+      });
+      
+      toast.dismiss(taskToast);
+      toast.error(`${agent.name} failed to complete task: ${currentTask.title}`);
+      
+      // Create error message
+      createMessageMutation.mutate({
+        project_id: activeProject.id,
+        content: `Failed to complete task: ${currentTask.title}\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        sender: agent.name,
+        type: "text"
+      });
+    }
   };
 
   const handleStopAgent = (agentId: string) => {
