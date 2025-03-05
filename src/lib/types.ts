@@ -11,6 +11,7 @@ export interface Agent {
   status: AgentStatus;
   progress: number;
   avatar?: string;
+  project_id?: string;
 }
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
@@ -20,9 +21,12 @@ export interface Task {
   title: string;
   description: string;
   status: TaskStatus;
-  agentId: string;
-  createdAt: Date;
-  updatedAt: Date;
+  assigned_to?: string;
+  priority: 'low' | 'medium' | 'high';
+  project_id: string;
+  created_at: Date;
+  updated_at: Date;
+  completed_at?: Date;
   dependencies?: string[];
 }
 
@@ -32,22 +36,35 @@ export interface Project {
   id: string;
   name: string;
   description: string;
-  mode: ProjectMode;
-  createdAt: Date;
-  updatedAt: Date;
-  techStack: {
-    frontend?: string;
-    backend?: string;
-    database?: string;
-    deployment?: string;
-  };
-  tasks: Task[];
+  status: string;
+  progress: number;
+  tech_stack: string[];
+  source_type?: string;
+  source_url?: string;
+  requirements?: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface Message {
   id: string;
   content: string;
   sender: string;
-  timestamp: Date;
-  agentId?: string;
+  type: string;
+  code_language?: string;
+  project_id: string;
+  created_at: Date;
+}
+
+export interface CodeFile {
+  id: string;
+  name: string;
+  path: string;
+  content: string;
+  language?: string;
+  created_by: string;
+  last_modified_by: string;
+  project_id: string;
+  created_at: Date;
+  updated_at: Date;
 }

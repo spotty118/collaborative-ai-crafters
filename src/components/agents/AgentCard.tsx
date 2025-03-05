@@ -12,9 +12,10 @@ interface AgentCardProps {
   onChat: (agentId: string) => void;
   onStart: (agentId: string) => void;
   onStop: (agentId: string) => void;
+  isActive?: boolean;
 }
 
-const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop }) => {
+const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, isActive = false }) => {
   const [isHovered, setIsHovered] = useState(false);
 
   const getAgentColorClass = () => {
@@ -36,7 +37,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop })
 
   return (
     <Card 
-      className={`agent-card overflow-hidden border-t-4 ${getAgentColorClass()} transition-all duration-300 ease-in-out agent-card-shadow hover:translate-y-[-4px]`}
+      className={`agent-card overflow-hidden border-t-4 ${getAgentColorClass()} transition-all duration-300 ease-in-out agent-card-shadow hover:translate-y-[-4px] ${isActive ? 'ring-2 ring-primary/50' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -61,7 +62,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop })
       </CardContent>
       <CardFooter className="p-4 pt-0 flex gap-2">
         <Button
-          variant="outline"
+          variant={isActive ? "default" : "outline"}
           size="sm"
           className="flex-1 text-xs"
           onClick={() => onChat(agent.id)}

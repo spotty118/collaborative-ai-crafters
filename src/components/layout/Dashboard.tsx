@@ -13,37 +13,40 @@ interface DashboardProps {
   agents: Agent[];
   tasks: Task[];
   messages: Message[];
+  activeChat: string | null;
   onStartAgent: (agentId: string) => void;
   onStopAgent: (agentId: string) => void;
   onChatWithAgent: (agentId: string) => void;
+  onSendMessage: (message: string) => void;
   project: {
     name: string;
     description: string;
     mode: string;
   };
+  isLoading: {
+    agents: boolean;
+    tasks: boolean;
+    messages: boolean;
+  }
 }
 
 const Dashboard: React.FC<DashboardProps> = ({
   agents,
   tasks,
   messages,
+  activeChat,
   onStartAgent,
   onStopAgent,
   onChatWithAgent,
-  project
+  onSendMessage,
+  project,
+  isLoading
 }) => {
   const [chatMessage, setChatMessage] = useState("");
-  const [activeChat, setActiveChat] = useState<string | null>(null);
-
-  const handleChatWithAgent = (agentId: string) => {
-    setActiveChat(agentId);
-    onChatWithAgent(agentId);
-  };
 
   const handleSendMessage = () => {
     if (chatMessage.trim() && activeChat) {
-      // This would call an API to send the message
-      console.log(`Sending message to agent ${activeChat}: ${chatMessage}`);
+      onSendMessage(chatMessage);
       setChatMessage("");
     }
   };
@@ -54,9 +57,11 @@ const Dashboard: React.FC<DashboardProps> = ({
     return agent ? agent.name : "";
   };
 
-  const filteredMessages = activeChat
-    ? messages.filter(m => m.agentId === activeChat)
-    : messages;
+  const filteredMessages = messages.filter(m => 
+    !activeChat || // Show all messages when no agent is selected
+    m.sender === "You" || // Always show user messages
+    m.sender === getActiveAgentName() // Show only selected agent's messages
+  );
 
   return (
     <div className="flex h-[calc(100vh-73px)]">
@@ -72,17 +77,24 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
         
         <h2 className="text-lg font-semibold mb-3">Agents</h2>
-        <div className="grid gap-3">
-          {agents.map((agent) => (
-            <AgentCard
-              key={agent.id}
-              agent={agent}
-              onChat={handleChatWithAgent}
-              onStart={onStartAgent}
-              onStop={onStopAgent}
-            />
-          ))}
-        </div>
+        {isLoading.agents ? (
+          <div className="flex justify-center py-8">
+            <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {agents.map((agent) => (
+              <AgentCard
+                key={agent.id}
+                agent={agent}
+                onChat={onChatWithAgent}
+                onStart={onStartAgent}
+                onStop={onStopAgent}
+                isActive={activeChat === agent.id}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Main content */}
@@ -101,7 +113,11 @@ const Dashboard: React.FC<DashboardProps> = ({
             
             <ScrollArea className="flex-1 p-4">
               <div className="space-y-4">
-                {filteredMessages.length === 0 ? (
+                {isLoading.messages ? (
+                  <div className="flex justify-center py-8">
+                    <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
+                  </div>
+                ) : filteredMessages.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     No messages yet. Start a conversation with an agent.
                   </div>
@@ -111,7 +127,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                       <div className="flex items-start gap-2 mb-1">
                         <div className="font-medium text-sm">{message.sender}</div>
                         <div className="text-xs text-gray-500 pt-1">
-                          {new Date(message.timestamp).toLocaleTimeString([], {
+                          {new Date(message.created_at).toLocaleTimeString([], {
                             hour: "2-digit",
                             minute: "2-digit"
                           })}
@@ -154,7 +170,13 @@ const Dashboard: React.FC<DashboardProps> = ({
           
           {/* Tasks section */}
           <div className="p-4 bg-gray-50 overflow-auto">
-            <TaskList tasks={tasks} />
+            {isLoading.tasks ? (
+              <div className="flex justify-center py-8">
+                <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
+              </div>
+            ) : (
+              <TaskList tasks={tasks} />
+            )}
           </div>
         </div>
       </div>
