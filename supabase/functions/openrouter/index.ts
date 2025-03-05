@@ -48,13 +48,13 @@ serve(async (req) => {
       fullSystemPrompt += ` Project context: ${JSON.stringify(projectContext)}`;
       
       // Add specific GitHub context if available
-      if (projectContext.source_url && projectContext.source_url.includes('github.com')) {
-        fullSystemPrompt += ` Please analyze the GitHub repository at ${projectContext.source_url} and provide specific suggestions for improvements based on your role as the ${agentType} agent. When creating tasks, list them clearly with numbers (1., 2., etc.) or bullet points. Each task should have a clear title and description. Collaborate with other agents to create a comprehensive improvement plan.`;
+      if (projectContext.sourceUrl && projectContext.sourceUrl.includes('github.com')) {
+        fullSystemPrompt += ` Please analyze the GitHub repository at ${projectContext.sourceUrl} and provide specific suggestions for improvements based on your role as the ${agentType} agent. When creating tasks, list them clearly with numbers (1., 2., etc.) or bullet points. Each task should have a clear title and description. Collaborate with other agents to create a comprehensive improvement plan.`;
       }
     }
     
     // Add specific task generation instructions if this looks like a GitHub analysis request
-    if (prompt.includes('list') && prompt.includes('task') && projectContext.source_url) {
+    if (prompt.includes('list') && prompt.includes('task') && projectContext.sourceUrl) {
       fullSystemPrompt += ` Format your response as a numbered list of specific, actionable tasks. Each task should start with a clear, concise title followed by a brief description of what needs to be done and why it would improve the project.`;
     }
     

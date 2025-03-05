@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -8,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Dashboard from "@/components/layout/Dashboard";
-import { sendAgentPrompt } from "@/lib/openrouter";
+import { sendAgentPrompt, analyzeGitHubAndCreateTasks } from "@/lib/openrouter";
 import { CodeFile, Message, Project as ProjectType, Agent, Task } from "@/lib/types";
 import { useGitHub } from "@/contexts/GitHubContext";
 import { FileEditor } from "@/components/FileEditor";
@@ -234,7 +235,7 @@ const Project: React.FC = () => {
       await updateAgentMutation.mutate({
         agentId,
         updates: {
-          status: 'running',
+          status: "running" as const,
           progress: 10
         }
       });
@@ -247,12 +248,43 @@ const Project: React.FC = () => {
       if (id && project) {
         const message = `I'm starting to work on this project. I'll analyze the requirements and get started.`;
         
-        createMessageMutation.mutate({
+        // Create the initial message
+        await createMessageMutation.mutate({
           project_id: id,
           content: message,
           sender: agent.name,
           type: "text"
         });
+        
+        // If it's a GitHub project, trigger analysis
+        if (project.sourceUrl && project.sourceUrl.includes('github.com')) {
+          console.log(`Starting GitHub analysis with ${agent.name}`);
+          const analysisToastId = toast.loading(`${agent.name} is analyzing the GitHub repository...`);
+          
+          try {
+            // Send the initial prompt to OpenRouter via the agent
+            const initialPrompt = `Analyze the GitHub repository at ${project.sourceUrl} and provide an initial assessment based on your role as the ${agent.type} agent.`;
+            const response = await sendAgentPrompt(agent, initialPrompt, project);
+            
+            // Create a message with the response
+            await createMessageMutation.mutate({
+              project_id: id,
+              content: response,
+              sender: agent.name,
+              type: "text"
+            });
+            
+            // Try to create tasks based on the analysis
+            await analyzeGitHubAndCreateTasks(agent, project);
+            
+            toast.dismiss(analysisToastId);
+            toast.success(`${agent.name} completed initial analysis`);
+          } catch (error) {
+            toast.dismiss(analysisToastId);
+            toast.error(`${agent.name} encountered an error during analysis: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            console.error('Error in agent analysis:', error);
+          }
+        }
       }
     } catch (error) {
       toast.dismiss(loadingToastId);
@@ -271,7 +303,7 @@ const Project: React.FC = () => {
       await updateAgentMutation.mutate({
         agentId,
         updates: {
-          status: 'idle'
+          status: "idle" as const
         }
       });
       
