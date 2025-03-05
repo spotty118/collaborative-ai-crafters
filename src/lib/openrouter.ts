@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project, CodeFileDB } from '@/lib/types';
 import { createTask, createCodeFile, createMessage, getAgents } from './api';
@@ -195,11 +194,18 @@ export const simulateAgentCommunication = async (
     }
     
     // Get response from target agent
-    const response = await sendAgentPrompt(
-      targetAgent,
-      responsePrompt,
-      project
-    );
+    let response;
+    try {
+      response = await sendAgentPrompt(
+        targetAgent,
+        responsePrompt,
+        project
+      );
+    } catch (error) {
+      console.warn(`Error getting response from ${targetAgent.name}:`, error);
+      // Fallback response to avoid breaking the flow
+      response = `I'm currently busy processing other tasks. I'll review your message and get back to you shortly. [Communication throttled due to API rate limits]`;
+    }
     
     // Create a message from target agent back to source agent
     await createMessage({
@@ -211,57 +217,90 @@ export const simulateAgentCommunication = async (
     
     console.log(`${targetAgent.name} responded to ${sourceAgent.name}`);
     
-    // If architect is involved, have them initiate further actions
-    if (targetAgent.type === 'architect' || sourceAgent.type === 'architect') {
-      setTimeout(() => {
-        const architectAgent = targetAgent.type === 'architect' ? targetAgent : sourceAgent;
-        const otherAgents = ['frontend', 'backend', 'testing', 'devops'].filter(
-          type => type !== (sourceAgent.type === 'architect' ? targetAgent.type : sourceAgent.type)
-        );
+    // Important: Ensure ongoing conversation by having a higher chance of continuation
+    // This is the key change to prevent conversations from stopping
+    setTimeout(() => {
+      // Ensure project.agents exists before using it
+      const continueConversation = async () => {
+        const agents = project.agents || await getAgents(project.id);
         
-        // Ensure project.agents exists before using it
-        if (project.agents && project.agents.length > 0) {
-          // 50% chance of continuing the conversation by delegating to another agent
-          if (Math.random() > 0.5 && otherAgents.length > 0) {
-            const randomType = otherAgents[Math.floor(Math.random() * otherAgents.length)];
-            const foundAgent = project.agents.find(a => a.type === randomType);
+        // 70% chance to continue conversation between the same agents (higher than before)
+        if (Math.random() < 0.7) {
+          // For round-trip conversations, flip the source and target
+          try {
+            // Generate a continuation message based on the agent types
+            let continuationMessage = "";
+            if (targetAgent.type === 'architect') {
+              // Architect gives more direct, task-oriented responses
+              continuationMessage = `Based on your message, I need more details about ${sourceAgent.type === 'frontend' ? 'the UI components' : 
+                sourceAgent.type === 'backend' ? 'the API structure' : 
+                sourceAgent.type === 'testing' ? 'the test coverage' : 'the deployment process'} you're working on. Let's continue our collaboration.`;
+            } else {
+              // Non-architect agents ask for more guidance
+              continuationMessage = `Thank you for the information. I have more questions about implementing this. Can you provide more specific guidance on ${
+                targetAgent.type === 'frontend' ? 'UI component structure' : 
+                targetAgent.type === 'backend' ? 'API endpoints' : 
+                targetAgent.type === 'testing' ? 'test strategy' : 'deployment configuration'
+              }?`;
+            }
+            
+            // Continue conversation with the same agents but flipped roles
+            await simulateAgentCommunication(
+              targetAgent, // Now the original target becomes the source
+              sourceAgent, // The original source becomes the target
+              continuationMessage,
+              { ...project, agents } // Make sure agents is available in project
+            );
+          } catch (error) {
+            console.warn('Error continuing conversation:', error);
+            // Even if this conversation fails, the overall system continues
+          }
+        } else if (sourceAgent.type === 'architect' || targetAgent.type === 'architect') {
+          // If architect was involved, have them initiate conversation with another agent
+          const architectAgent = sourceAgent.type === 'architect' ? sourceAgent : targetAgent;
+          const otherAgentTypes = ['frontend', 'backend', 'testing', 'devops'].filter(
+            type => type !== (sourceAgent.type === 'architect' ? targetAgent.type : sourceAgent.type)
+          );
+          
+          if (otherAgentTypes.length > 0) {
+            const randomType = otherAgentTypes[Math.floor(Math.random() * otherAgentTypes.length)];
+            const foundAgent = agents.find(a => a.type === randomType);
             
             if (foundAgent) {
-              simulateAgentCommunication(
-                architectAgent,
-                foundAgent,
-                `Based on my conversation with ${sourceAgent.type === 'architect' ? targetAgent.name : sourceAgent.name}, I need you to focus on ${randomType === 'frontend' ? 'user interface components' : 
-                  randomType === 'backend' ? 'API implementation' : 
-                  randomType === 'testing' ? 'test coverage' : 'deployment configuration'}.`,
-                project
-              );
-            }
-          }
-        } else {
-          console.log("No agents array found in project object, fetching agents...");
-          // Fallback to fetch agents if not in project object
-          getAgents(project.id).then(agents => {
-            if (agents && agents.length > 0) {
-              const randomType = otherAgents[Math.floor(Math.random() * otherAgents.length)];
-              const foundAgent = agents.find(a => a.type === randomType);
-              
-              if (foundAgent) {
-                simulateAgentCommunication(
+              try {
+                await simulateAgentCommunication(
                   architectAgent,
                   foundAgent,
-                  `I need to delegate tasks related to ${randomType} specialization.`,
-                  {...project, agents} // Add agents to project temporarily
+                  `Let's coordinate our efforts. Based on my conversation with ${sourceAgent.type === 'architect' ? targetAgent.name : sourceAgent.name}, I need you to focus on ${randomType === 'frontend' ? 'UI component implementation' : 
+                    randomType === 'backend' ? 'API endpoint development' : 
+                    randomType === 'testing' ? 'test suite expansion' : 'CI/CD pipeline enhancement'}.`,
+                  { ...project, agents } // Make sure agents is available in project
                 );
+              } catch (error) {
+                console.warn('Error in architect delegation:', error);
               }
             }
-          }).catch(error => {
-            console.error("Error fetching agents:", error);
-          });
+          }
         }
-      }, 5000); // 5 second delay before initiating further communication
-    }
+      };
+      
+      continueConversation().catch(error => {
+        console.error("Error in continuing conversation flow:", error);
+      });
+    }, 7000); // Slightly longer delay to avoid rate limits
   } catch (error) {
     console.error('Error in agent communication:', error);
+    // Adding error handling to avoid complete breakdown in agent communication
+    try {
+      await createMessage({
+        project_id: project.id,
+        content: `Communication interrupted due to system constraints. Will resume shortly. [Error: ${error instanceof Error ? error.message : 'Unknown error'}]`,
+        sender: 'System',
+        type: "text"
+      });
+    } catch (innerError) {
+      console.error('Failed to send error message:', innerError);
+    }
   }
 };
 
@@ -577,5 +616,39 @@ export const updateOpenRouterForArchitectLeadership = async (project: Project): 
     }
   } catch (error) {
     console.error('Error establishing architect leadership:', error);
+  }
+};
+
+/**
+ * Handle rate limiting when communicating with the OpenRouter API
+ */
+export const handleRateLimiting = async (
+  project: Project
+): Promise<void> => {
+  if (!project.id) return;
+  
+  try {
+    // Log rate limiting issue
+    await createMessage({
+      project_id: project.id,
+      content: "The AI service is experiencing high demand. Agents will communicate at a reduced frequency to ensure continuous operation.",
+      sender: "System",
+      type: "text"
+    });
+    
+    // Get architect agent
+    const agents = project.agents || await getAgents(project.id);
+    const architectAgent = agents.find(a => a.type === 'architect');
+    
+    if (architectAgent) {
+      await createMessage({
+        project_id: project.id,
+        content: "Due to API rate limits, I'll be coordinating our team's communication more efficiently. We'll focus on high-priority tasks while respecting system constraints.",
+        sender: architectAgent.name,
+        type: "text"
+      });
+    }
+  } catch (error) {
+    console.error('Error handling rate limiting:', error);
   }
 };

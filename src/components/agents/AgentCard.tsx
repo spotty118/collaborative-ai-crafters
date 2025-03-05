@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { Agent } from "@/lib/types";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -17,6 +18,7 @@ interface AgentCardProps {
 const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, isActive = false }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [progressValue, setProgressValue] = useState(0);
+  const [animating, setAnimating] = useState(false);
   
   // Smoothly animate progress changes
   useEffect(() => {
@@ -24,6 +26,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, i
     setProgressValue(prev => {
       // If the difference is large, start at a minimum value to show animation
       if (agent.progress > prev + 20) {
+        setAnimating(true);
         return prev > 0 ? prev : 5;
       }
       return prev;
@@ -32,6 +35,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, i
     // Animate to target value
     const timeout = setTimeout(() => {
       setProgressValue(agent.progress || 0);
+      setTimeout(() => setAnimating(false), 700); // Animation time
     }, 100);
     
     return () => clearTimeout(timeout);
@@ -46,6 +50,19 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, i
     } else if (agent.status === "working" && (agent.progress === undefined || agent.progress < 10)) {
       // Ensure we show some progress when working
       setProgressValue(10);
+      
+      // For working agents, add subtle progress animation
+      if (agent.progress === undefined || agent.progress < 20) {
+        const interval = setInterval(() => {
+          setProgressValue(prev => {
+            // Subtle animation between 10-20% for working agents with undefined progress
+            const newVal = prev + 0.5;
+            return newVal > 20 ? 10 : newVal;
+          });
+        }, 5000);
+        
+        return () => clearInterval(interval);
+      }
     }
   }, [agent.status, agent.progress, progressValue]);
 
@@ -90,7 +107,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, i
           </div>
           <Progress 
             value={progressValue} 
-            className="h-2 transition-all duration-700 ease-in-out" 
+            className={`h-2 transition-all duration-700 ease-in-out ${animating ? 'progress-animating' : ''}`} 
           />
         </div>
       </CardContent>
