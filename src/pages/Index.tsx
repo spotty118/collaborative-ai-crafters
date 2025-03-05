@@ -5,6 +5,7 @@ import Header from "@/components/layout/Header";
 import Dashboard from "@/components/layout/Dashboard";
 import ProjectSetup from "@/components/layout/ProjectSetup";
 import GitHubIntegrationDialog from "@/components/github/GitHubIntegrationDialog";
+import AutoGitHubSetup from "@/components/github/AutoGitHubSetup";
 import { Agent, Task, Message, Project, MessageDB, TaskDB } from "@/lib/types";
 import { toast } from "sonner";
 import { 
@@ -19,13 +20,26 @@ import {
   updateTask
 } from "@/lib/api";
 import { sendAgentPrompt } from "@/lib/openrouter";
+import { getCurrentGithubUser } from "@/lib/github";
 
 const Index = () => {
   const queryClient = useQueryClient();
   const [isProjectSetupOpen, setIsProjectSetupOpen] = useState(false);
   const [isGithubDialogOpen, setIsGithubDialogOpen] = useState(false);
+  const [isGithubSetupOpen, setIsGithubSetupOpen] = useState(false);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [activeChat, setActiveChat] = useState<string | null>(null);
+  const [isGithubConnected, setIsGithubConnected] = useState(false);
+
+  // Check if GitHub is already connected on page load
+  useEffect(() => {
+    checkGithubConnection();
+  }, []);
+
+  const checkGithubConnection = async () => {
+    const user = await getCurrentGithubUser();
+    setIsGithubConnected(!!user);
+  };
 
   const { 
     data: projects = [],
