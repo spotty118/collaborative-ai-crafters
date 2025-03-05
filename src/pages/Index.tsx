@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
@@ -45,7 +44,7 @@ const Index = () => {
     isLoading: loadingAgents 
   } = useQuery({
     queryKey: ['agents', activeProject?.id],
-    queryFn: () => activeProject ? getAgents(activeProject.id) : Promise.resolve([]),
+    queryFn: () => activeProject ? getAgents(activeProject.id.toString()) : Promise.resolve([]),
     enabled: !!activeProject
   });
 
@@ -54,7 +53,7 @@ const Index = () => {
     isLoading: loadingTasks 
   } = useQuery({
     queryKey: ['tasks', activeProject?.id],
-    queryFn: () => activeProject ? getTasks(activeProject.id) : Promise.resolve([]),
+    queryFn: () => activeProject ? getTasks(activeProject.id.toString()) : Promise.resolve([]),
     enabled: !!activeProject
   });
 
@@ -63,7 +62,7 @@ const Index = () => {
     isLoading: loadingMessages 
   } = useQuery({
     queryKey: ['messages', activeProject?.id, activeChat],
-    queryFn: () => activeProject ? getMessages(activeProject.id) : Promise.resolve([]),
+    queryFn: () => activeProject ? getMessages(activeProject.id.toString()) : Promise.resolve([]),
     enabled: !!activeProject
   });
 
