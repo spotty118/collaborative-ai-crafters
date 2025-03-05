@@ -1,3 +1,4 @@
+
 import React, { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -161,6 +162,7 @@ const Project = () => {
       <Header
         onNewProject={() => navigate("/")}
         onImportProject={() => navigate("/")}
+        // No need to pass activeProjectId as it will use the route param
       />
       
       <div className="bg-white border-b px-4 py-3">

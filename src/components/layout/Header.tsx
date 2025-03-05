@@ -3,21 +3,30 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Plus, GitBranch, Cpu, Download } from "lucide-react";
 import { toast } from "sonner";
-import { useParams } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 
 interface HeaderProps {
   onNewProject: () => void;
   onImportProject: () => void;
+  activeProjectId?: string; // Add this prop to receive project ID from Index page
 }
 
-const Header: React.FC<HeaderProps> = ({ onNewProject, onImportProject }) => {
+const Header: React.FC<HeaderProps> = ({ 
+  onNewProject, 
+  onImportProject,
+  activeProjectId 
+}) => {
   const [isDownloading, setIsDownloading] = useState(false);
-  const { id: projectId } = useParams<{ id?: string }>();
+  const { id: routeProjectId } = useParams<{ id?: string }>();
+  const location = useLocation();
+  
+  // Use the activeProjectId from props when on index page, otherwise use the route param
+  const projectId = location.pathname === "/" ? activeProjectId : routeProjectId;
 
   const handleDownloadProject = async () => {
     if (!projectId) {
-      toast.info("Please navigate to a project to download it.");
+      toast.info("Please select a project to download it.");
       return;
     }
 

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
@@ -356,6 +357,7 @@ const Index = () => {
       <Header
         onNewProject={() => setIsProjectSetupOpen(true)}
         onImportProject={() => setIsProjectSetupOpen(true)}
+        activeProjectId={activeProject?.id?.toString()} // Pass the active project ID to Header
       />
       
       {activeProject ? (
