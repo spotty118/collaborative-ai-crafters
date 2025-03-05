@@ -103,11 +103,16 @@ export interface CodeFile {
 
 // Database types (match Supabase structure)
 // Make id optional in DB types since they are often auto-generated
-export type ProjectDB = Omit<Project, 'techStack' | 'sourceType' | 'sourceUrl' | 'mode' | 'githubToken'> & {
+export type ProjectDB = {
   id?: string; // Optional for inserts
+  name: string;
+  description?: string;
   tech_stack?: string[];
   source_type?: string;
   source_url?: string;
+  status?: string;
+  progress?: number;
+  requirements?: string;
 };
 
 export type AgentDB = Omit<Agent, 'type' | 'id'> & {
