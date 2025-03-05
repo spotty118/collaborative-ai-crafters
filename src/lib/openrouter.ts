@@ -26,17 +26,30 @@ export const sendAgentPrompt = async (
   try {
     console.log(`Sending prompt to ${agent.name} (${agent.type}) agent using google/gemini-2.0-flash-thinking-exp:free model`);
     
+    // Prepare detailed project context including GitHub repo if available
+    const projectContext = project ? {
+      id: project.id,
+      name: project.name,
+      description: project.description,
+      tech_stack: project.tech_stack,
+      status: project.status,
+      source_type: project.source_type,
+      source_url: project.source_url
+    } : {};
+    
+    // Add GitHub-specific analysis instructions if repo URL is available
+    let enhancedPrompt = prompt;
+    if (project?.source_url && project.source_url.includes('github.com')) {
+      if (!enhancedPrompt.includes('analyze') && !enhancedPrompt.includes('repository')) {
+        enhancedPrompt = `For the GitHub repository at ${project.source_url}, ${enhancedPrompt}. Please provide specific insights based on the repository content.`;
+      }
+    }
+    
     const { data, error } = await supabase.functions.invoke('openrouter', {
       body: {
         agentType: agent.type,
-        prompt,
-        projectContext: project ? {
-          id: project.id,
-          name: project.name,
-          description: project.description,
-          tech_stack: project.tech_stack,
-          status: project.status
-        } : {}
+        prompt: enhancedPrompt,
+        projectContext
       }
     });
 

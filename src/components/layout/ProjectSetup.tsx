@@ -21,6 +21,8 @@ import {
 } from "@/components/ui/select";
 import { ProjectMode } from "@/lib/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AlertCircle } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface ProjectSetupProps {
   isOpen: boolean;
@@ -52,9 +54,26 @@ const ProjectSetup: React.FC<ProjectSetupProps> = ({
   const [backend, setBackend] = useState("node");
   const [database, setDatabase] = useState("supabase");
   const [deployment, setDeployment] = useState("vercel");
+  const [validationError, setValidationError] = useState("");
+
+  const validateGithubUrl = (url: string): boolean => {
+    // Simple GitHub URL validation
+    const githubRegex = /^https:\/\/github\.com\/[\w-]+\/[\w-]+/;
+    return githubRegex.test(url);
+  };
 
   const handleCreateProject = () => {
     if (!name) return;
+    
+    // Validate GitHub URL when in existing project mode
+    if (projectMode === "existing" && repoUrl) {
+      if (!validateGithubUrl(repoUrl)) {
+        setValidationError("Please enter a valid GitHub repository URL (https://github.com/username/repository)");
+        return;
+      }
+    }
+    
+    setValidationError("");
     
     onCreateProject({
       name,
@@ -81,6 +100,7 @@ const ProjectSetup: React.FC<ProjectSetupProps> = ({
     setBackend("node");
     setDatabase("supabase");
     setDeployment("vercel");
+    setValidationError("");
   };
 
   return (
@@ -92,6 +112,13 @@ const ProjectSetup: React.FC<ProjectSetupProps> = ({
             Configure your project details and preferences
           </DialogDescription>
         </DialogHeader>
+
+        {validationError && (
+          <Alert variant="destructive" className="mt-2">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{validationError}</AlertDescription>
+          </Alert>
+        )}
 
         <Tabs value={projectMode} onValueChange={(v) => setProjectMode(v as ProjectMode)} className="mt-4">
           <TabsList className="grid w-full grid-cols-2">
@@ -207,15 +234,15 @@ const ProjectSetup: React.FC<ProjectSetupProps> = ({
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="repo-url">Repository URL</Label>
+              <Label htmlFor="repo-url">GitHub Repository URL</Label>
               <Input
                 id="repo-url"
-                placeholder="https://github.com/username/repo"
+                placeholder="https://github.com/username/repository"
                 value={repoUrl}
                 onChange={(e) => setRepoUrl(e.target.value)}
               />
               <p className="text-xs text-gray-500 mt-1">
-                We'll analyze your codebase and suggest improvements
+                Our agents will analyze your GitHub repository and suggest improvements
               </p>
             </div>
           </TabsContent>
