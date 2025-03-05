@@ -4,6 +4,7 @@ import { Task, Agent } from "@/lib/types";
 import { CheckCircle2, Circle, Clock, AlertCircle, RotateCw, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 interface TaskListProps {
   tasks: Task[];
@@ -58,6 +59,15 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, 
     return agent ? agent.name : "Unassigned";
   };
 
+  const handleExecuteTask = (taskId: string, agentId: string) => {
+    if (onExecuteTask) {
+      toast.info(`Starting task execution...`);
+      onExecuteTask(taskId, agentId);
+    } else {
+      toast.error('Task execution function not provided');
+    }
+  };
+
   return (
     <div className={cn("space-y-4", className)}>
       <h3 className="text-lg font-semibold">Tasks</h3>
@@ -94,12 +104,12 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, 
                       Updated: {formatDate(task.updated_at)}
                     </span>
                     
-                    {task.status === 'pending' && task.assigned_to && onExecuteTask && (
+                    {task.status === 'pending' && task.assigned_to && (
                       <Button 
                         size="sm" 
                         variant="outline"
                         className="h-7 gap-1 text-xs"
-                        onClick={() => onExecuteTask(task.id, task.assigned_to as string)}
+                        onClick={() => handleExecuteTask(task.id, task.assigned_to as string)}
                       >
                         <Play className="h-3 w-3" />
                         Execute
