@@ -15,12 +15,10 @@ import {
   StepTitle 
 } from "@/components/ui/stepper";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, Github, ExternalLink, CheckCircle2 } from "lucide-react";
 import { initiateGithubAuth, getCurrentGithubUser, GithubUser } from "@/lib/github";
-import { toast } from "sonner";
+import { useToast } from "@/hooks/use-toast";
 
 interface GitHubSetupWizardProps {
   onComplete?: (user: GithubUser) => void;
@@ -32,9 +30,9 @@ const GitHubSetupWizard: React.FC<GitHubSetupWizardProps> = ({
   onCancel 
 }) => {
   const [currentStep, setCurrentStep] = useState(1);
-  const [clientId, setClientId] = useState("");
   const [isChecking, setIsChecking] = useState(false);
   const [error, setError] = useState("");
+  const { toast } = useToast();
   
   // Check for OAuth callback on component mount
   useEffect(() => {
@@ -70,17 +68,36 @@ const GitHubSetupWizard: React.FC<GitHubSetupWizardProps> = ({
         if (user && onComplete) {
           setCurrentStep(4);
           onComplete(user);
+          toast({
+            title: "GitHub Connected",
+            description: "Successfully connected your GitHub account",
+          });
         } else {
           setError("Failed to get user information after authentication");
           setCurrentStep(1);
+          toast({
+            title: "Connection Failed",
+            description: "Could not retrieve GitHub user information",
+            variant: "destructive",
+          });
         }
       } else {
-        setError("Authentication failed. Please check your client ID and callback URLs.");
+        setError("Authentication failed");
         setCurrentStep(1);
+        toast({
+          title: "Authentication Failed",
+          description: "GitHub authentication was unsuccessful",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       setError(`Error during authentication: ${error instanceof Error ? error.message : "Unknown error"}`);
       setCurrentStep(1);
+      toast({
+        title: "Connection Error",
+        description: error instanceof Error ? error.message : "An unknown error occurred",
+        variant: "destructive",
+      });
     } finally {
       setIsChecking(false);
     }
@@ -91,13 +108,8 @@ const GitHubSetupWizard: React.FC<GitHubSetupWizardProps> = ({
   };
   
   const handleConnect = () => {
-    if (!clientId.trim()) {
-      setError("Please enter your GitHub OAuth client ID");
-      return;
-    }
-    
     setError("");
-    initiateGithubAuth(clientId);
+    initiateGithubAuth();
   };
   
   return (
@@ -126,8 +138,8 @@ const GitHubSetupWizard: React.FC<GitHubSetupWizardProps> = ({
             <StepDescription>Begin GitHub setup</StepDescription>
           </Step>
           <Step>
-            <StepTitle>Client ID</StepTitle>
-            <StepDescription>Enter GitHub OAuth ID</StepDescription>
+            <StepTitle>Connect</StepTitle>
+            <StepDescription>Connect to GitHub</StepDescription>
           </Step>
           <Step>
             <StepTitle>Authorization</StepTitle>
@@ -144,25 +156,23 @@ const GitHubSetupWizard: React.FC<GitHubSetupWizardProps> = ({
             <h3 className="font-medium text-lg">Welcome to GitHub Integration</h3>
             <p className="text-gray-600">
               This wizard will guide you through connecting your application to GitHub.
-              You'll need to create a GitHub OAuth application to continue.
+              You'll need a GitHub account to continue.
             </p>
             <div className="bg-gray-50 p-4 rounded-md border">
               <h4 className="font-medium mb-2">Before you begin:</h4>
               <ol className="list-decimal list-inside space-y-2 text-sm">
-                <li>Go to GitHub Developer Settings</li>
-                <li>Create a new OAuth application</li>
-                <li>Set the Homepage URL to: <code className="bg-gray-100 px-2 py-1 rounded">{window.location.origin}</code></li>
-                <li>Set the Authorization callback URL to: <code className="bg-gray-100 px-2 py-1 rounded">{window.location.origin}</code></li>
-                <li>Copy the Client ID (you'll need it in the next step)</li>
+                <li>Make sure you have a GitHub account</li>
+                <li>Ensure you have permissions to create repositories</li>
+                <li>Be prepared to authorize this application to access your GitHub account</li>
               </ol>
               <Button 
                 variant="outline" 
                 size="sm" 
                 className="mt-3"
-                onClick={() => window.open("https://github.com/settings/developers", "_blank")}
+                onClick={() => window.open("https://github.com", "_blank")}
               >
                 <ExternalLink className="h-4 w-4 mr-1" />
-                Open GitHub Settings
+                Open GitHub
               </Button>
             </div>
           </div>
@@ -170,19 +180,19 @@ const GitHubSetupWizard: React.FC<GitHubSetupWizardProps> = ({
         
         {currentStep === 2 && (
           <div className="space-y-4">
-            <h3 className="font-medium text-lg">Enter GitHub OAuth Details</h3>
-            <div className="space-y-2">
-              <Label htmlFor="github-client-id">GitHub OAuth Client ID</Label>
-              <Input
-                id="github-client-id"
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                placeholder="e.g., 1a2b3c4d5e6f7g8h9i0j"
-              />
-              <p className="text-xs text-gray-500">
-                This is the Client ID from your GitHub OAuth application.
-                Make sure you've set the correct Homepage URL and Authorization callback URL in your GitHub OAuth app settings.
+            <h3 className="font-medium text-lg">Connect to GitHub</h3>
+            <p className="text-gray-600">
+              Click the button below to connect to GitHub. You'll be redirected to GitHub's website
+              to authorize this application.
+            </p>
+            <div className="bg-gray-50 p-4 rounded-md border">
+              <p className="text-sm">
+                This application will request:
               </p>
+              <ul className="list-disc list-inside space-y-1 text-sm mt-2">
+                <li>Read/write access to your repositories</li>
+                <li>Basic profile information</li>
+              </ul>
             </div>
           </div>
         )}
@@ -226,14 +236,14 @@ const GitHubSetupWizard: React.FC<GitHubSetupWizardProps> = ({
             <Button variant="outline" onClick={() => setCurrentStep(1)}>
               Back
             </Button>
-            <Button onClick={handleConnect} disabled={!clientId.trim()}>
+            <Button onClick={handleConnect}>
               Connect to GitHub
             </Button>
           </>
         )}
         
         {currentStep === 3 && (
-          <Button variant="outline" onClick={() => setCurrentStep(1)} disabled={isChecking}>
+          <Button variant="outline" onClick={() => setCurrentStep(1)} disabled={isChecking} className="ml-auto">
             Cancel
           </Button>
         )}

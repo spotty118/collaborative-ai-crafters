@@ -6,16 +6,17 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { GithubUser, getCurrentGithubUser, initiateGithubAuth, clearGithubToken } from "@/lib/github";
 import { Github } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 interface GitHubSettingsProps {
   onConnected?: (user: GithubUser) => void;
 }
 
 const GitHubSettings: React.FC<GitHubSettingsProps> = ({ onConnected }) => {
-  const [clientId, setClientId] = useState<string>("");
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [user, setUser] = useState<GithubUser | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const { toast } = useToast();
 
   useEffect(() => {
     // Check if the URL contains a code parameter (GitHub OAuth callback)
@@ -36,7 +37,23 @@ const GitHubSettings: React.FC<GitHubSettingsProps> = ({ onConnected }) => {
         module.handleGithubCallback(code, state).then(success => {
           if (success) {
             checkGithubConnection();
+            toast({
+              title: "GitHub Connected",
+              description: "Successfully connected to GitHub",
+            });
+          } else {
+            toast({
+              title: "Connection Failed",
+              description: "Failed to connect to GitHub",
+              variant: "destructive",
+            });
           }
+        }).catch(error => {
+          toast({
+            title: "Connection Error",
+            description: error.message || "An error occurred during GitHub authentication",
+            variant: "destructive",
+          });
         });
       });
     } else {
@@ -60,17 +77,17 @@ const GitHubSettings: React.FC<GitHubSettingsProps> = ({ onConnected }) => {
   };
 
   const handleConnect = () => {
-    if (!clientId.trim()) {
-      return;
-    }
-    
-    initiateGithubAuth(clientId);
+    initiateGithubAuth();
   };
 
   const handleDisconnect = () => {
     clearGithubToken();
     setIsConnected(false);
     setUser(null);
+    toast({
+      title: "GitHub Disconnected",
+      description: "Successfully disconnected from GitHub",
+    });
   };
 
   if (isLoading) {
@@ -100,30 +117,10 @@ const GitHubSettings: React.FC<GitHubSettingsProps> = ({ onConnected }) => {
       <CardContent>
         {!isConnected ? (
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="github-client-id">GitHub OAuth Client ID</Label>
-              <Input
-                id="github-client-id"
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                placeholder="Enter your GitHub OAuth client ID"
-              />
-              <p className="text-xs text-gray-500">
-                Create a GitHub OAuth app at{" "}
-                <a 
-                  href="https://github.com/settings/developers" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-blue-500 hover:underline"
-                >
-                  GitHub Developer Settings
-                </a>
-                {" "}and enter the client ID here.
-                <br />
-                Set Homepage URL and Authorization callback URL to:{" "}
-                <code className="bg-gray-100 px-1 py-0.5 rounded text-xs">
-                  {window.location.origin}
-                </code>
+            <div className="bg-gray-50 p-4 rounded-md border">
+              <p className="text-sm text-gray-600">
+                Connect your GitHub account to push projects directly to your repositories. 
+                This integration uses GitHub's OAuth for secure authentication.
               </p>
             </div>
           </div>
@@ -153,7 +150,6 @@ const GitHubSettings: React.FC<GitHubSettingsProps> = ({ onConnected }) => {
         {!isConnected ? (
           <Button 
             onClick={handleConnect} 
-            disabled={!clientId.trim()}
             className="w-full"
           >
             <Github className="mr-2 h-4 w-4" />
