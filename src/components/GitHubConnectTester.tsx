@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useGitHub } from '@/contexts/GitHubContext';
 import { toast } from 'sonner';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export const GitHubConnectTester: React.FC = () => {
@@ -17,8 +17,16 @@ export const GitHubConnectTester: React.FC = () => {
   const [commitMessage, setCommitMessage] = useState('test: Add test file');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isTestSuccess, setIsTestSuccess] = useState(false);
   
   const github = useGitHub();
+  
+  // Clear error message when connection status changes
+  useEffect(() => {
+    if (github.isConnected) {
+      setErrorMessage('');
+    }
+  }, [github.isConnected]);
   
   const handleConnect = async () => {
     if (!repoUrl || !token) {
@@ -28,6 +36,7 @@ export const GitHubConnectTester: React.FC = () => {
     
     setIsLoading(true);
     setErrorMessage('');
+    setIsTestSuccess(false);
     
     try {
       await github.connect(repoUrl, token);
@@ -44,7 +53,9 @@ export const GitHubConnectTester: React.FC = () => {
   
   const handleTestWrite = async () => {
     if (!github.isConnected) {
-      toast.error('Not connected to GitHub. Please connect first.');
+      const message = 'Not connected to GitHub. Please connect first.';
+      setErrorMessage(message);
+      toast.error(message);
       return;
     }
     
@@ -55,9 +66,11 @@ export const GitHubConnectTester: React.FC = () => {
     
     setIsLoading(true);
     setErrorMessage('');
+    setIsTestSuccess(false);
     
     try {
       await github.createOrUpdateFile(filePath, fileContent, commitMessage);
+      setIsTestSuccess(true);
       toast.success(`Successfully wrote to ${filePath}`);
     } catch (error) {
       console.error('Failed to write to GitHub:', error);
@@ -72,6 +85,7 @@ export const GitHubConnectTester: React.FC = () => {
   const handleDisconnect = () => {
     github.disconnect();
     toast.info('Disconnected from GitHub');
+    setIsTestSuccess(false);
   };
 
   return (
@@ -82,6 +96,13 @@ export const GitHubConnectTester: React.FC = () => {
         <Alert variant="destructive" className="mb-4">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{errorMessage}</AlertDescription>
+        </Alert>
+      )}
+      
+      {isTestSuccess && (
+        <Alert className="mb-4 bg-green-50 border-green-200">
+          <CheckCircle2 className="h-4 w-4 text-green-600" />
+          <AlertDescription className="text-green-600">Successfully wrote to GitHub repository!</AlertDescription>
         </Alert>
       )}
       
