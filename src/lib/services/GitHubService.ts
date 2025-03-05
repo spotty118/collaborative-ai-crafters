@@ -36,12 +36,24 @@ export const initGitHubService = (url: string, token: string) => {
     localStorage.setItem('github-url', url);
     
     // Test the connection with a simple API call
-    instance.getFileContent('.gitignore')
+    try {
+      // We'll use a Promise.race to limit the wait time
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('GitHub connection verification timed out')), 10000)
+      );
+      
+      Promise.race([
+        instance.getFileContent('.gitignore'),
+        timeoutPromise
+      ])
       .then(() => console.log('GitHub connection verified successfully'))
       .catch(error => {
         console.error('Failed to verify GitHub connection:', error);
         // Don't clear the instance here as the file might just not exist
       });
+    } catch (error) {
+      console.error('Failed to verify GitHub connection:', error);
+    }
     
     return instance;
   } catch (error) {

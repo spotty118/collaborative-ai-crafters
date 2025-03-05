@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useGitHub } from '@/contexts/GitHubContext';
@@ -21,6 +21,7 @@ export const FileEditor: React.FC<FileEditorProps> = ({ file, onClose }) => {
   const [content, setContent] = useState(file.content || '');
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [lastSavedContent, setLastSavedContent] = useState(file.content || '');
   const github = useGitHub();
 
   const handleEdit = () => {
@@ -28,8 +29,22 @@ export const FileEditor: React.FC<FileEditorProps> = ({ file, onClose }) => {
   };
 
   const handleCancel = () => {
-    setContent(file.content || '');
+    setContent(lastSavedContent);
     setIsEditing(false);
+  };
+
+  const verifyContent = async (path: string, expectedContent: string): Promise<boolean> => {
+    try {
+      const savedContent = await github.getFileContent(path);
+      if (savedContent !== expectedContent) {
+        console.warn('GitHub content verification failed - content mismatch');
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error('Failed to verify saved file:', error);
+      return false;
+    }
   };
 
   const handleSave = async () => {
@@ -50,21 +65,17 @@ export const FileEditor: React.FC<FileEditorProps> = ({ file, onClose }) => {
       
       // Update local state
       file.content = content;
+      setLastSavedContent(content);
       
       setIsEditing(false);
       toast.success('File saved successfully to GitHub');
       
       // Verify the file was saved
-      try {
-        const savedContent = await github.getFileContent(file.path);
-        if (savedContent !== content) {
-          console.warn('GitHub content verification failed - content mismatch');
-          toast.warning('File saved but content verification failed');
-        } else {
-          console.log('GitHub content verification successful');
-        }
-      } catch (error) {
-        console.error('Failed to verify saved file:', error);
+      const verified = await verifyContent(file.path, content);
+      if (!verified) {
+        toast.warning('File saved but content verification failed');
+      } else {
+        console.log('GitHub content verification successful');
       }
     } catch (error) {
       console.error('Failed to save file:', error);
@@ -90,7 +101,14 @@ export const FileEditor: React.FC<FileEditorProps> = ({ file, onClose }) => {
         `Explicit push: ${file.path}`
       );
       
+      setLastSavedContent(content);
       toast.success('File pushed to GitHub successfully');
+      
+      // Verify the push
+      const verified = await verifyContent(file.path, content);
+      if (!verified) {
+        toast.warning('File pushed but content verification failed');
+      }
     } catch (error) {
       console.error('Failed to push file to GitHub:', error);
       toast.error('Failed to push to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
