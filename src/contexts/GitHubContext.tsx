@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 
 interface GitHubContextType {
   isConnected: boolean;
+  currentBranch: string;
   connect: (url: string, token: string) => void;
   disconnect: () => void;
   createOrUpdateFile: (path: string, content: string, message: string) => Promise<void>;
@@ -27,6 +28,7 @@ export const useGitHub = () => {
 
 export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
+  const [currentBranch, setCurrentBranch] = useState('main');
 
   // Initialize from localStorage if available
   React.useEffect(() => {
@@ -146,6 +148,7 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const value = {
     isConnected,
+    currentBranch,
     connect,
     disconnect,
     createOrUpdateFile,
