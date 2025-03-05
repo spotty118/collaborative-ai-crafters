@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project } from '@/lib/types';
 import { createTask } from './api';
@@ -130,18 +129,6 @@ export const analyzeGitHubAndCreateTasks = async (
   }
 
   try {
-    // Avoid duplicate task creation if agent already has tasks
-    const { data: existingTasks } = await supabase
-      .from('tasks')
-      .select('id')
-      .eq('assigned_to', agent.id)
-      .eq('project_id', project.id);
-    
-    if (existingTasks && existingTasks.length > 0) {
-      console.log(`Agent ${agent.name} already has ${existingTasks.length} tasks for this project, skipping task creation`);
-      return true;
-    }
-
     // Create an analysis prompt based on the agent type
     const analysisPrompts: Record<string, string> = {
       'architect': `Analyze the GitHub repository architecture at ${project.sourceUrl} and list 3-5 specific tasks to improve the overall architecture and project structure.`,
