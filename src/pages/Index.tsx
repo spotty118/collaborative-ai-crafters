@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
 import { useNavigate } from "react-router-dom";
-import { createProject, getProjects, deleteProject } from "@/lib/api";
+import { createProject, getProjects, deleteProject, createAgents } from "@/lib/api";
 import ProjectSetup from "@/components/layout/ProjectSetup";
 import { Badge } from "@/components/ui/badge";
 import { Pencil, Trash, Eye, ArrowRight } from "lucide-react";
@@ -169,8 +168,21 @@ const Index: React.FC = () => {
       
       return createProject(dbProject);
     },
-    onSuccess: () => {
+    onSuccess: (createdProject) => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
+      
+      // Create agents for the new project
+      if (createdProject && createdProject.id) {
+        createAgents(createdProject.id.toString())
+          .then(() => {
+            console.log("Agents created successfully for project:", createdProject.id);
+          })
+          .catch(error => {
+            console.error("Failed to create agents:", error);
+            toast.error(`Failed to create agents: ${error.message}`);
+          });
+      }
+      
       setIsProjectSetupOpen(false);
       toast.success("Project created successfully!");
     },

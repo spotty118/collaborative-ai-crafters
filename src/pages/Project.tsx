@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages } from "@/lib/api";
+import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, createAgents } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -37,21 +36,17 @@ interface DashboardProps {
 }
 
 const Project: React.FC = () => {
-  // Router hooks
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  // Local state
   const [activeTab, setActiveTab] = useState("dashboard");
   const [activeChat, setActiveChat] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<CodeFile | null>(null);
   const [githubToken, setGithubToken] = useState("");
 
-  // Global state hooks
   const github = useGitHub();
   const queryClient = useQueryClient();
 
-  // Query hooks
   const { 
     data: project,
     isLoading: loadingProject,
@@ -98,7 +93,6 @@ const Project: React.FC = () => {
     enabled: !!id && activeTab === "code"
   });
 
-  // Mutations
   const createMessageMutation = useMutation({
     mutationFn: (messageData: Message) => createMessage(messageData),
     onSuccess: () => {
@@ -106,7 +100,6 @@ const Project: React.FC = () => {
     }
   });
 
-  // Effect hooks
   useEffect(() => {
     if (project?.sourceUrl && githubToken && !github.isConnected) {
       try {
@@ -133,7 +126,21 @@ const Project: React.FC = () => {
     }
   }, [id]);
 
-  // Event handlers
+  useEffect(() => {
+    if (id && agents && agents.length === 0 && !loadingAgents) {
+      console.log("No agents found, creating agents for project:", id);
+      createAgents(id)
+        .then((createdAgents) => {
+          console.log("Agents created successfully:", createdAgents);
+          queryClient.invalidateQueries({ queryKey: ['agents', id] });
+        })
+        .catch((error) => {
+          console.error("Failed to create agents:", error);
+          toast.error("Failed to create agents: " + (error instanceof Error ? error.message : 'Unknown error'));
+        });
+    }
+  }, [id, agents, loadingAgents, queryClient]);
+
   const handleFileClick = async (file: CodeFile) => {
     if (!github.isConnected) {
       toast.error('GitHub is not connected. Please configure GitHub access in project settings.');
@@ -243,7 +250,6 @@ const Project: React.FC = () => {
     }
   };
 
-  // Loading and error states
   if (!id || loadingProject || projectError) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -280,7 +286,6 @@ const Project: React.FC = () => {
     );
   }
 
-  // Main render
   return (
     <div className="min-h-screen flex flex-col bg-white">
       <Header
@@ -376,7 +381,6 @@ const Project: React.FC = () => {
               <h2 className="text-xl font-semibold mb-6">Project Settings</h2>
               
               <div className="space-y-6">
-                {/* Project Info */}
                 <div>
                   <h3 className="text-base font-medium mb-2">Project Information</h3>
                   <div className="space-y-2">
@@ -391,7 +395,6 @@ const Project: React.FC = () => {
                   </div>
                 </div>
                 
-                {/* GitHub Settings */}
                 {project.sourceUrl && (
                   <div>
                     <h3 className="text-base font-medium mb-4">GitHub Integration</h3>

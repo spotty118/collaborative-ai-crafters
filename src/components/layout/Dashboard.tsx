@@ -81,6 +81,11 @@ const Dashboard: React.FC<DashboardProps> = ({
           <div className="flex justify-center py-8">
             <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
           </div>
+        ) : agents.length === 0 ? (
+          <div className="text-center py-8 bg-white rounded-md border p-4">
+            <p className="text-gray-500 mb-2">No agents available</p>
+            <p className="text-sm text-gray-400">Agents will appear here soon.</p>
+          </div>
         ) : (
           <div className="grid gap-3">
             {agents.map((agent) => (
