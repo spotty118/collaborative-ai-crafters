@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 interface GitHubContextType {
   isConnected: boolean;
   currentBranch: string;
+  isConnecting: boolean;
   connect: (url: string, token: string) => Promise<void>;
   disconnect: () => void;
   createOrUpdateFile: (path: string, content: string, message: string) => Promise<void>;
@@ -29,6 +30,7 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [isConnected, setIsConnected] = useState(isGitHubServiceInitialized());
   const [currentBranch, setCurrentBranch] = useState('main');
   const [connectionAttempts, setConnectionAttempts] = useState(0);
+  const [isConnecting, setIsConnecting] = useState(false);
 
   // Initialize from localStorage if available
   useEffect(() => {
@@ -41,6 +43,8 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const connect = useCallback(async (url: string, token: string) => {
     try {
+      setIsConnecting(true);
+      
       if (!url || !token) {
         throw new Error('GitHub URL and token are required');
       }
@@ -109,6 +113,8 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       
       toast.error('Failed to connect to GitHub: ' + errorMessage);
       throw error;
+    } finally {
+      setIsConnecting(false);
     }
   }, [connectionAttempts]);
 
@@ -256,6 +262,7 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const value = {
     isConnected,
     currentBranch,
+    isConnecting,
     connect,
     disconnect,
     createOrUpdateFile,

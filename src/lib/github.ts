@@ -8,9 +8,9 @@ interface GitHubConfig {
 }
 
 export class GitHubService {
-  private octokit: Octokit;
-  private owner: string;
-  private repo: string;
+  public octokit: Octokit;
+  public owner: string;
+  public repo: string;
 
   constructor(config: GitHubConfig) {
     // Validate token format
@@ -213,6 +213,35 @@ export class GitHubService {
       } else {
         throw new Error('Failed to delete file from repository');
       }
+    }
+  }
+  
+  /**
+   * List files in a directory
+   * @param path Directory path in the repository
+   * @param ref Branch or commit SHA
+   * @returns Array of file objects
+   */
+  async listFiles(path = '', ref = 'main') {
+    try {
+      const { data } = await this.octokit.repos.getContent({
+        owner: this.owner,
+        repo: this.repo,
+        path,
+        ref,
+      });
+      
+      return Array.isArray(data) ? data : [data];
+    } catch (error: any) {
+      if (error.status === 401) {
+        throw new Error('Authentication failed. Please check your GitHub token and permissions.');
+      } else if (error.status === 404) {
+        // Directory is empty or doesn't exist
+        return [];
+      }
+      
+      console.error('Error listing files:', error);
+      throw error instanceof Error ? error : new Error('Failed to list files in repository');
     }
   }
 }

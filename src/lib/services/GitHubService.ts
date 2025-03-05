@@ -43,13 +43,25 @@ export const initGitHubService = (url: string, token: string) => {
       );
       
       Promise.race([
-        instance.getFileContent('.gitignore'),
+        instance.getFileContent('.gitignore').catch(() => {
+          // Try another file if .gitignore fails
+          return instance.getFileContent('README.md').catch(() => {
+            // If both fail, try to list the repository contents
+            return instance.octokit.repos.getContent({
+              owner: instance.owner,
+              repo: instance.repo,
+              path: '',
+            }).then(() => {
+              console.log('Repository exists and is accessible');
+            });
+          });
+        }),
         timeoutPromise
       ])
       .then(() => console.log('GitHub connection verified successfully'))
       .catch(error => {
         console.error('Failed to verify GitHub connection:', error);
-        // Don't clear the instance here as the file might just not exist
+        // Don't clear the instance here as the repo might just be empty
       });
     } catch (error) {
       console.error('Failed to verify GitHub connection:', error);

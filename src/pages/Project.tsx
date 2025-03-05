@@ -98,7 +98,14 @@ const Project: React.FC = () => {
   useEffect(() => {
     if (project?.sourceUrl && githubToken && !github.isConnected) {
       try {
-        github.connect(project.sourceUrl, githubToken);
+        github.connect(project.sourceUrl, githubToken)
+          .then(() => {
+            toast.success('Successfully connected to GitHub repository');
+          })
+          .catch((error) => {
+            console.error('Failed to connect to GitHub:', error);
+            toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
+          });
       } catch (error) {
         console.error('Failed to connect to GitHub:', error);
         toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
@@ -208,6 +215,12 @@ const Project: React.FC = () => {
     const agent = agents.find(a => a.id === agentId);
     if (!agent || !id) return;
     
+    if (!github.isConnected) {
+      toast.error('GitHub connection is required to start agents. Please connect to GitHub in the settings tab.');
+      setActiveTab('settings');
+      return;
+    }
+    
     updateAgentMutation.mutate({
       id: agentId,
       updates: { 
@@ -231,13 +244,14 @@ const Project: React.FC = () => {
       
       toast.success(`${agent.name} completed analysis`);
       
-      if (tasks.filter(t => t.agent_id === agentId).length === 0) {
+      const agentTasks = tasks.filter(t => t.agentId === agentId);
+      if (agentTasks.length === 0) {
         const defaultTasks = getDefaultTasksForAgent(agent, id);
         
         for (const taskData of defaultTasks) {
           await createTask({
             project_id: id,
-            agent_id: agentId,
+            agentId: agentId,
             title: taskData.title,
             description: taskData.description,
             status: 'pending',
@@ -265,6 +279,12 @@ const Project: React.FC = () => {
     const agent = agents.find(a => a.id === agentId);
     
     if (!task || !agent || !id || !project) return;
+    
+    if (!github.isConnected) {
+      toast.error('GitHub connection is required to execute tasks. Please connect to GitHub in the settings tab.');
+      setActiveTab('settings');
+      return;
+    }
     
     updateTaskMutation.mutate({
       id: taskId,
