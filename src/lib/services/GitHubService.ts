@@ -16,18 +16,33 @@ export const initGitHubService = (url: string, token: string) => {
   }
   
   try {
+    // Clear any previous instance
+    if (instance) {
+      console.log('Clearing previous GitHub service instance');
+      instance = null;
+    }
+    
     // Validate token format - basic check
     if (!token.match(/^(ghp_|github_pat_)[a-zA-Z0-9_]+$/)) {
       console.warn('GitHub token format might be invalid. It should start with ghp_ or github_pat_');
     }
     
+    // Create a new instance
     instance = createGitHubService(url, token);
+    console.log('GitHub service initialized successfully');
     
     // Store token in localStorage for persistence
     localStorage.setItem('github-token', token);
     localStorage.setItem('github-url', url);
     
-    console.log('GitHub service initialized successfully');
+    // Test the connection with a simple API call
+    instance.getFileContent('.gitignore')
+      .then(() => console.log('GitHub connection verified successfully'))
+      .catch(error => {
+        console.error('Failed to verify GitHub connection:', error);
+        // Don't clear the instance here as the file might just not exist
+      });
+    
     return instance;
   } catch (error) {
     console.error('Failed to initialize GitHub service:', error);
@@ -54,8 +69,13 @@ try {
   const storedUrl = localStorage.getItem('github-url');
   
   if (storedToken && storedUrl) {
-    initGitHubService(storedUrl, storedToken);
+    console.log('Attempting to restore GitHub service from localStorage');
+    try {
+      initGitHubService(storedUrl, storedToken);
+    } catch (error) {
+      console.error('Failed to restore GitHub service from localStorage:', error);
+    }
   }
 } catch (error) {
-  console.error('Failed to restore GitHub service from localStorage:', error);
+  console.error('Failed to access localStorage:', error);
 }

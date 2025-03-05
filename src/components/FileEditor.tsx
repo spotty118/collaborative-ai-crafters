@@ -52,10 +52,48 @@ export const FileEditor: React.FC<FileEditorProps> = ({ file, onClose }) => {
       file.content = content;
       
       setIsEditing(false);
-      toast.success('File saved successfully');
+      toast.success('File saved successfully to GitHub');
+      
+      // Verify the file was saved
+      try {
+        const savedContent = await github.getFileContent(file.path);
+        if (savedContent !== content) {
+          console.warn('GitHub content verification failed - content mismatch');
+          toast.warning('File saved but content verification failed');
+        } else {
+          console.log('GitHub content verification successful');
+        }
+      } catch (error) {
+        console.error('Failed to verify saved file:', error);
+      }
     } catch (error) {
       console.error('Failed to save file:', error);
       toast.error('Failed to save file: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handlePushToGitHub = async () => {
+    if (!github.isConnected) {
+      toast.error('GitHub connection not configured');
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      console.log(`Explicitly pushing file to GitHub: ${file.path}`);
+      
+      await github.createOrUpdateFile(
+        file.path,
+        content,
+        `Explicit push: ${file.path}`
+      );
+      
+      toast.success('File pushed to GitHub successfully');
+    } catch (error) {
+      console.error('Failed to push file to GitHub:', error);
+      toast.error('Failed to push to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setIsSaving(false);
     }
@@ -92,12 +130,22 @@ export const FileEditor: React.FC<FileEditorProps> = ({ file, onClose }) => {
               </Button>
             </>
           ) : (
-            <Button
-              size="sm"
-              onClick={handleEdit}
-            >
-              Edit
-            </Button>
+            <>
+              <Button
+                size="sm"
+                onClick={handleEdit}
+              >
+                Edit
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handlePushToGitHub}
+                disabled={isSaving}
+              >
+                Push to GitHub
+              </Button>
+            </>
           )}
           {onClose && (
             <Button
