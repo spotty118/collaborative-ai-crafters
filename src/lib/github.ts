@@ -1,258 +1,263 @@
 
-import { Octokit } from '@octokit/rest';
+import { toast } from "sonner";
 
-interface GitHubConfig {
-  token: string;
-  owner: string;
-  repo: string;
+// GitHub API configuration
+const GITHUB_API_URL = "https://api.github.com";
+
+// Types for GitHub integration
+export interface GithubAuthResponse {
+  access_token: string;
+  token_type: string;
+  scope: string;
 }
 
-export class GitHubService {
-  public octokit: Octokit;
-  public owner: string;
-  public repo: string;
+export interface GithubUser {
+  login: string;
+  id: number;
+  name: string;
+  avatar_url: string;
+}
 
-  constructor(config: GitHubConfig) {
-    // Validate token format
-    if (!config.token.startsWith('ghp_') && !config.token.startsWith('github_pat_')) {
-      console.warn('GitHub token format may be invalid. It should start with ghp_ or github_pat_');
-    }
-    
-    this.octokit = new Octokit({ auth: config.token });
-    this.owner = config.owner;
-    this.repo = config.repo;
+export interface GithubRepo {
+  id: number;
+  name: string;
+  full_name: string;
+  html_url: string;
+  description: string;
+  private: boolean;
+  default_branch: string;
+}
+
+// Local storage keys
+const GITHUB_TOKEN_KEY = "github_access_token";
+
+// Helper function to get the stored token
+export const getGithubToken = (): string | null => {
+  return localStorage.getItem(GITHUB_TOKEN_KEY);
+};
+
+// Helper function to store the token
+export const setGithubToken = (token: string): void => {
+  localStorage.setItem(GITHUB_TOKEN_KEY, token);
+};
+
+// Helper function to clear the token
+export const clearGithubToken = (): void => {
+  localStorage.removeItem(GITHUB_TOKEN_KEY);
+};
+
+// Initiate GitHub OAuth flow
+export const initiateGithubAuth = (clientId: string): void => {
+  if (!clientId) {
+    toast.error("GitHub client ID is required");
+    return;
   }
 
-  /**
-   * Parse a GitHub URL to extract owner and repo
-   * @param url GitHub repository URL
-   * @returns Object containing owner and repo names
-   */
-  static parseGitHubUrl(url: string): { owner: string; repo: string } {
-    // Handle URLs with trailing slashes or .git extension
-    const cleanUrl = url.replace(/\.git\/?$/, '').replace(/\/$/, '');
-    
-    // Extract owner and repo from the cleaned URL
-    const matches = cleanUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
-    if (!matches) {
-      throw new Error('Invalid GitHub URL format. Expected format: https://github.com/owner/repo');
-    }
-    
-    const owner = matches[1];
-    const repo = matches[2];
-    
-    if (!owner || !repo) {
-      throw new Error('Could not extract owner and repository from URL');
-    }
-    
-    return { owner, repo };
-  }
+  const redirectUri = window.location.origin;
+  const scope = "repo";
+  
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}`;
+  
+  window.location.href = authUrl;
+};
 
-  // Browser-compatible base64 encoding
-  private encodeToBase64(text: string): string {
-    return btoa(unescape(encodeURIComponent(text)));
+// Handle the OAuth callback and exchange code for token
+export const handleGithubCallback = async (code: string): Promise<boolean> => {
+  try {
+    // This request needs to be proxied through a server to avoid CORS issues
+    // In a production app, you would handle this exchange server-side
+    const response = await fetch("/api/github/auth", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ code }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to authenticate with GitHub");
+    }
+
+    const data: GithubAuthResponse = await response.json();
+    setGithubToken(data.access_token);
+    
+    toast.success("Successfully connected to GitHub");
+    return true;
+  } catch (error) {
+    console.error("GitHub authentication error:", error);
+    toast.error(`GitHub authentication failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+    return false;
+  }
+};
+
+// Get the current authenticated user
+export const getCurrentGithubUser = async (): Promise<GithubUser | null> => {
+  const token = getGithubToken();
+  
+  if (!token) {
+    return null;
   }
   
-  // Browser-compatible base64 decoding
-  private decodeFromBase64(encoded: string): string {
-    return decodeURIComponent(escape(atob(encoded)));
-  }
-
-  /**
-   * Create or update a file in the repository
-   * @param path File path in the repository
-   * @param content File content
-   * @param message Commit message
-   * @param branch Branch name (defaults to main)
-   */
-  async createOrUpdateFile(
-    path: string,
-    content: string,
-    message: string,
-    branch = 'main'
-  ): Promise<void> {
-    try {
-      console.log(`Attempting to create/update file: ${path}`);
-      // Get the current file (if it exists) to get the SHA
-      let sha: string | undefined;
-      try {
-        const { data } = await this.octokit.repos.getContent({
-          owner: this.owner,
-          repo: this.repo,
-          path,
-          ref: branch,
-        });
-
-        if (!Array.isArray(data)) {
-          sha = data.sha;
-        }
-      } catch (error: any) {
-        // File doesn't exist yet, which is fine
-        if (error.status === 404) {
-          console.log(`File ${path} doesn't exist yet, creating new file`);
-        } else if (error.status === 401) {
-          throw new Error('Authentication failed. Please check your GitHub token and permissions.');
-        } else {
-          console.error('Error checking file existence:', error);
-          throw error;
-        }
+  try {
+    const response = await fetch(`${GITHUB_API_URL}/user`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        clearGithubToken();
       }
-
-      // Create or update the file with browser-compatible base64 encoding
-      const base64Content = this.encodeToBase64(content);
-      
-      await this.octokit.repos.createOrUpdateFileContents({
-        owner: this.owner,
-        repo: this.repo,
-        path,
-        message,
-        content: base64Content,
-        branch,
-        ...(sha ? { sha } : {}),
-      });
-      
-      console.log(`Successfully created/updated file: ${path}`);
-    } catch (error: any) {
-      console.error('Error creating/updating file:', error);
-      
-      // Provide more detailed error messages
-      if (error.status === 401) {
-        throw new Error('Authentication failed. Please check your GitHub token and permissions.');
-      } else if (error.status === 404) {
-        throw new Error('Repository not found or you do not have access to it.');
-      } else if (error.status === 422) {
-        throw new Error('Validation failed. Please check your file path and content.');
-      } else if (error.message) {
-        throw error;
-      } else {
-        throw new Error('Failed to create/update file in repository');
-      }
+      return null;
     }
+    
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching GitHub user:", error);
+    return null;
   }
+};
 
-  /**
-   * Get the contents of a file from the repository
-   * @param path File path in the repository
-   * @param ref Branch or commit SHA
-   * @returns File content as string
-   */
-  async getFileContent(path: string, ref = 'main'): Promise<string> {
-    try {
-      const { data } = await this.octokit.repos.getContent({
-        owner: this.owner,
-        repo: this.repo,
-        path,
-        ref,
-      });
-
-      if (Array.isArray(data)) {
-        throw new Error('Path points to a directory, not a file');
-      }
-
-      if ('content' in data && typeof data.content === 'string') {
-        return this.decodeFromBase64(data.content);
-      } else {
-        throw new Error('Invalid file content format received from GitHub API');
-      }
-    } catch (error: any) {
-      // Provide more detailed error messages
-      if (error.status === 401) {
-        throw new Error('Authentication failed. Please check your GitHub token and permissions.');
-      } else if (error.status === 404) {
-        throw new Error(`File "${path}" not found in repository.`);
-      }
-      
-      console.error('Error getting file content:', error);
-      throw error instanceof Error ? error : new Error('Failed to get file content from repository');
-    }
-  }
-
-  /**
-   * Delete a file from the repository
-   * @param path File path in the repository
-   * @param message Commit message
-   * @param branch Branch name (defaults to main)
-   */
-  async deleteFile(
-    path: string,
-    message: string,
-    branch = 'main'
-  ): Promise<void> {
-    try {
-      // Get the current file's SHA
-      const { data } = await this.octokit.repos.getContent({
-        owner: this.owner,
-        repo: this.repo,
-        path,
-        ref: branch,
-      });
-
-      if (Array.isArray(data)) {
-        throw new Error('Path points to a directory, not a file');
-      }
-
-      // Delete the file
-      await this.octokit.repos.deleteFile({
-        owner: this.owner,
-        repo: this.repo,
-        path,
-        message,
-        sha: data.sha,
-        branch,
-      });
-    } catch (error: any) {
-      console.error('Error deleting file:', error);
-      
-      // Provide more detailed error messages
-      if (error.status === 401) {
-        throw new Error('Authentication failed. Please check your GitHub token and permissions.');
-      } else if (error.status === 404) {
-        throw new Error(`File "${path}" not found in repository.`);
-      } else if (error.message) {
-        throw error;
-      } else {
-        throw new Error('Failed to delete file from repository');
-      }
-    }
+// Get user repositories
+export const getUserRepositories = async (): Promise<GithubRepo[]> => {
+  const token = getGithubToken();
+  
+  if (!token) {
+    toast.error("GitHub authentication required");
+    return [];
   }
   
-  /**
-   * List files in a directory
-   * @param path Directory path in the repository
-   * @param ref Branch or commit SHA
-   * @returns Array of file objects
-   */
-  async listFiles(path = '', ref = 'main') {
-    try {
-      const { data } = await this.octokit.repos.getContent({
-        owner: this.owner,
-        repo: this.repo,
-        path,
-        ref,
-      });
-      
-      return Array.isArray(data) ? data : [data];
-    } catch (error: any) {
-      if (error.status === 401) {
-        throw new Error('Authentication failed. Please check your GitHub token and permissions.');
-      } else if (error.status === 404) {
-        // Directory is empty or doesn't exist
-        return [];
-      }
-      
-      console.error('Error listing files:', error);
-      throw error instanceof Error ? error : new Error('Failed to list files in repository');
+  try {
+    const response = await fetch(`${GITHUB_API_URL}/user/repos?sort=updated`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch repositories: ${response.statusText}`);
     }
+    
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching repositories:", error);
+    toast.error(`Failed to fetch repositories: ${error instanceof Error ? error.message : "Unknown error"}`);
+    return [];
   }
-}
+};
 
-/**
- * Create a GitHub service instance from a repository URL
- * @param url GitHub repository URL
- * @param token GitHub personal access token
- * @returns GitHubService instance
- */
-export function createGitHubService(url: string, token: string): GitHubService {
-  const { owner, repo } = GitHubService.parseGitHubUrl(url);
-  return new GitHubService({ token, owner, repo });
-}
+// Create a new file in a repository
+export const createFileInRepo = async (
+  repoFullName: string,
+  path: string,
+  content: string,
+  message: string = "Add file via Agentic Development Platform"
+): Promise<boolean> => {
+  const token = getGithubToken();
+  
+  if (!token) {
+    toast.error("GitHub authentication required");
+    return false;
+  }
+  
+  try {
+    // Get the default branch
+    const repoResponse = await fetch(`${GITHUB_API_URL}/repos/${repoFullName}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    
+    if (!repoResponse.ok) {
+      throw new Error(`Failed to fetch repository: ${repoResponse.statusText}`);
+    }
+    
+    const repoData: GithubRepo = await repoResponse.json();
+    const branch = repoData.default_branch;
+    
+    // Create the file
+    const response = await fetch(`${GITHUB_API_URL}/repos/${repoFullName}/contents/${path}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message,
+        content: btoa(content), // Base64 encode the content
+        branch,
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to create file: ${response.statusText}`);
+    }
+    
+    toast.success(`Successfully created ${path} in ${repoFullName}`);
+    return true;
+  } catch (error) {
+    console.error("Error creating file:", error);
+    toast.error(`Failed to create file: ${error instanceof Error ? error.message : "Unknown error"}`);
+    return false;
+  }
+};
+
+// Update an existing file in a repository
+export const updateFileInRepo = async (
+  repoFullName: string,
+  path: string,
+  content: string,
+  message: string = "Update file via Agentic Development Platform"
+): Promise<boolean> => {
+  const token = getGithubToken();
+  
+  if (!token) {
+    toast.error("GitHub authentication required");
+    return false;
+  }
+  
+  try {
+    // Get the current file to obtain its SHA
+    const fileResponse = await fetch(`${GITHUB_API_URL}/repos/${repoFullName}/contents/${path}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    
+    if (!fileResponse.ok) {
+      if (fileResponse.status === 404) {
+        // File doesn't exist, create it instead
+        return await createFileInRepo(repoFullName, path, content, message);
+      }
+      throw new Error(`Failed to fetch file: ${fileResponse.statusText}`);
+    }
+    
+    const fileData = await fileResponse.json();
+    
+    // Update the file
+    const response = await fetch(`${GITHUB_API_URL}/repos/${repoFullName}/contents/${path}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message,
+        content: btoa(content), // Base64 encode the content
+        sha: fileData.sha,
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to update file: ${response.statusText}`);
+    }
+    
+    toast.success(`Successfully updated ${path} in ${repoFullName}`);
+    return true;
+  } catch (error) {
+    console.error("Error updating file:", error);
+    toast.error(`Failed to update file: ${error instanceof Error ? error.message : "Unknown error"}`);
+    return false;
+  }
+};

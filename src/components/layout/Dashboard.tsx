@@ -1,3 +1,4 @@
+
 import React, { useState } from "react";
 import AgentCard from "@/components/agents/AgentCard";
 import TaskList from "@/components/ui/TaskList";
@@ -17,7 +18,6 @@ interface DashboardProps {
   onStopAgent: (agentId: string) => void;
   onChatWithAgent: (agentId: string) => void;
   onSendMessage: (message: string) => void;
-  onExecuteTask?: (taskId: string, agentId: string) => void;
   project: {
     name: string;
     description: string;
@@ -39,7 +39,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   onStopAgent,
   onChatWithAgent,
   onSendMessage,
-  onExecuteTask,
   project,
   isLoading
 }) => {
@@ -81,11 +80,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         {isLoading.agents ? (
           <div className="flex justify-center py-8">
             <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
-          </div>
-        ) : agents.length === 0 ? (
-          <div className="text-center py-8 bg-white rounded-md border p-4">
-            <p className="text-gray-500 mb-2">No agents available</p>
-            <p className="text-sm text-gray-400">Agents will appear here soon.</p>
           </div>
         ) : (
           <div className="grid gap-3">
@@ -184,7 +178,14 @@ const Dashboard: React.FC<DashboardProps> = ({
               <TaskList 
                 tasks={tasks}
                 agents={agents}
-                onExecuteTask={onExecuteTask}
+                onExecuteTask={(taskId, agentId) => {
+                  const agent = agents.find(a => a.id === agentId);
+                  const task = tasks.find(t => t.id === taskId);
+                  
+                  if (agent && task) {
+                    onStartAgent(agentId);
+                  }
+                }}
               />
             )}
           </div>

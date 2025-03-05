@@ -1,3 +1,4 @@
+
 import { supabase } from "@/integrations/supabase/client";
 import { 
   Project, Agent, Task, Message, CodeFile, 
@@ -58,12 +59,9 @@ export const getProject = async (id: string): Promise<Project | null> => {
 };
 
 export const createProject = async (project: ProjectDB): Promise<Project> => {
-  // Map the github token to the appropriate field if needed
-  const projectToCreate = { ...project };
-  
   const { data, error } = await supabase
     .from('projects')
-    .insert([projectToCreate])
+    .insert([project])
     .select()
     .single();
   
@@ -111,31 +109,6 @@ export const updateProject = async (id: string, updates: Partial<ProjectDB>): Pr
   };
 };
 
-// Fix the current error by adding a function to check if a project ID exists
-export const checkProjectExists = async (id: string | number): Promise<boolean> => {
-  // Convert id to string if it's a number
-  const projectId = typeof id === 'number' ? id.toString() : id;
-  
-  const { data, error } = await supabase
-    .from('projects')
-    .select('id')
-    .eq('id', projectId)
-    .single();
-  
-  if (error) return false;
-  return !!data;
-};
-
-// Properly export the deleteProject function
-export const deleteProject = async (id: string): Promise<void> => {
-  const { error } = await supabase
-    .from('projects')
-    .delete()
-    .eq('id', id);
-  
-  if (error) throw error;
-};
-
 // Agents API
 export const getAgents = async (projectId: string): Promise<Agent[]> => {
   const { data, error } = await supabase
@@ -159,45 +132,45 @@ export const getAgents = async (projectId: string): Promise<Agent[]> => {
 };
 
 export const createAgents = async (projectId: string): Promise<Agent[]> => {
-  const defaultAgents = [
+  const defaultAgents: AgentDB[] = [
     {
       project_id: projectId,
-      agent_type: 'architect' as AgentType,
+      agent_type: 'architect',
       name: 'Architect Agent',
       description: 'Designs system architecture and project structure',
-      status: 'idle' as AgentStatus,
+      status: 'idle',
       progress: 0
     },
     {
       project_id: projectId,
-      agent_type: 'frontend' as AgentType,
+      agent_type: 'frontend',
       name: 'Frontend Agent',
       description: 'Builds UI components and client-side functionality',
-      status: 'idle' as AgentStatus,
+      status: 'idle',
       progress: 0
     },
     {
       project_id: projectId,
-      agent_type: 'backend' as AgentType,
+      agent_type: 'backend',
       name: 'Backend Agent',
       description: 'Develops APIs and database models',
-      status: 'idle' as AgentStatus,
+      status: 'idle',
       progress: 0
     },
     {
       project_id: projectId,
-      agent_type: 'testing' as AgentType,
+      agent_type: 'testing',
       name: 'Testing Agent',
       description: 'Creates tests and ensures quality',
-      status: 'idle' as AgentStatus,
+      status: 'idle',
       progress: 0
     },
     {
       project_id: projectId,
-      agent_type: 'devops' as AgentType,
+      agent_type: 'devops',
       name: 'DevOps Agent',
       description: 'Handles deployment and CI/CD setup',
-      status: 'idle' as AgentStatus,
+      status: 'idle',
       progress: 0
     }
   ];
@@ -276,7 +249,7 @@ export const getTasks = async (projectId: string): Promise<Task[]> => {
   }));
 };
 
-export const createTask = async (task: Omit<TaskDB, 'id'>): Promise<Task> => {
+export const createTask = async (task: TaskDB): Promise<Task> => {
   const { data, error } = await supabase
     .from('tasks')
     .insert([{

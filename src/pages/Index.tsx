@@ -1,385 +1,422 @@
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
-import { useNavigate } from "react-router-dom";
-import { createProject, getProjects, deleteProject, createAgents } from "@/lib/api";
+import Dashboard from "@/components/layout/Dashboard";
 import ProjectSetup from "@/components/layout/ProjectSetup";
-import { Badge } from "@/components/ui/badge";
-import { Pencil, Trash, Eye, ArrowRight } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
+import GitHubIntegrationDialog from "@/components/github/GitHubIntegrationDialog";
+import { Agent, Task, Message, Project, MessageDB, TaskDB } from "@/lib/types";
 import { toast } from "sonner";
-import { Project, Agent, AgentType, ProjectDB } from "@/lib/types";
-import { formatDistanceToNow } from "date-fns";
+import { 
+  getProjects, 
+  createProject, 
+  createAgents,
+  getAgents, 
+  updateAgent, 
+  getTasks, 
+  getMessages, 
+  createMessage,
+  updateTask
+} from "@/lib/api";
 import { sendAgentPrompt } from "@/lib/openrouter";
-import { createMessage } from "@/lib/api";
 
-interface ProjectCardProps {
-  project: Project;
-  onDelete: (id: string) => void;
-}
-
-const ProjectCard: React.FC<ProjectCardProps> = ({ project, onDelete }) => {
-  const navigate = useNavigate();
-
-  return (
-    <Card className="bg-white shadow-md rounded-lg overflow-hidden">
-      <CardHeader>
-        <CardTitle className="text-lg font-semibold">{project.name}</CardTitle>
-        <CardDescription className="text-gray-500">
-          {project.description}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="p-4">
-        <div className="flex items-center space-x-2">
-          <Badge variant="secondary">
-            {project.sourceType ? "Existing Repo" : "New Project"}
-          </Badge>
-          {project.tech_stack && (
-            <Badge className="bg-blue-100 text-blue-800">
-              {project.tech_stack.join(", ")}
-            </Badge>
-          )}
-        </div>
-        <div className="mt-2 text-sm text-gray-600">
-          Updated{" "}
-          {project.updated_at &&
-            formatDistanceToNow(new Date(project.updated_at), {
-              addSuffix: true,
-            })}
-        </div>
-      </CardContent>
-      <CardFooter className="flex justify-between items-center p-4">
-        <div className="flex space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigate(`/project/${project.id}`)}
-          >
-            <Eye className="h-4 w-4 mr-2" />
-            View
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              // Logic to edit project
-            }}
-          >
-            <Pencil className="h-4 w-4 mr-2" />
-            Edit
-          </Button>
-        </div>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="destructive" size="sm">
-              <Trash className="h-4 w-4 mr-2" />
-              Delete
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete your
-                project and remove all of its data.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => {
-                  onDelete(project.id);
-                }}
-              >
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </CardFooter>
-    </Card>
-  );
-};
-
-const Index: React.FC = () => {
-  const [isProjectSetupOpen, setIsProjectSetupOpen] = useState(false);
-  const [activeProject, setActiveProject] = useState<Project | null>(null);
-  const [selectedAgent, setSelectedAgent] = useState<AgentType | null>(null);
-  const [chatMessages, setChatMessages] = useState<
-    { sender: string; content: string }[]
-  >([]);
-  const [messageInput, setMessageInput] = useState("");
-  const [activeTab, setActiveTab] = useState("projects");
-  const navigate = useNavigate();
-
+const Index = () => {
   const queryClient = useQueryClient();
+  const [isProjectSetupOpen, setIsProjectSetupOpen] = useState(false);
+  const [isGithubDialogOpen, setIsGithubDialogOpen] = useState(false);
+  const [activeProject, setActiveProject] = useState<Project | null>(null);
+  const [activeChat, setActiveChat] = useState<string | null>(null);
 
-  const {
-    data: projects,
-    isLoading,
-    error,
+  const { 
+    data: projects = [],
+    isLoading: loadingProjects,
+    error: projectsError 
   } = useQuery({
-    queryKey: ["projects"],
+    queryKey: ['projects'],
     queryFn: getProjects
   });
 
+  useEffect(() => {
+    if (projects.length > 0 && !activeProject) {
+      setActiveProject(projects[0]);
+    }
+  }, [projects, activeProject]);
+
+  const { 
+    data: agents = [], 
+    isLoading: loadingAgents 
+  } = useQuery({
+    queryKey: ['agents', activeProject?.id],
+    queryFn: () => activeProject ? getAgents(activeProject.id) : Promise.resolve([]),
+    enabled: !!activeProject
+  });
+
+  const { 
+    data: tasks = [], 
+    isLoading: loadingTasks 
+  } = useQuery({
+    queryKey: ['tasks', activeProject?.id],
+    queryFn: () => activeProject ? getTasks(activeProject.id) : Promise.resolve([]),
+    enabled: !!activeProject
+  });
+
+  const { 
+    data: messages = [], 
+    isLoading: loadingMessages 
+  } = useQuery({
+    queryKey: ['messages', activeProject?.id, activeChat],
+    queryFn: () => activeProject ? getMessages(activeProject.id) : Promise.resolve([]),
+    enabled: !!activeProject
+  });
+
   const createProjectMutation = useMutation({
-    mutationFn: (projectData: Omit<Project, "id">) => {
-      // Transform the project data to match ProjectDB type
-      const dbProject: ProjectDB = {
-        name: projectData.name,
-        description: projectData.description,
-        tech_stack: projectData.techStack ? 
-          [projectData.techStack.frontend, projectData.techStack.backend, projectData.techStack.database, projectData.techStack.deployment] : 
-          undefined,
-        source_type: projectData.mode === 'existing' ? 'github' : undefined,
-        source_url: projectData.repoUrl
-      };
-      
-      return createProject(dbProject);
-    },
-    onSuccess: (createdProject) => {
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
-      
-      // Create agents for the new project
-      if (createdProject && createdProject.id) {
-        createAgents(createdProject.id.toString())
-          .then(() => {
-            console.log("Agents created successfully for project:", createdProject.id);
-          })
-          .catch(error => {
-            console.error("Failed to create agents:", error);
-            toast.error(`Failed to create agents: ${error.message}`);
-          });
-      }
-      
-      setIsProjectSetupOpen(false);
-      toast.success("Project created successfully!");
-    },
-    onError: (error: any) => {
-      toast.error(`Failed to create project: ${error.message}`);
-    },
-  });
-
-  const deleteProjectMutation = useMutation({
-    mutationFn: deleteProject,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
-      toast.success("Project deleted successfully!");
-    },
-    onError: (error: any) => {
-      toast.error(`Failed to delete project: ${error.message}`);
-    },
-  });
-
-  const handleCreateProject = async (projectData: Omit<Project, "id">) => {
-    createProjectMutation.mutate(projectData);
-  };
-
-  const handleDeleteProject = async (id: string) => {
-    deleteProjectMutation.mutate(id);
-  };
-
-  const handleTabChange = (tab: string) => {
-    setActiveTab(tab);
-  };
-
-  const executeAgentTasks = async (
-    agent: AgentType,
-    activeProject: Project
-  ) => {
-    if (!activeProject) return;
-
-    createMessage({
-      project_id: activeProject.id.toString(),
-      sender: `${agent.charAt(0).toUpperCase() + agent.slice(1)} Agent`,
-      content: "I'm now analyzing the project and will help improve it. This might take a moment...",
-      type: "text",
-    });
-
-    const loadingToastId = toast.loading(`${agent} agent is analyzing the project...`);
-
-    try {
-      const response = await sendAgentPrompt(
-        {
-          id: `${agent}-agent`,
-          name: `${agent.charAt(0).toUpperCase() + agent.slice(1)} Agent`,
-          type: agent,
-        },
-        "Analyze this project and create tasks for improvements",
-        activeProject
-      );
-
-      createMessage({
-        project_id: activeProject.id.toString(),
-        sender: `${agent.charAt(0).toUpperCase() + agent.slice(1)} Agent`,
-        content: "I've analyzed the GitHub repository and created tasks for improvements. Check the task list for details.",
-        type: "text",
+    mutationFn: async (projectData: {
+      name: string;
+      description: string;
+      tech_stack: string[];
+      source_type?: string;
+      source_url?: string;
+    }) => {
+      const newProject = await createProject({
+        ...projectData,
+        status: 'setup',
+        progress: 0
       });
 
-      toast.dismiss(loadingToastId);
-      toast.success(`${agent.charAt(0).toUpperCase() + agent.slice(1)} agent completed analysis`);
+      await createAgents(newProject.id);
+
+      return newProject;
+    },
+    onSuccess: (newProject) => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      setActiveProject(newProject);
+      toast.success(`Project "${newProject.name}" has been created`);
+    },
+    onError: (error) => {
+      console.error("Error creating project:", error);
+      toast.error("Failed to create project. Please try again.");
+    }
+  });
+
+  const updateAgentMutation = useMutation({
+    mutationFn: (variables: { id: string } & Partial<Agent>) => {
+      return updateAgent(variables.id, variables);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agents', activeProject?.id] });
+    }
+  });
+
+  const createMessageMutation = useMutation({
+    mutationFn: (messageData: MessageDB) => {
+      return createMessage(messageData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', activeProject?.id] });
+    }
+  });
+
+  const updateTaskMutation = useMutation({
+    mutationFn: (variables: { id: string } & Partial<TaskDB>) => {
+      return updateTask(variables.id, variables);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks', activeProject?.id] });
+    }
+  });
+
+  const handleStartAgent = (agentId: string) => {
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent || !activeProject) return;
+    
+    updateAgentMutation.mutate({ 
+      id: agentId, 
+      status: "working", 
+      progress: 10 
+    });
+    
+    toast.success(`${agent.name} started working`);
+
+    if (activeProject.source_url && activeProject.source_url.includes('github.com')) {
+      const analysisToast = toast.loading(`${agent.name} is analyzing your GitHub repository...`);
+      
+      import('@/lib/openrouter').then(module => {
+        module.analyzeGitHubAndCreateTasks(agent, activeProject)
+          .then(success => {
+            toast.dismiss(analysisToast);
+            
+            if (success) {
+              toast.success(`${agent.name} has analyzed your GitHub repo and created tasks`);
+              queryClient.invalidateQueries({ queryKey: ['tasks', activeProject.id] });
+            } else {
+              toast.error(`${agent.name} encountered an issue analyzing your GitHub repo`);
+            }
+          })
+          .catch(error => {
+            console.error('Error during GitHub analysis:', error);
+            toast.dismiss(analysisToast);
+            toast.error(`Failed to analyze GitHub repository: ${error.message}`);
+          });
+      });
+    }
+    
+    const agentTasks = tasks.filter(task => 
+      task.assigned_to === agentId && task.status === 'pending'
+    );
+    
+    if (agentTasks.length > 0) {
+      const executionToast = toast.loading(`${agent?.name} is starting to work on ${agentTasks.length} pending tasks...`);
+      
+      executeAgentTasks(agent as Agent, agentTasks, executionToast);
+    }
+    
+    let progress = 10;
+    const interval = setInterval(() => {
+      progress += 10;
+      
+      if (progress >= 100) {
+        updateAgentMutation.mutate({ 
+          id: agentId, 
+          status: "completed", 
+          progress: 100 
+        });
+        clearInterval(interval);
+      } else {
+        updateAgentMutation.mutate({ 
+          id: agentId, 
+          progress 
+        });
+      }
+    }, 2000);
+  };
+
+  const executeAgentTasks = async (agent: Agent, tasks: Task[], toastId: string) => {
+    if (!activeProject || tasks.length === 0) {
+      toast.dismiss(toastId);
+      return;
+    }
+
+    const currentTask = tasks[0];
+    const remainingTasks = tasks.slice(1);
+    
+    updateTaskMutation.mutate({ 
+      id: currentTask.id, 
+      status: 'in_progress' 
+    });
+    
+    toast.dismiss(toastId);
+    const taskToast = toast.loading(`${agent.name} is working on task: ${currentTask.title}`);
+    
+    try {
+      const taskPrompt = `Execute this task: ${currentTask.title}. ${currentTask.description || ''} Provide a detailed solution and implementation steps.`;
+      
+      const response = await sendAgentPrompt(agent, taskPrompt, activeProject);
+      
+      createMessageMutation.mutate({
+        project_id: activeProject.id.toString(), // Ensure project_id is a string
+        content: `Completed task: ${currentTask.title}\n\n${response}`,
+        sender: agent.name,
+        type: "text"
+      });
+      
+      updateTaskMutation.mutate({ 
+        id: currentTask.id, 
+        status: 'completed' 
+      });
+      
+      toast.dismiss(taskToast);
+      toast.success(`${agent.name} completed task: ${currentTask.title}`);
+      
+      if (remainingTasks.length > 0) {
+        setTimeout(() => {
+          executeAgentTasks(agent, remainingTasks, toast.loading(`${agent.name} is continuing with next task...`));
+        }, 1000);
+      }
     } catch (error) {
-      toast.dismiss(loadingToastId);
-      toast.error(`Error with ${agent} agent: ${error instanceof Error ? error.message : "Unknown error"}`);
-      console.error(`Error with ${agent} agent:`, error);
+      console.error('Error executing task:', error);
+      
+      updateTaskMutation.mutate({ 
+        id: currentTask.id, 
+        status: 'failed' 
+      });
+      
+      toast.dismiss(taskToast);
+      toast.error(`${agent.name} failed to complete task: ${currentTask.title}`);
+      
+      createMessageMutation.mutate({
+        project_id: activeProject.id.toString(), // Ensure project_id is a string
+        content: `Failed to complete task: ${currentTask.title}\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        sender: agent.name,
+        type: "text"
+      });
     }
   };
 
-  const handleAgentSelect = (agent: AgentType) => {
-    setSelectedAgent(agent);
-    if (activeProject) {
-      executeAgentTasks(agent, activeProject);
-    }
+  const handleStopAgent = (agentId: string) => {
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent) return;
+    
+    updateAgentMutation.mutate({ 
+      id: agentId, 
+      status: "idle"
+    });
+    
+    toast.info(`${agent.name} has been paused`);
+  };
+
+  const handleChatWithAgent = (agentId: string) => {
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent) return;
+    
+    setActiveChat(agentId);
+    toast.info(`Chat activated with ${agent.name}`);
   };
 
   const handleSendMessage = async (message: string) => {
-    if (!activeProject || !selectedAgent) return;
+    if (!activeProject || !message.trim() || !activeChat) return;
     
-    createMessage({
-      project_id: activeProject.id.toString(),
-      sender: "You",
+    const agent = agents.find(a => a.id === activeChat);
+    if (!agent) return;
+    
+    createMessageMutation.mutate({
+      project_id: activeProject.id.toString(), // Ensure project_id is a string
       content: message,
-      type: "text",
+      sender: "You",
+      type: "text"
     });
-    
-    const agentName = `${selectedAgent.charAt(0).toUpperCase() + selectedAgent.slice(1)} Agent`;
-    const loadingToastId = toast.loading(`${agentName} is thinking...`);
+
+    const loadingToastId = toast.loading(`${agent.name} is thinking...`);
     
     try {
-      const response = await sendAgentPrompt(
-        {
-          id: `${selectedAgent}-agent`,
-          name: agentName,
-          type: selectedAgent as AgentType,
-        },
-        message,
-        activeProject
-      );
+      const response = await sendAgentPrompt(agent, message, activeProject);
       
-      createMessage({
-        project_id: activeProject.id.toString(),
-        sender: agentName,
-        content: response || "I couldn't generate a response at this time.",
-        type: "text",
+      createMessageMutation.mutate({
+        project_id: activeProject.id.toString(), // Ensure project_id is a string
+        content: response,
+        sender: agent.name,
+        type: "text"
       });
       
       toast.dismiss(loadingToastId);
     } catch (error) {
-      toast.dismiss(loadingToastId);
-      toast.error(`Error getting response: ${error instanceof Error ? error.message : "Unknown error"}`);
-      console.error("Error getting agent response:", error);
+      console.error('Error getting response from agent:', error);
       
-      createMessage({
-        project_id: activeProject.id.toString(),
-        sender: agentName,
-        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : "Unknown error"}`,
-        type: "text",
+      createMessageMutation.mutate({
+        project_id: activeProject.id.toString(), // Ensure project_id is a string
+        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        sender: agent.name,
+        type: "text"
       });
+      
+      toast.dismiss(loadingToastId);
+      toast.error("Failed to get response from agent.");
     }
   };
 
+  const handleCreateProject = (projectData: {
+    name: string;
+    description: string;
+    mode: string;
+    techStack: {
+      frontend: string;
+      backend: string;
+      database: string;
+      deployment: string;
+    };
+    repoUrl?: string;
+  }) => {
+    const tech_stack = [
+      projectData.techStack.frontend,
+      projectData.techStack.backend,
+      projectData.techStack.database,
+      projectData.techStack.deployment
+    ];
+    
+    createProjectMutation.mutate({
+      name: projectData.name,
+      description: projectData.description,
+      tech_stack,
+      source_type: projectData.mode === 'existing' ? 'git' : undefined,
+      source_url: projectData.repoUrl
+    });
+    
+    setIsProjectSetupOpen(false);
+  };
+
+  const handleOpenGithubDialog = () => {
+    setIsGithubDialogOpen(true);
+  };
+
+  if (loadingProjects && !projectsError) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 border-4 border-t-primary rounded-full animate-spin mb-4"></div>
+          <p>Loading your projects...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen flex flex-col bg-white">
       <Header
         onNewProject={() => setIsProjectSetupOpen(true)}
         onImportProject={() => setIsProjectSetupOpen(true)}
+        onGithubPush={activeProject ? handleOpenGithubDialog : undefined}
+        hasActiveProject={!!activeProject}
       />
-
+      
+      {activeProject ? (
+        <Dashboard
+          agents={agents}
+          tasks={tasks}
+          messages={messages}
+          onStartAgent={handleStartAgent}
+          onStopAgent={handleStopAgent}
+          onChatWithAgent={handleChatWithAgent}
+          onSendMessage={handleSendMessage}
+          activeChat={activeChat}
+          project={{
+            name: activeProject.name,
+            description: activeProject.description,
+            mode: activeProject.source_type ? 'existing' : 'new'
+          }}
+          isLoading={{
+            agents: loadingAgents,
+            tasks: loadingTasks,
+            messages: loadingMessages
+          }}
+        />
+      ) : (
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="max-w-md w-full text-center p-8 bg-gray-50 rounded-lg border">
+            <h2 className="text-xl font-semibold mb-4">Welcome to the Agentic Development Platform</h2>
+            <p className="mb-6 text-gray-600">
+              Get started by creating a new project or importing an existing one.
+            </p>
+            <div className="flex flex-col space-y-3">
+              <button
+                onClick={() => setIsProjectSetupOpen(true)}
+                className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+              >
+                Create New Project
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <ProjectSetup
         isOpen={isProjectSetupOpen}
         onClose={() => setIsProjectSetupOpen(false)}
         onCreateProject={handleCreateProject}
       />
-
-      <div className="container mx-auto mt-8">
-        <Tabs value={activeTab} onValueChange={handleTabChange}>
-          <TabsList className="bg-white rounded-md shadow-sm p-2">
-            <TabsTrigger value="projects" className="data-[state=active]:bg-gray-200">
-              Projects
-            </TabsTrigger>
-            <TabsTrigger value="agents" className="data-[state=active]:bg-gray-200">
-              Agents
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value="projects" className="mt-4">
-            {isLoading ? (
-              <div className="text-center">Loading projects...</div>
-            ) : error ? (
-              <div className="text-center text-red-500">
-                Error: {(error as Error).message}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {projects && projects.map((project) => (
-                  <ProjectCard
-                    key={project.id}
-                    project={project}
-                    onDelete={handleDeleteProject}
-                  />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-          <TabsContent value="agents" className="mt-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {["architect", "frontend", "backend", "testing"].map(
-                (agent) => (
-                  <Card
-                    key={agent}
-                    className="cursor-pointer hover:shadow-md transition-shadow duration-300 ease-in-out"
-                    onClick={() => handleAgentSelect(agent as AgentType)}
-                  >
-                    <CardHeader>
-                      <CardTitle>
-                        {agent.charAt(0).toUpperCase() + agent.slice(1)} Agent
-                      </CardTitle>
-                      <CardDescription>
-                        {`The ${agent} agent is responsible for ${agent} tasks.`}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-gray-500">
-                        Click to activate this agent.
-                      </p>
-                    </CardContent>
-                  </Card>
-                )
-              )}
-            </div>
-          </TabsContent>
-        </Tabs>
-      </div>
+      
+      <GitHubIntegrationDialog
+        isOpen={isGithubDialogOpen}
+        onClose={() => setIsGithubDialogOpen(false)}
+        project={activeProject}
+      />
     </div>
   );
 };
