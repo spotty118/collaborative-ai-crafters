@@ -1,14 +1,13 @@
 
-import React, { createContext, useContext, useState, useCallback } from 'react';
-import { GitHubService } from '@/lib/github';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { getGitHubService, initGitHubService, clearGitHubService, isGitHubServiceInitialized } from '@/lib/services/GitHubService';
-import { GitHubConfig, GitHubFile, GitHubCommit } from '@/lib/types';
+import { GitHubCommit } from '@/lib/types';
 import { toast } from 'sonner';
 
 interface GitHubContextType {
   isConnected: boolean;
   currentBranch: string;
-  connect: (url: string, token: string) => void;
+  connect: (url: string, token: string) => Promise<void>;
   disconnect: () => void;
   createOrUpdateFile: (path: string, content: string, message: string) => Promise<void>;
   getFileContent: (path: string) => Promise<string>;
@@ -31,7 +30,7 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [currentBranch, setCurrentBranch] = useState('main');
 
   // Initialize from localStorage if available
-  React.useEffect(() => {
+  useEffect(() => {
     // Check if we already have an initialized service
     if (isGitHubServiceInitialized()) {
       setIsConnected(true);
@@ -39,7 +38,7 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, []);
 
-  const connect = useCallback((url: string, token: string) => {
+  const connect = useCallback(async (url: string, token: string) => {
     try {
       if (!url || !token) {
         throw new Error('GitHub URL and token are required');
@@ -57,14 +56,35 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
 
       console.log(`Connecting to GitHub repo: ${owner}/${repo}`);
+      
+      // Initialize the GitHub service
       initGitHubService(url, token);
+      
+      // Verify the token by making a test API call
+      // This will throw if the token is invalid
+      const github = getGitHubService();
+      
       setIsConnected(true);
       toast.success('Successfully connected to GitHub repository');
     } catch (error) {
       console.error('Failed to connect to GitHub:', error);
       setIsConnected(false);
       clearGitHubService();
-      toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      
+      // Check for specific GitHub API error messages
+      let errorMessage = 'Unknown error';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        
+        // Enhance error message for common issues
+        if (errorMessage.includes('Bad credentials')) {
+          errorMessage = 'Invalid GitHub token. Please check your token and try again.';
+        } else if (errorMessage.includes('Not Found')) {
+          errorMessage = 'Repository not found. Please check the URL and your access permissions.';
+        }
+      }
+      
+      toast.error('Failed to connect to GitHub: ' + errorMessage);
       throw error;
     }
   }, []);
@@ -77,25 +97,38 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const createOrUpdateFile = useCallback(async (path: string, content: string, message: string) => {
     try {
-      console.log(`Attempting to create/update file: ${path}`);
       if (!isConnected) {
-        throw new Error('GitHub is not connected');
+        throw new Error('GitHub is not connected. Please connect first.');
       }
       
+      console.log(`Attempting to create/update file: ${path}`);
       const github = getGitHubService();
       await github.createOrUpdateFile(path, content, message);
       console.log(`Successfully created/updated file: ${path}`);
     } catch (error) {
       console.error(`Failed to create/update file ${path}:`, error);
-      toast.error('Failed to save file: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      
+      let errorMessage = 'Unknown error';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        
+        // Enhance error messages for specific GitHub API errors
+        if (errorMessage.includes('Bad credentials')) {
+          // If we get a bad credentials error, disconnect as the token is invalid
+          disconnect();
+          errorMessage = 'Invalid GitHub token. Please reconnect with a valid token.';
+        }
+      }
+      
+      toast.error('Failed to save file: ' + errorMessage);
       throw error;
     }
-  }, [isConnected]);
+  }, [isConnected, disconnect]);
 
   const getFileContent = useCallback(async (path: string) => {
     try {
       if (!isConnected) {
-        throw new Error('GitHub is not connected');
+        throw new Error('GitHub is not connected. Please connect first.');
       }
       
       const github = getGitHubService();
@@ -103,14 +136,22 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return content;
     } catch (error) {
       console.error(`Failed to get file content for ${path}:`, error);
+      
+      // Check for specific GitHub API errors
+      if (error instanceof Error && error.message.includes('Bad credentials')) {
+        // If we get a bad credentials error, disconnect as the token is invalid
+        disconnect();
+        toast.error('Invalid GitHub token. Please reconnect with a valid token.');
+      }
+      
       throw error;
     }
-  }, [isConnected]);
+  }, [isConnected, disconnect]);
 
   const deleteFile = useCallback(async (path: string, message: string) => {
     try {
       if (!isConnected) {
-        throw new Error('GitHub is not connected');
+        throw new Error('GitHub is not connected. Please connect first.');
       }
       
       const github = getGitHubService();
@@ -118,15 +159,27 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       console.log(`Successfully deleted file: ${path}`);
     } catch (error) {
       console.error(`Failed to delete file ${path}:`, error);
-      toast.error('Failed to delete file: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      
+      let errorMessage = 'Unknown error';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        
+        // Handle authentication errors
+        if (errorMessage.includes('Bad credentials')) {
+          disconnect();
+          errorMessage = 'Invalid GitHub token. Please reconnect with a valid token.';
+        }
+      }
+      
+      toast.error('Failed to delete file: ' + errorMessage);
       throw error;
     }
-  }, [isConnected]);
+  }, [isConnected, disconnect]);
 
   const commitChanges = useCallback(async (commit: GitHubCommit) => {
     try {
       if (!isConnected) {
-        throw new Error('GitHub is not connected');
+        throw new Error('GitHub is not connected. Please connect first.');
       }
       
       console.log(`Committing ${commit.files.length} files with message: ${commit.message}`);
@@ -141,10 +194,22 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       toast.success(`Successfully committed ${commit.files.length} files to GitHub`);
     } catch (error) {
       console.error('Failed to commit changes:', error);
-      toast.error('Failed to commit changes: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      
+      let errorMessage = 'Unknown error';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        
+        // Handle authentication errors
+        if (errorMessage.includes('Bad credentials')) {
+          disconnect();
+          errorMessage = 'Invalid GitHub token. Please reconnect with a valid token.';
+        }
+      }
+      
+      toast.error('Failed to commit changes: ' + errorMessage);
       throw error;
     }
-  }, [isConnected]);
+  }, [isConnected, disconnect]);
 
   const value = {
     isConnected,

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useGitHub } from '@/contexts/GitHubContext';
 import { toast } from 'sonner';
-import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Info } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export const GitHubConnectTester: React.FC = () => {
@@ -28,9 +28,22 @@ export const GitHubConnectTester: React.FC = () => {
     }
   }, [github.isConnected]);
   
+  // Validate token format
+  const isValidTokenFormat = (token: string) => {
+    return token.startsWith('ghp_') || token.startsWith('github_pat_');
+  };
+  
   const handleConnect = async () => {
     if (!repoUrl || !token) {
       const message = 'Please enter GitHub repository URL and token';
+      setErrorMessage(message);
+      toast.error(message);
+      return;
+    }
+    
+    // Validate token format
+    if (!isValidTokenFormat(token)) {
+      const message = 'Invalid token format. Token should start with ghp_ or github_pat_';
       setErrorMessage(message);
       toast.error(message);
       return;
@@ -152,7 +165,13 @@ export const GitHubConnectTester: React.FC = () => {
                 onChange={(e) => setToken(e.target.value)}
                 placeholder="ghp_xxxxxxxxxxxx"
               />
-              <p className="text-xs text-gray-500">
+              <Alert className="mt-2">
+                <Info className="h-4 w-4" />
+                <AlertDescription className="text-xs">
+                  Token must start with <strong>ghp_</strong> or <strong>github_pat_</strong>. Make sure to create a token with <strong>repo</strong> scope.
+                </AlertDescription>
+              </Alert>
+              <p className="text-xs text-gray-500 mt-2">
                 Generate a new token with "repo" scope at{" "}
                 <a 
                   href="https://github.com/settings/tokens/new" 

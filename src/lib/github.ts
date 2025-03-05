@@ -13,6 +13,11 @@ export class GitHubService {
   private repo: string;
 
   constructor(config: GitHubConfig) {
+    // Validate token format
+    if (!config.token.startsWith('ghp_') && !config.token.startsWith('github_pat_')) {
+      console.warn('GitHub token format may be invalid. It should start with ghp_ or github_pat_');
+    }
+    
     this.octokit = new Octokit({ auth: config.token });
     this.owner = config.owner;
     this.repo = config.repo;
@@ -24,14 +29,23 @@ export class GitHubService {
    * @returns Object containing owner and repo names
    */
   static parseGitHubUrl(url: string): { owner: string; repo: string } {
-    const matches = url.match(/github\.com\/([^/]+)\/([^/]+)/);
+    // Handle URLs with trailing slashes or .git extension
+    const cleanUrl = url.replace(/\.git\/?$/, '').replace(/\/$/, '');
+    
+    // Extract owner and repo from the cleaned URL
+    const matches = cleanUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
     if (!matches) {
-      throw new Error('Invalid GitHub URL format');
+      throw new Error('Invalid GitHub URL format. Expected format: https://github.com/owner/repo');
     }
-    return {
-      owner: matches[1],
-      repo: matches[2],
-    };
+    
+    const owner = matches[1];
+    const repo = matches[2];
+    
+    if (!owner || !repo) {
+      throw new Error('Could not extract owner and repository from URL');
+    }
+    
+    return { owner, repo };
   }
 
   // Browser-compatible base64 encoding
@@ -72,9 +86,16 @@ export class GitHubService {
         if (!Array.isArray(data)) {
           sha = data.sha;
         }
-      } catch (error) {
+      } catch (error: any) {
         // File doesn't exist yet, which is fine
-        console.log(`File ${path} doesn't exist yet, creating new file`);
+        if (error.status === 404) {
+          console.log(`File ${path} doesn't exist yet, creating new file`);
+        } else if (error.status === 401) {
+          throw new Error('Authentication failed. Please check your GitHub token and permissions.');
+        } else {
+          console.error('Error checking file existence:', error);
+          throw error;
+        }
       }
 
       // Create or update the file with browser-compatible base64 encoding
@@ -91,9 +112,21 @@ export class GitHubService {
       });
       
       console.log(`Successfully created/updated file: ${path}`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating/updating file:', error);
-      throw new Error('Failed to create/update file in repository');
+      
+      // Provide more detailed error messages
+      if (error.status === 401) {
+        throw new Error('Authentication failed. Please check your GitHub token and permissions.');
+      } else if (error.status === 404) {
+        throw new Error('Repository not found or you do not have access to it.');
+      } else if (error.status === 422) {
+        throw new Error('Validation failed. Please check your file path and content.');
+      } else if (error.message) {
+        throw error;
+      } else {
+        throw new Error('Failed to create/update file in repository');
+      }
     }
   }
 
@@ -121,7 +154,14 @@ export class GitHubService {
       } else {
         throw new Error('Invalid file content format received from GitHub API');
       }
-    } catch (error) {
+    } catch (error: any) {
+      // Provide more detailed error messages
+      if (error.status === 401) {
+        throw new Error('Authentication failed. Please check your GitHub token and permissions.');
+      } else if (error.status === 404) {
+        throw new Error(`File "${path}" not found in repository.`);
+      }
+      
       console.error('Error getting file content:', error);
       throw error instanceof Error ? error : new Error('Failed to get file content from repository');
     }
@@ -160,9 +200,19 @@ export class GitHubService {
         sha: data.sha,
         branch,
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting file:', error);
-      throw new Error('Failed to delete file from repository');
+      
+      // Provide more detailed error messages
+      if (error.status === 401) {
+        throw new Error('Authentication failed. Please check your GitHub token and permissions.');
+      } else if (error.status === 404) {
+        throw new Error(`File "${path}" not found in repository.`);
+      } else if (error.message) {
+        throw error;
+      } else {
+        throw new Error('Failed to delete file from repository');
+      }
     }
   }
 }
