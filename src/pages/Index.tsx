@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
 import Dashboard from "@/components/layout/Dashboard";
 import ProjectSetup from "@/components/layout/ProjectSetup";
-import { Agent, Task, Message, Project } from "@/lib/types";
+import { Agent, Task, Message, Project, MessageDB } from "@/lib/types";
 import { toast } from "sonner";
 import { 
   getProjects, 
@@ -103,7 +104,9 @@ const Index = () => {
   });
 
   const createMessageMutation = useMutation({
-    mutationFn: createMessage,
+    mutationFn: (messageData: MessageDB) => {
+      return createMessage(messageData);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', activeProject?.id] });
     }
@@ -171,8 +174,7 @@ const Index = () => {
       project_id: activeProject.id,
       content: message,
       sender: "You",
-      type: "text",
-      created_at: new Date()
+      type: "text"
     });
     
     setTimeout(() => {
@@ -180,8 +182,7 @@ const Index = () => {
         project_id: activeProject.id,
         content: `I'm analyzing your request: "${message}"...`,
         sender: agent.name,
-        type: "text",
-        created_at: new Date()
+        type: "text"
       });
     }, 1000);
   };
