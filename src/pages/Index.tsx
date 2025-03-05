@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
@@ -158,7 +157,6 @@ const Index = () => {
       });
     }
     
-    // Execute pending tasks assigned to this agent
     const agentTasks = tasks.filter(task => 
       task.assigned_to === agentId && task.status === 'pending'
     );
@@ -166,7 +164,6 @@ const Index = () => {
     if (agentTasks.length > 0) {
       const executionToast = toast.loading(`${agent?.name} is starting to work on ${agentTasks.length} pending tasks...`);
       
-      // Start working on tasks one by one
       executeAgentTasks(agent as Agent, agentTasks, executionToast);
     }
     
@@ -196,11 +193,9 @@ const Index = () => {
       return;
     }
 
-    // Take the first task and start working on it
     const currentTask = tasks[0];
     const remainingTasks = tasks.slice(1);
     
-    // Update task status to in_progress
     updateTaskMutation.mutate({ 
       id: currentTask.id, 
       status: 'in_progress' 
@@ -210,13 +205,10 @@ const Index = () => {
     const taskToast = toast.loading(`${agent.name} is working on task: ${currentTask.title}`);
     
     try {
-      // Generate prompt for the agent to work on the task
       const taskPrompt = `Execute this task: ${currentTask.title}. ${currentTask.description || ''} Provide a detailed solution and implementation steps.`;
       
-      // Get response from agent
       const response = await sendAgentPrompt(agent, taskPrompt, activeProject);
       
-      // Create a message for the agent's response
       createMessageMutation.mutate({
         project_id: activeProject.id,
         content: `Completed task: ${currentTask.title}\n\n${response}`,
@@ -224,7 +216,6 @@ const Index = () => {
         type: "text"
       });
       
-      // Mark task as completed
       updateTaskMutation.mutate({ 
         id: currentTask.id, 
         status: 'completed' 
@@ -233,7 +224,6 @@ const Index = () => {
       toast.dismiss(taskToast);
       toast.success(`${agent.name} completed task: ${currentTask.title}`);
       
-      // Continue with next task after a short delay
       if (remainingTasks.length > 0) {
         setTimeout(() => {
           executeAgentTasks(agent, remainingTasks, toast.loading(`${agent.name} is continuing with next task...`));
@@ -242,7 +232,6 @@ const Index = () => {
     } catch (error) {
       console.error('Error executing task:', error);
       
-      // Mark task as failed
       updateTaskMutation.mutate({ 
         id: currentTask.id, 
         status: 'failed' 
@@ -251,7 +240,6 @@ const Index = () => {
       toast.dismiss(taskToast);
       toast.error(`${agent.name} failed to complete task: ${currentTask.title}`);
       
-      // Create error message
       createMessageMutation.mutate({
         project_id: activeProject.id,
         content: `Failed to complete task: ${currentTask.title}\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
