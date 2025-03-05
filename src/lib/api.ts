@@ -1,6 +1,6 @@
 
 import { supabase } from "@/integrations/supabase/client";
-import { Project, Agent, Task, Message, CodeFile } from "./types";
+import { Project, Agent, Task, Message, CodeFile, AgentType, AgentStatus, TaskStatus } from "./types";
 
 // Projects API
 export const getProjects = async (): Promise<Project[]> => {
@@ -24,7 +24,7 @@ export const getProject = async (id: string): Promise<Project | null> => {
   return data;
 };
 
-export const createProject = async (project: Partial<Project>): Promise<Project> => {
+export const createProject = async (project: Partial<Omit<Project, 'created_at' | 'updated_at'>>): Promise<Project> => {
   const { data, error } = await supabase
     .from('projects')
     .insert([project])
@@ -35,7 +35,7 @@ export const createProject = async (project: Partial<Project>): Promise<Project>
   return data;
 };
 
-export const updateProject = async (id: string, updates: Partial<Project>): Promise<Project> => {
+export const updateProject = async (id: string, updates: Partial<Omit<Project, 'created_at' | 'updated_at'>>): Promise<Project> => {
   const { data, error } = await supabase
     .from('projects')
     .update(updates)
@@ -171,21 +171,31 @@ export const getTasks = async (projectId: string): Promise<Task[]> => {
     .order('created_at', { ascending: false });
   
   if (error) throw error;
-  return data || [];
+  
+  return (data || []).map(task => ({
+    ...task,
+    status: task.status as TaskStatus
+  }));
 };
 
-export const createTask = async (task: Partial<Task>): Promise<Task> => {
+export const createTask = async (task: Omit<Partial<Task>, 'created_at' | 'updated_at' | 'completed_at'>): Promise<Task> => {
   const { data, error } = await supabase
     .from('tasks')
-    .insert([task])
+    .insert([{
+      ...task,
+      status: task.status || 'pending'
+    }])
     .select()
     .single();
   
   if (error) throw error;
-  return data;
+  return {
+    ...data,
+    status: data.status as TaskStatus
+  };
 };
 
-export const updateTask = async (id: string, updates: Partial<Task>): Promise<Task> => {
+export const updateTask = async (id: string, updates: Omit<Partial<Task>, 'created_at' | 'updated_at' | 'completed_at'>): Promise<Task> => {
   const { data, error } = await supabase
     .from('tasks')
     .update(updates)
@@ -194,7 +204,10 @@ export const updateTask = async (id: string, updates: Partial<Task>): Promise<Ta
     .single();
   
   if (error) throw error;
-  return data;
+  return {
+    ...data,
+    status: data.status as TaskStatus
+  };
 };
 
 // Messages API
@@ -209,10 +222,20 @@ export const getMessages = async (projectId: string): Promise<Message[]> => {
   return data || [];
 };
 
-export const createMessage = async (message: Partial<Message>): Promise<Message> => {
+export const createMessage = async (message: Omit<Partial<Message>, 'created_at'>): Promise<Message> => {
+  if (!message.content || !message.project_id || !message.sender) {
+    throw new Error("Message must have content, project_id, and sender");
+  }
+  
   const { data, error } = await supabase
     .from('chat_messages')
-    .insert([message])
+    .insert([{
+      content: message.content,
+      project_id: message.project_id,
+      sender: message.sender,
+      type: message.type || 'text',
+      code_language: message.code_language
+    }])
     .select()
     .single();
   
@@ -232,7 +255,12 @@ export const getCodeFiles = async (projectId: string): Promise<CodeFile[]> => {
   return data || [];
 };
 
-export const createCodeFile = async (file: Partial<CodeFile>): Promise<CodeFile> => {
+export const createCodeFile = async (file: Omit<Partial<CodeFile>, 'created_at' | 'updated_at'>): Promise<CodeFile> => {
+  if (!file.content || !file.created_by || !file.last_modified_by || 
+      !file.name || !file.path || !file.project_id) {
+    throw new Error("Code file missing required fields");
+  }
+  
   const { data, error } = await supabase
     .from('code_files')
     .insert([file])
@@ -243,7 +271,7 @@ export const createCodeFile = async (file: Partial<CodeFile>): Promise<CodeFile>
   return data;
 };
 
-export const updateCodeFile = async (id: string, updates: Partial<CodeFile>): Promise<CodeFile> => {
+export const updateCodeFile = async (id: string, updates: Omit<Partial<CodeFile>, 'created_at' | 'updated_at'>): Promise<CodeFile> => {
   const { data, error } = await supabase
     .from('code_files')
     .update(updates)

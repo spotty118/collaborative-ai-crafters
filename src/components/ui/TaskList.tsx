@@ -40,13 +40,14 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, className }) => {
     }
   };
 
-  const formatDate = (date: Date) => {
+  const formatDate = (date: string | Date) => {
+    const dateObject = typeof date === 'string' ? new Date(date) : date;
     return new Intl.DateTimeFormat("en-US", {
       month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
-    }).format(date);
+    }).format(dateObject);
   };
 
   return (
@@ -74,7 +75,7 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, className }) => {
                     {task.description}
                   </p>
                   <div className="flex justify-between mt-2 text-xs text-gray-500">
-                    <span>Updated: {formatDate(task.updatedAt)}</span>
+                    <span>Updated: {formatDate(task.updated_at)}</span>
                     {task.dependencies && task.dependencies.length > 0 && (
                       <span>{task.dependencies.length} dependencies</span>
                     )}

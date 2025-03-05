@@ -24,9 +24,9 @@ export interface Task {
   assigned_to?: string;
   priority: 'low' | 'medium' | 'high';
   project_id: string;
-  created_at: Date;
-  updated_at: Date;
-  completed_at?: Date;
+  created_at: string | Date;
+  updated_at: string | Date;
+  completed_at?: string | Date;
   dependencies?: string[];
 }
 
@@ -42,8 +42,9 @@ export interface Project {
   source_type?: string;
   source_url?: string;
   requirements?: string;
-  created_at: Date;
-  updated_at: Date;
+  created_at: string | Date;
+  updated_at: string | Date;
+  mode?: ProjectMode; // Added for frontend use
 }
 
 export interface Message {
@@ -53,7 +54,7 @@ export interface Message {
   type: string;
   code_language?: string;
   project_id: string;
-  created_at: Date;
+  created_at: string | Date;
 }
 
 export interface CodeFile {
@@ -65,6 +66,6 @@ export interface CodeFile {
   created_by: string;
   last_modified_by: string;
   project_id: string;
-  created_at: Date;
-  updated_at: Date;
+  created_at: string | Date;
+  updated_at: string | Date;
 }

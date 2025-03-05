@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
@@ -23,7 +22,6 @@ const Index = () => {
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [activeChat, setActiveChat] = useState<string | null>(null);
 
-  // Fetch all projects
   const { 
     data: projects = [],
     isLoading: loadingProjects,
@@ -33,14 +31,12 @@ const Index = () => {
     queryFn: getProjects
   });
 
-  // Set first project as active when projects are loaded
   useEffect(() => {
     if (projects.length > 0 && !activeProject) {
       setActiveProject(projects[0]);
     }
   }, [projects, activeProject]);
 
-  // Fetch project data
   const { 
     data: agents = [], 
     isLoading: loadingAgents 
@@ -68,7 +64,6 @@ const Index = () => {
     enabled: !!activeProject
   });
 
-  // Mutations
   const createProjectMutation = useMutation({
     mutationFn: async (projectData: {
       name: string;
@@ -77,16 +72,12 @@ const Index = () => {
       source_type?: string;
       source_url?: string;
     }) => {
-      // Create the project
       const newProject = await createProject({
         ...projectData,
         status: 'setup',
-        progress: 0,
-        created_at: new Date(),
-        updated_at: new Date()
+        progress: 0
       });
 
-      // Create default agents for the project
       await createAgents(newProject.id);
 
       return newProject;
@@ -103,7 +94,9 @@ const Index = () => {
   });
 
   const updateAgentMutation = useMutation({
-    mutationFn: updateAgent,
+    mutationFn: (variables: { id: string } & Partial<Agent>) => {
+      return updateAgent(variables.id, variables);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agents', activeProject?.id] });
     }
@@ -116,7 +109,6 @@ const Index = () => {
     }
   });
 
-  // Handler functions
   const handleStartAgent = (agentId: string) => {
     const agent = agents.find(a => a.id === agentId);
     if (!agent) return;
@@ -129,7 +121,6 @@ const Index = () => {
     
     toast.success(`${agent.name} started working`);
     
-    // For demo: simulate progress updates
     let progress = 10;
     const interval = setInterval(() => {
       progress += 10;
@@ -176,7 +167,6 @@ const Index = () => {
     const agent = agents.find(a => a.id === activeChat);
     if (!agent) return;
     
-    // Send user message
     createMessageMutation.mutate({
       project_id: activeProject.id,
       content: message,
@@ -185,7 +175,6 @@ const Index = () => {
       created_at: new Date()
     });
     
-    // Simulate agent response after a short delay
     setTimeout(() => {
       createMessageMutation.mutate({
         project_id: activeProject.id,
