@@ -259,14 +259,14 @@ const Project: React.FC = () => {
       
       toast.success(`${agent.name} completed analysis`);
       
-      const agentTasks = tasks.filter(t => t.agent_id === agentId);
+      const agentTasks = tasks.filter(t => t.assigned_to === agentId);
       if (agentTasks.length === 0) {
         const defaultTasks = getDefaultTasksForAgent(agent, id);
         
         for (const taskData of defaultTasks) {
           await createTask({
             project_id: id,
-            agent_id: agentId,
+            assigned_to: agentId,
             title: taskData.title,
             description: taskData.description,
             status: 'pending',
