@@ -6,14 +6,17 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useGitHub } from '@/contexts/GitHubContext';
 import { toast } from 'sonner';
+import { AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export const GitHubConnectTester: React.FC = () => {
   const [repoUrl, setRepoUrl] = useState('');
-  const [token, setToken] = useState('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');
+  const [token, setToken] = useState('');
   const [filePath, setFilePath] = useState('test/hello.md');
   const [fileContent, setFileContent] = useState('# Hello from Agentic Development Platform\n\nThis is a test file created to verify GitHub integration.');
   const [commitMessage, setCommitMessage] = useState('test: Add test file');
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   
   const github = useGitHub();
   
@@ -24,13 +27,16 @@ export const GitHubConnectTester: React.FC = () => {
     }
     
     setIsLoading(true);
+    setErrorMessage('');
     
     try {
       await github.connect(repoUrl, token);
       toast.success('Successfully connected to GitHub repository');
     } catch (error) {
       console.error('Failed to connect to GitHub:', error);
-      toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setErrorMessage(`GitHub connection failed: ${message}`);
+      toast.error('Failed to connect to GitHub: ' + message);
     } finally {
       setIsLoading(false);
     }
@@ -48,13 +54,16 @@ export const GitHubConnectTester: React.FC = () => {
     }
     
     setIsLoading(true);
+    setErrorMessage('');
     
     try {
       await github.createOrUpdateFile(filePath, fileContent, commitMessage);
       toast.success(`Successfully wrote to ${filePath}`);
     } catch (error) {
       console.error('Failed to write to GitHub:', error);
-      toast.error('Failed to write to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setErrorMessage(`GitHub write failed: ${message}`);
+      toast.error('Failed to write to GitHub: ' + message);
     } finally {
       setIsLoading(false);
     }
@@ -68,6 +77,13 @@ export const GitHubConnectTester: React.FC = () => {
   return (
     <Card className="p-6 max-w-md mx-auto">
       <h2 className="text-xl font-semibold mb-4">GitHub Connection Test</h2>
+      
+      {errorMessage && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{errorMessage}</AlertDescription>
+        </Alert>
+      )}
       
       <div className="space-y-4">
         <div className="flex justify-between items-center">
@@ -111,6 +127,17 @@ export const GitHubConnectTester: React.FC = () => {
                 onChange={(e) => setToken(e.target.value)}
                 placeholder="ghp_xxxxxxxxxxxx"
               />
+              <p className="text-xs text-gray-500">
+                Generate a new token with "repo" scope at{" "}
+                <a 
+                  href="https://github.com/settings/tokens/new" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline"
+                >
+                  GitHub Token Settings
+                </a>
+              </p>
             </div>
             
             <Button 
