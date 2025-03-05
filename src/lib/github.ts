@@ -89,12 +89,16 @@ export class GitHubService {
 
       // Create or update the file
       console.log(`Sending request to create/update ${path} on branch ${branch}`);
+      
+      // Use browser-compatible base64 encoding
+      const base64Content = btoa(unescape(encodeURIComponent(content)));
+      
       const response = await this.octokit.repos.createOrUpdateFileContents({
         owner: this.owner,
         repo: this.repo,
         path,
         message,
-        content: Buffer.from(content).toString('base64'),
+        content: base64Content,
         branch,
         ...(sha ? { sha } : {}),
       });
@@ -136,7 +140,8 @@ export class GitHubService {
       }
 
       if ('content' in data && typeof data.content === 'string') {
-        const content = Buffer.from(data.content, 'base64').toString('utf-8');
+        // Use browser-compatible base64 decoding
+        const content = decodeURIComponent(escape(atob(data.content)));
         console.log(`Successfully retrieved file content for ${path}`);
         return content;
       } else {

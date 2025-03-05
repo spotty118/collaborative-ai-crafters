@@ -1,80 +1,70 @@
-
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { ProjectCard } from "@/components/ProjectCard";
 import { AuthButton } from "@/components/auth/AuthButton";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PlusCircle } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+
+interface ImportProjectFormValues {
+  name: string;
+  description: string;
+  sourceUrl: string;
+}
+
+interface CreateProjectFormValues {
+  name: string;
+  description: string;
+  techStack: string;
+}
 
 const importProjectSchema = z.object({
   name: z.string().min(3, {
-    message: "Project name must be at least 3 characters.",
+    message: "Project name must be at least 3 characters."
   }),
   description: z.string().optional(),
   sourceUrl: z.string().url({
-    message: "Please enter a valid URL.",
-  }),
+    message: "Please enter a valid URL."
+  })
 });
 
 const createProjectSchema = z.object({
   name: z.string().min(3, {
-    message: "Project name must be at least 3 characters.",
+    message: "Project name must be at least 3 characters."
   }),
   description: z.string().optional(),
-  techStack: z.string().optional(),
+  techStack: z.string().optional()
 });
 
-type ImportProjectFormValues = z.infer<typeof importProjectSchema>;
-type CreateProjectFormValues = z.infer<typeof createProjectSchema>;
-
-const Index: React.FC = () => {
+const Index = () => {
   const [projects, setProjects] = useState<any[]>([]);
   const [importing, setImporting] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [user, setUser] = useState<any>(null);
   const navigate = useNavigate();
 
-  // Get current user from Supabase
-  const [user, setUser] = useState<any>(null);
-  
   useEffect(() => {
-    const fetchUser = async () => {
-      const { data } = await supabase.auth.getUser();
-      setUser(data.user);
+    const checkUser = async () => {
+      const { data } = await supabase.auth.getSession();
+      setUser(data.session?.user || null);
     };
     
-    fetchUser();
+    checkUser();
     
-    // Setup auth state listener
     const { data: authListener } = supabase.auth.onAuthStateChange(
       (event, session) => {
         setUser(session?.user || null);
       }
     );
-
+    
     return () => {
       authListener.subscription.unsubscribe();
     };
@@ -83,12 +73,10 @@ const Index: React.FC = () => {
   useEffect(() => {
     const fetchProjects = async () => {
       if (user) {
-        const { data, error } = await supabase
-          .from("projects")
-          .select("*")
-          .eq("owner_id", user.id)
-          .order("created_at", { ascending: false });
-
+        const { data, error } = await supabase.from("projects").select("*").eq("owner_id", user.id).order("created_at", {
+          ascending: false
+        });
+        
         if (error) {
           console.error("Error fetching projects:", error);
           toast.error("Failed to load projects.");
@@ -97,7 +85,7 @@ const Index: React.FC = () => {
         }
       }
     };
-
+    
     fetchProjects();
   }, [user]);
 
@@ -106,8 +94,8 @@ const Index: React.FC = () => {
     defaultValues: {
       name: "",
       description: "",
-      sourceUrl: "",
-    },
+      sourceUrl: ""
+    }
   });
 
   const createProjectForm = useForm<CreateProjectFormValues>({
@@ -115,30 +103,28 @@ const Index: React.FC = () => {
     defaultValues: {
       name: "",
       description: "",
-      techStack: "",
-    },
+      techStack: ""
+    }
   });
 
   const handleImportProject = async (values: ImportProjectFormValues) => {
     try {
       setImporting(true);
-      const { data, error } = await supabase
-        .from('projects')
-        .insert({
-          name: values.name,
-          description: values.description || null,
-          source_url: values.sourceUrl,
-          source_type: 'github',
-          owner_id: user?.id,
-          status: 'active'
-        })
-        .select()
-        .single();
-
+      
+      const { data, error } = await supabase.from('projects').insert({
+        name: values.name,
+        description: values.description,
+        source_url: values.sourceUrl,
+        source_type: 'github',
+        owner_id: user?.id,
+        status: 'active',
+        tech_stack: []
+      }).select().single();
+      
       if (error) throw error;
-
+      
       if (data) {
-        navigate(`/project/${data.id}`);
+        navigate(`/project/${data.id?.toString()}`);
         toast.success('Project imported successfully');
       }
     } catch (error: any) {
@@ -152,27 +138,23 @@ const Index: React.FC = () => {
   const handleCreateProject = async (values: CreateProjectFormValues) => {
     try {
       setCreating(true);
-      // Parse tech stack string into an array
-      const techStackArray = values.techStack 
-        ? values.techStack.split(',').map(item => item.trim())
-        : [];
       
-      const { data, error } = await supabase
-        .from('projects')
-        .insert({
-          name: values.name,
-          description: values.description || null,
-          tech_stack: techStackArray,
-          owner_id: user?.id,
-          status: 'active'
-        })
-        .select()
-        .single();
-
+      const techStackArray = values.techStack ? 
+        values.techStack.split(',').map(item => item.trim()) : 
+        [];
+      
+      const { data, error } = await supabase.from('projects').insert({
+        name: values.name,
+        description: values.description,
+        tech_stack: techStackArray,
+        owner_id: user?.id,
+        status: 'active'
+      }).select().single();
+      
       if (error) throw error;
-
+      
       if (data) {
-        navigate(`/project/${data.id}`);
+        navigate(`/project/${data.id?.toString()}`);
         toast.success('Project created successfully');
       }
     } catch (error: any) {
