@@ -1,7 +1,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project, CodeFileDB } from '@/lib/types';
-import { createTask, createCodeFile, createMessage } from './api';
+import { createTask, createCodeFile, createMessage, getAgents } from './api';
 import { parseCodeBlocks, inferFilePath } from './codeParser';
 import { getGitHubService } from './services/GitHubService';
 import { toast } from 'sonner';
@@ -219,21 +219,44 @@ export const simulateAgentCommunication = async (
           type => type !== (sourceAgent.type === 'architect' ? targetAgent.type : sourceAgent.type)
         );
         
-        // 50% chance of continuing the conversation by delegating to another agent
-        if (Math.random() > 0.5 && otherAgents.length > 0) {
-          const randomType = otherAgents[Math.floor(Math.random() * otherAgents.length)];
-          const foundAgent = (project as Project).agents?.find(a => a.type === randomType);
-          
-          if (foundAgent) {
-            simulateAgentCommunication(
-              architectAgent,
-              foundAgent,
-              `Based on my conversation with ${sourceAgent.type === 'architect' ? targetAgent.name : sourceAgent.name}, I need you to focus on ${randomType === 'frontend' ? 'user interface components' : 
-                randomType === 'backend' ? 'API implementation' : 
-                randomType === 'testing' ? 'test coverage' : 'deployment configuration'}.`,
-              project
-            );
+        // Ensure project.agents exists before using it
+        if (project.agents && project.agents.length > 0) {
+          // 50% chance of continuing the conversation by delegating to another agent
+          if (Math.random() > 0.5 && otherAgents.length > 0) {
+            const randomType = otherAgents[Math.floor(Math.random() * otherAgents.length)];
+            const foundAgent = project.agents.find(a => a.type === randomType);
+            
+            if (foundAgent) {
+              simulateAgentCommunication(
+                architectAgent,
+                foundAgent,
+                `Based on my conversation with ${sourceAgent.type === 'architect' ? targetAgent.name : sourceAgent.name}, I need you to focus on ${randomType === 'frontend' ? 'user interface components' : 
+                  randomType === 'backend' ? 'API implementation' : 
+                  randomType === 'testing' ? 'test coverage' : 'deployment configuration'}.`,
+                project
+              );
+            }
           }
+        } else {
+          console.log("No agents array found in project object, fetching agents...");
+          // Fallback to fetch agents if not in project object
+          getAgents(project.id).then(agents => {
+            if (agents && agents.length > 0) {
+              const randomType = otherAgents[Math.floor(Math.random() * otherAgents.length)];
+              const foundAgent = agents.find(a => a.type === randomType);
+              
+              if (foundAgent) {
+                simulateAgentCommunication(
+                  architectAgent,
+                  foundAgent,
+                  `I need to delegate tasks related to ${randomType} specialization.`,
+                  {...project, agents} // Add agents to project temporarily
+                );
+              }
+            }
+          }).catch(error => {
+            console.error("Error fetching agents:", error);
+          });
         }
       }, 5000); // 5 second delay before initiating further communication
     }
@@ -259,10 +282,24 @@ export const analyzeGitHubAndCreateTasks = async (
     let analysisAgent = agent;
     if (agent.type !== 'architect') {
       // Find architect agent if available
-      const architectAgent = project.agents?.find(a => a.type === 'architect');
+      // Make sure to check if agents array exists first
+      const architectAgent = project.agents ? 
+        project.agents.find(a => a.type === 'architect') : 
+        null;
+      
       if (architectAgent) {
         console.log(`Delegating GitHub analysis to Architect agent instead of ${agent.name}`);
         analysisAgent = architectAgent;
+      } else {
+        // Fallback to fetch architect agent if not in project object
+        console.log("No architect agent found in project.agents, fetching...");
+        const fetchedAgents = await getAgents(project.id);
+        const fetchedArchitect = fetchedAgents.find(a => a.type === 'architect');
+        
+        if (fetchedArchitect) {
+          console.log(`Fetched Architect agent for GitHub analysis`);
+          analysisAgent = fetchedArchitect;
+        }
       }
     }
     
@@ -287,19 +324,22 @@ export const analyzeGitHubAndCreateTasks = async (
     
     // Create each task in the database
     for (const task of tasks) {
+      // Safely check for project.agents
+      const agents = project.agents || await getAgents(project.id);
+      
       await createTask({
         title: task.title,
         description: task.description,
         priority: 'medium',
         status: 'pending',
         assigned_to: task.title.toLowerCase().includes('frontend') ? 
-          project.agents?.find(a => a.type === 'frontend')?.id || analysisAgent.id :
+          agents.find(a => a.type === 'frontend')?.id || analysisAgent.id :
           task.title.toLowerCase().includes('backend') ?
-          project.agents?.find(a => a.type === 'backend')?.id || analysisAgent.id :
+          agents.find(a => a.type === 'backend')?.id || analysisAgent.id :
           task.title.toLowerCase().includes('test') ?
-          project.agents?.find(a => a.type === 'testing')?.id || analysisAgent.id :
+          agents.find(a => a.type === 'testing')?.id || analysisAgent.id :
           task.title.toLowerCase().includes('deploy') || task.title.toLowerCase().includes('ci/cd') ?
-          project.agents?.find(a => a.type === 'devops')?.id || analysisAgent.id :
+          agents.find(a => a.type === 'devops')?.id || analysisAgent.id :
           analysisAgent.id,
         project_id: project.id
       });
@@ -308,18 +348,22 @@ export const analyzeGitHubAndCreateTasks = async (
     console.log(`Agent ${analysisAgent.name} created ${tasks.length} tasks from GitHub analysis`);
     
     // If architect performed the analysis, have them delegate tasks to other agents
-    if (analysisAgent.type === 'architect' && project.agents && project.agents.length > 0) {
-      setTimeout(() => {
-        const otherAgents = project.agents?.filter(a => a.type !== 'architect');
-        if (otherAgents.length > 0) {
-          // Randomly select an agent to communicate with
-          const randomAgent = otherAgents[Math.floor(Math.random() * otherAgents.length)];
-          simulateAgentCommunication(
-            analysisAgent,
-            randomAgent,
-            `I've analyzed the repository and created tasks. I'd like you to focus on the ${randomAgent.type}-related tasks.`,
-            project
-          );
+    if (analysisAgent.type === 'architect') {
+      setTimeout(async () => {
+        const agents = project.agents || await getAgents(project.id);
+        
+        if (agents && agents.length > 0) {
+          const otherAgents = agents.filter(a => a.type !== 'architect');
+          if (otherAgents.length > 0) {
+            // Randomly select an agent to communicate with
+            const randomAgent = otherAgents[Math.floor(Math.random() * otherAgents.length)];
+            simulateAgentCommunication(
+              analysisAgent,
+              randomAgent,
+              `I've analyzed the repository and created tasks. I'd like you to focus on the ${randomAgent.type}-related tasks.`,
+              {...project, agents} // Make sure agents is available in project
+            );
+          }
         }
       }, 5000);
     }
@@ -434,9 +478,12 @@ export const continueAgentWork = async (
     });
     
     // If architect agent, always communicate with another agent
-    if (agent.type === 'architect' && project.agents && project.agents.length > 0) {
-      setTimeout(() => {
-        const otherAgents = project.agents?.filter(a => a.type !== 'architect' && a.status === 'working');
+    if (agent.type === 'architect') {
+      setTimeout(async () => {
+        // Safely get agents either from project or API
+        const agents = project.agents || await getAgents(project.id);
+        
+        const otherAgents = agents.filter(a => a.type !== 'architect' && a.status === 'working');
         if (otherAgents && otherAgents.length > 0) {
           // Randomly select an agent to communicate with
           const randomAgent = otherAgents[Math.floor(Math.random() * otherAgents.length)];
@@ -444,46 +491,47 @@ export const continueAgentWork = async (
             agent,
             randomAgent,
             `Based on my analysis, I need you to focus on the following ${randomAgent.type}-specific tasks: ${response.split('\n')[0]}`,
-            project
+            {...project, agents} // Make sure agents is available
           );
         }
       }, 5000);
     } else {
       // For non-architect agents, randomly decide if we should communicate with architect
-      const architectAgent = project.agents?.find(a => a.type === 'architect' && a.status === 'working');
-      
-      if (architectAgent && Math.random() > 0.3) { // 70% chance
-        setTimeout(() => {
+      setTimeout(async () => {
+        // Safely get agents either from project or API
+        const agents = project.agents || await getAgents(project.id);
+        
+        const architectAgent = agents.find(a => a.type === 'architect' && a.status === 'working');
+        
+        if (architectAgent && Math.random() > 0.3) { // 70% chance
           simulateAgentCommunication(
             agent,
             architectAgent,
             `I've been working on the project and identified: ${response.split('\n')[0]}. What direction should I take next?`,
-            project
+            {...project, agents} // Make sure agents is available
           );
-        }, 5000);
-      } else {
-        // If no architect communication, maybe talk to another agent
-        const otherAgentTypes = ['frontend', 'backend', 'testing', 'devops'].filter(
-          type => type !== agent.type
-        );
-        
-        // 50% chance of communication with another non-architect agent
-        if (Math.random() > 0.5 && otherAgentTypes.length > 0) {
-          const randomType = otherAgentTypes[Math.floor(Math.random() * otherAgentTypes.length)];
-          const randomAgent = project.agents?.find(a => a.type === randomType && a.status === 'working');
+        } else {
+          // If no architect communication, maybe talk to another agent
+          const otherAgentTypes = ['frontend', 'backend', 'testing', 'devops'].filter(
+            type => type !== agent.type
+          );
           
-          if (randomAgent) {
-            setTimeout(() => {
+          // 50% chance of communication with another non-architect agent
+          if (Math.random() > 0.5 && otherAgentTypes.length > 0) {
+            const randomType = otherAgentTypes[Math.floor(Math.random() * otherAgentTypes.length)];
+            const randomAgent = agents.find(a => a.type === randomType && a.status === 'working');
+            
+            if (randomAgent) {
               simulateAgentCommunication(
                 agent,
                 randomAgent,
                 `I've been working on ${agent.type} tasks and would like to collaborate with you on ${randomType} integration.`,
-                project
+                {...project, agents} // Make sure agents is available
               );
-            }, 5000);
+            }
           }
         }
-      }
+      }, 5000);
     }
   } catch (error) {
     console.error('Error in continuing agent work:', error);
@@ -495,7 +543,10 @@ export const updateOpenRouterForArchitectLeadership = async (project: Project): 
   if (!project.id) return;
   
   try {
-    const architectAgent = project.agents?.find(a => a.type === 'architect');
+    // Safely get the architect agent
+    const agents = project.agents || await getAgents(project.id);
+    const architectAgent = agents.find(a => a.type === 'architect');
+    
     if (!architectAgent) {
       console.log('No architect agent found to establish leadership');
       return;
@@ -510,7 +561,7 @@ export const updateOpenRouterForArchitectLeadership = async (project: Project): 
     });
     
     // Communicate with other active agents
-    const otherAgents = project.agents?.filter(a => a.type !== 'architect' && a.status === 'working');
+    const otherAgents = agents.filter(a => a.type !== 'architect' && a.status === 'working');
     if (otherAgents && otherAgents.length > 0) {
       // Communicate with each active agent
       for (const agent of otherAgents) {
@@ -519,7 +570,7 @@ export const updateOpenRouterForArchitectLeadership = async (project: Project): 
             architectAgent,
             agent,
             `As the project architect, I'm establishing our technical direction. I'd like you to focus on ${agent.type}-specific implementations while I handle overall structure and integration. What are your initial thoughts on the ${agent.type} requirements?`,
-            project
+            {...project, agents} // Make sure agents is available
           );
         }, 3000 + Math.random() * 5000); // Stagger communications
       }

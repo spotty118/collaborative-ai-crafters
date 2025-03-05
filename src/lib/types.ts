@@ -28,6 +28,7 @@ export interface Project {
   created_at?: string;
   updated_at?: string;
   requirements?: string;
+  agents?: Agent[]; // Adding the agents array property to fix TypeScript errors
 }
 
 // Database interfaces
