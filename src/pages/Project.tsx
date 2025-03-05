@@ -242,7 +242,7 @@ const Project: React.FC = () => {
       await updateAgentMutation.mutate({
         agentId,
         updates: {
-          status: "running" as const,
+          status: "working",
           progress: 10
         }
       });
@@ -310,7 +310,7 @@ const Project: React.FC = () => {
       await updateAgentMutation.mutate({
         agentId,
         updates: {
-          status: "idle" as const
+          status: "idle"
         }
       });
       
@@ -390,16 +390,16 @@ const Project: React.FC = () => {
       await updateTaskMutation.mutate({
         taskId: task.id,
         updates: {
-          status: "in_progress" as const
+          status: "in_progress"
         }
       });
       
-      // Start the agent if not already running
-      if (agent.status !== "running") {
+      // Start the agent if not already working
+      if (agent.status !== "working") {
         await updateAgentMutation.mutate({
           agentId,
           updates: {
-            status: "running" as const,
+            status: "working",
             progress: 10
           }
         });
@@ -435,7 +435,7 @@ const Project: React.FC = () => {
           await updateTaskMutation.mutate({
             taskId: task.id,
             updates: {
-              status: "completed" as const
+              status: "completed"
             }
           });
           
@@ -445,7 +445,7 @@ const Project: React.FC = () => {
           await updateTaskMutation.mutate({
             taskId: task.id,
             updates: {
-              status: "failed" as const
+              status: "failed"
             }
           });
           
@@ -462,7 +462,7 @@ const Project: React.FC = () => {
       await updateTaskMutation.mutate({
         taskId: task.id,
         updates: {
-          status: "failed" as const
+          status: "failed"
         }
       });
     }

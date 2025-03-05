@@ -1,7 +1,7 @@
 
 export type ProjectMode = "new" | "existing";
 
-export type AgentStatus = "idle" | "working" | "completed" | "failed" | "waiting";
+export type AgentStatus = "idle" | "working" | "completed" | "failed" | "waiting" | "running";
 export type TaskStatus = "pending" | "in_progress" | "completed" | "failed";
 export type TaskPriority = "low" | "medium" | "high";
 
