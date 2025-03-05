@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
@@ -277,7 +276,7 @@ const Index = () => {
     if (!agent) return;
     
     createMessageMutation.mutate({
-      project_id: activeProject.id,
+      project_id: activeProject.id.toString(), // Ensure project_id is a string
       content: message,
       sender: "You",
       type: "text"
@@ -289,7 +288,7 @@ const Index = () => {
       const response = await sendAgentPrompt(agent, message, activeProject);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id,
+        project_id: activeProject.id.toString(), // Ensure project_id is a string
         content: response,
         sender: agent.name,
         type: "text"
@@ -300,7 +299,7 @@ const Index = () => {
       console.error('Error getting response from agent:', error);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id,
+        project_id: activeProject.id.toString(), // Ensure project_id is a string
         content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
         sender: agent.name,
         type: "text"
