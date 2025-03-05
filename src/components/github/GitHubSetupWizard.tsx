@@ -40,20 +40,21 @@ const GitHubSetupWizard: React.FC<GitHubSetupWizardProps> = ({
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get("code");
+    const state = urlParams.get("state");
     
-    if (code) {
+    if (code && state) {
       setCurrentStep(3);
-      handleOAuthCallback(code);
+      handleOAuthCallback(code, state);
     }
   }, []);
   
-  const handleOAuthCallback = async (code: string) => {
+  const handleOAuthCallback = async (code: string, state: string) => {
     setIsChecking(true);
     setError("");
     
     // Remove the code from the URL to prevent issues on refresh
     const newUrl = window.location.pathname + 
-      (window.location.search ? window.location.search.replace(/[?&]code=[^&]+/, "") : "") + 
+      (window.location.search ? window.location.search.replace(/[?&]code=[^&]+/, "").replace(/[?&]state=[^&]+/, "") : "") + 
       window.location.hash;
     
     window.history.replaceState({}, document.title, newUrl);
@@ -61,7 +62,7 @@ const GitHubSetupWizard: React.FC<GitHubSetupWizardProps> = ({
     try {
       console.log("Processing GitHub OAuth callback...");
       const success = await import("@/lib/github").then(module => 
-        module.handleGithubCallback(code)
+        module.handleGithubCallback(code, state)
       );
       
       if (success) {
@@ -120,19 +121,19 @@ const GitHubSetupWizard: React.FC<GitHubSetupWizardProps> = ({
         )}
         
         <Stepper value={currentStep} className="mb-6">
-          <Step value={1}>
+          <Step>
             <StepTitle>Get Started</StepTitle>
             <StepDescription>Begin GitHub setup</StepDescription>
           </Step>
-          <Step value={2}>
+          <Step>
             <StepTitle>Client ID</StepTitle>
             <StepDescription>Enter GitHub OAuth ID</StepDescription>
           </Step>
-          <Step value={3}>
+          <Step>
             <StepTitle>Authorization</StepTitle>
             <StepDescription>Authorize the application</StepDescription>
           </Step>
-          <Step value={4}>
+          <Step>
             <StepTitle>Complete</StepTitle>
             <StepDescription>Setup finished</StepDescription>
           </Step>
