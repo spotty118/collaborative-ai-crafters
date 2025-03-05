@@ -14,28 +14,6 @@ import { useGitHub } from "@/contexts/GitHubContext";
 import { FileEditor } from "@/components/FileEditor";
 import { toast } from "sonner";
 
-interface DashboardProps {
-  project: {
-    name: string;
-    description: string;
-    mode: 'new' | 'existing';
-  };
-  agents: Agent[];
-  tasks: Task[];
-  messages: Message[];
-  activeChat: string | null;
-  onStartAgent: (agentId: string) => void;
-  onStopAgent: (agentId: string) => void;
-  onChatWithAgent: (agentId: string) => void;
-  onSendMessage: (message: string) => void;
-  onExecuteTask: (taskId: string, agentId: string) => void;
-  isLoading: {
-    agents: boolean;
-    tasks: boolean;
-    messages: boolean;
-  };
-}
-
 const Project: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -267,52 +245,14 @@ const Project: React.FC = () => {
           toast.error(`${agent.name} failed to complete the task`);
         }
       } else {
-        console.log(`Creating generic tasks for ${agent.name} (${agent.type})`);
+        toast.error('GitHub connection is required to start agents. Please connect GitHub in settings.');
         updateAgentMutation.mutate({
           id: agentId,
           updates: { 
-            status: 'working',
-            progress: 40
+            status: 'failed',
+            progress: 0
           }
         });
-        
-        const defaultTasks = getDefaultTasksForAgent(agent, id);
-        
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        try {
-          for (const task of defaultTasks) {
-            await createTask({
-              title: task.title,
-              description: task.description,
-              priority: 'medium',
-              status: 'pending',
-              assigned_to: agent.id,
-              project_id: id
-            });
-          }
-          
-          updateAgentMutation.mutate({
-            id: agentId,
-            updates: { 
-              status: 'completed',
-              progress: 100
-            }
-          });
-          
-          toast.success(`${agent.name} created ${defaultTasks.length} tasks`);
-          queryClient.invalidateQueries({ queryKey: ['tasks', id] });
-        } catch (error) {
-          console.error('Error creating tasks:', error);
-          updateAgentMutation.mutate({
-            id: agentId,
-            updates: { 
-              status: 'failed',
-              progress: 0
-            }
-          });
-          toast.error(`Failed to create tasks: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
       }
     } catch (error) {
       console.error('Error starting agent:', error);
@@ -331,8 +271,9 @@ const Project: React.FC = () => {
     const task = tasks.find(t => t.id === taskId);
     const agent = agents.find(a => a.id === agentId);
     
-    if (!task || !agent || !id) return;
+    if (!task || !agent || !id || !project) return;
     
+    // Update task status to in_progress
     updateTaskMutation.mutate({
       id: taskId,
       updates: { 
@@ -340,21 +281,72 @@ const Project: React.FC = () => {
       }
     });
     
+    // Update agent status to working
     updateAgentMutation.mutate({
       id: agentId,
       updates: { 
         status: 'working',
-        progress: 50
+        progress: 30
       }
     });
     
     toast.info(`${agent.name} is working on: ${task.title}`);
     
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
     try {
-      if (project?.sourceUrl && github.isConnected) {
-        console.log(`Agent ${agent.name} working on task: ${task.title}`);
+      if (!github.isConnected) {
+        toast.error('GitHub connection is required to execute tasks. Please connect GitHub in settings.');
+        updateTaskMutation.mutate({
+          id: taskId,
+          updates: { 
+            status: 'failed'
+          }
+        });
+        
+        updateAgentMutation.mutate({
+          id: agentId,
+          updates: { 
+            status: 'failed',
+            progress: 0
+          }
+        });
+        return;
+      }
+      
+      // Real implementation for task execution
+      // This would call some API endpoint to execute the task
+      // For now, we'll just mark it as successful after a delay
+      updateAgentMutation.mutate({
+        id: agentId,
+        updates: { 
+          status: 'working',
+          progress: 70
+        }
+      });
+      
+      // Simulate API call to execute task
+      // In a real implementation, this would be replaced with an actual API call
+      try {
+        // Call the OpenRouter API or another service to execute the task
+        const result = await fetch('/api/execute-task', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            taskId,
+            agentId,
+            projectId: id,
+            taskTitle: task.title,
+            taskDescription: task.description,
+            agentType: agent.type
+          }),
+        });
+        
+        if (!result.ok) {
+          throw new Error('Failed to execute task');
+        }
+        
+        // If successful, update task status to completed
         updateTaskMutation.mutate({
           id: taskId,
           updates: { 
@@ -371,35 +363,24 @@ const Project: React.FC = () => {
         });
         
         toast.success(`${agent.name} completed: ${task.title}`);
-      } else {
-        console.log(`Simulating completion of task: ${task.title}`);
-        
-        updateAgentMutation.mutate({
-          id: agentId,
-          updates: { 
-            status: 'working',
-            progress: 80
-          }
-        });
-        
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
+      } catch (error) {
+        console.error('Error executing task:', error);
         updateTaskMutation.mutate({
           id: taskId,
           updates: { 
-            status: 'completed'
+            status: 'failed'
           }
         });
         
         updateAgentMutation.mutate({
           id: agentId,
           updates: { 
-            status: 'completed',
-            progress: 100
+            status: 'failed',
+            progress: 0
           }
         });
         
-        toast.success(`${agent.name} completed: ${task.title}`);
+        toast.error(`Task failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error executing task:', error);

@@ -24,6 +24,12 @@ export const FileEditor: React.FC<FileEditorProps> = ({ file, onClose }) => {
   const [lastSavedContent, setLastSavedContent] = useState(file.content || '');
   const github = useGitHub();
 
+  useEffect(() => {
+    // Update content if file prop changes
+    setContent(file.content || '');
+    setLastSavedContent(file.content || '');
+  }, [file.content, file.id]);
+
   const handleEdit = () => {
     setIsEditing(true);
   };
