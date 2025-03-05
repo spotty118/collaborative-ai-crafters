@@ -22,9 +22,10 @@ interface ProjectCardProps {
     tech_stack?: string[];
     created_at?: string;
   };
+  onClick?: () => void;
 }
 
-export const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
+export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick }) => {
   return (
     <Card className="h-full flex flex-col">
       <CardHeader>
@@ -58,7 +59,12 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
         )}
       </CardContent>
       <CardFooter>
-        <Button asChild className="w-full" size="sm">
+        <Button 
+          asChild 
+          className="w-full" 
+          size="sm"
+          onClick={onClick}
+        >
           <Link to={`/project/${project.id}`}>
             View Project <ArrowRight className="ml-2 h-4 w-4" />
           </Link>
