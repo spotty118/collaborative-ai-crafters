@@ -1,3 +1,4 @@
+
 import { Octokit } from '@octokit/rest';
 
 interface GitHubConfig {
@@ -33,6 +34,16 @@ export class GitHubService {
     };
   }
 
+  // Browser-compatible base64 encoding
+  private encodeToBase64(text: string): string {
+    return btoa(unescape(encodeURIComponent(text)));
+  }
+  
+  // Browser-compatible base64 decoding
+  private decodeFromBase64(encoded: string): string {
+    return decodeURIComponent(escape(atob(encoded)));
+  }
+
   /**
    * Create or update a file in the repository
    * @param path File path in the repository
@@ -47,6 +58,7 @@ export class GitHubService {
     branch = 'main'
   ): Promise<void> {
     try {
+      console.log(`Attempting to create/update file: ${path}`);
       // Get the current file (if it exists) to get the SHA
       let sha: string | undefined;
       try {
@@ -62,18 +74,23 @@ export class GitHubService {
         }
       } catch (error) {
         // File doesn't exist yet, which is fine
+        console.log(`File ${path} doesn't exist yet, creating new file`);
       }
 
-      // Create or update the file
+      // Create or update the file with browser-compatible base64 encoding
+      const base64Content = this.encodeToBase64(content);
+      
       await this.octokit.repos.createOrUpdateFileContents({
         owner: this.owner,
         repo: this.repo,
         path,
         message,
-        content: Buffer.from(content).toString('base64'),
+        content: base64Content,
         branch,
         ...(sha ? { sha } : {}),
       });
+      
+      console.log(`Successfully created/updated file: ${path}`);
     } catch (error) {
       console.error('Error creating/updating file:', error);
       throw new Error('Failed to create/update file in repository');
@@ -100,7 +117,7 @@ export class GitHubService {
       }
 
       if ('content' in data && typeof data.content === 'string') {
-        return Buffer.from(data.content, 'base64').toString('utf-8');
+        return this.decodeFromBase64(data.content);
       } else {
         throw new Error('Invalid file content format received from GitHub API');
       }
