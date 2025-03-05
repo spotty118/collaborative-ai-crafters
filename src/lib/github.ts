@@ -56,6 +56,8 @@ export const initiateGithubAuth = (clientId: string): void => {
   const redirectUri = window.location.origin;
   const scope = "repo";
   
+  console.log("Initiating GitHub OAuth with redirect URI:", redirectUri);
+  
   const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}`;
   
   window.location.href = authUrl;
@@ -66,6 +68,8 @@ export const handleGithubCallback = async (code: string): Promise<boolean> => {
   try {
     // This request needs to be proxied through a server to avoid CORS issues
     // In a production app, you would handle this exchange server-side
+    console.log("Handling GitHub callback with code:", code.substring(0, 5) + "...");
+    
     const response = await fetch("/api/github/auth", {
       method: "POST",
       headers: {
@@ -75,7 +79,9 @@ export const handleGithubCallback = async (code: string): Promise<boolean> => {
     });
 
     if (!response.ok) {
-      throw new Error("Failed to authenticate with GitHub");
+      const errorText = await response.text();
+      console.error("GitHub API error:", errorText);
+      throw new Error(`Failed to authenticate with GitHub: ${response.status} ${response.statusText}`);
     }
 
     const data: GithubAuthResponse = await response.json();

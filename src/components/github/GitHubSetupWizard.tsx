@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   Card, 
   CardContent, 
@@ -37,7 +37,7 @@ const GitHubSetupWizard: React.FC<GitHubSetupWizardProps> = ({
   const [error, setError] = useState("");
   
   // Check for OAuth callback on component mount
-  React.useEffect(() => {
+  useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get("code");
     
@@ -149,8 +149,8 @@ const GitHubSetupWizard: React.FC<GitHubSetupWizardProps> = ({
               <ol className="list-decimal list-inside space-y-2 text-sm">
                 <li>Go to GitHub Developer Settings</li>
                 <li>Create a new OAuth application</li>
-                <li>Set the Homepage URL to: <code className="bg-gray-100 px-1">{window.location.origin}</code></li>
-                <li>Set the Authorization callback URL to: <code className="bg-gray-100 px-1">{window.location.origin}</code></li>
+                <li>Set the Homepage URL to: <code className="bg-gray-100 px-2 py-1 rounded">{window.location.origin}</code></li>
+                <li>Set the Authorization callback URL to: <code className="bg-gray-100 px-2 py-1 rounded">{window.location.origin}</code></li>
                 <li>Copy the Client ID (you'll need it in the next step)</li>
               </ol>
               <Button 
@@ -178,7 +178,8 @@ const GitHubSetupWizard: React.FC<GitHubSetupWizardProps> = ({
                 placeholder="e.g., 1a2b3c4d5e6f7g8h9i0j"
               />
               <p className="text-xs text-gray-500">
-                This is the Client ID from your GitHub OAuth application
+                This is the Client ID from your GitHub OAuth application.
+                Make sure you've set the correct Homepage URL and Authorization callback URL in your GitHub OAuth app settings.
               </p>
             </div>
           </div>
