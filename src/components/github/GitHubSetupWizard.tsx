@@ -59,6 +59,7 @@ const GitHubSetupWizard: React.FC<GitHubSetupWizardProps> = ({
     window.history.replaceState({}, document.title, newUrl);
     
     try {
+      console.log("Processing GitHub OAuth callback...");
       const success = await import("@/lib/github").then(module => 
         module.handleGithubCallback(code)
       );
@@ -73,7 +74,7 @@ const GitHubSetupWizard: React.FC<GitHubSetupWizardProps> = ({
           setCurrentStep(1);
         }
       } else {
-        setError("Authentication failed. Please try again.");
+        setError("Authentication failed. Please check your client ID and callback URLs.");
         setCurrentStep(1);
       }
     } catch (error) {

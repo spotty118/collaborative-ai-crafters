@@ -69,6 +69,7 @@ export const handleGithubCallback = async (code: string): Promise<boolean> => {
     // This request needs to be proxied through a server to avoid CORS issues
     // In a production app, you would handle this exchange server-side
     console.log("Handling GitHub callback with code:", code.substring(0, 5) + "...");
+    console.log("Origin URL:", window.location.origin);
     
     const response = await fetch("/api/github/auth", {
       method: "POST",
