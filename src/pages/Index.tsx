@@ -49,20 +49,20 @@ const Index = () => {
   });
 
   const { 
+    data: messages = [], 
+    isLoading: loadingMessages 
+  } = useQuery({
+    queryKey: ['messages', activeProject?.id],
+    queryFn: () => activeProject ? getMessages(activeProject.id.toString()) : Promise.resolve([]),
+    enabled: !!activeProject
+  });
+
+  const { 
     data: tasks = [], 
     isLoading: loadingTasks 
   } = useQuery({
     queryKey: ['tasks', activeProject?.id],
     queryFn: () => activeProject ? getTasks(activeProject.id.toString()) : Promise.resolve([]),
-    enabled: !!activeProject
-  });
-
-  const { 
-    data: messages = [], 
-    isLoading: loadingMessages 
-  } = useQuery({
-    queryKey: ['messages', activeProject?.id, activeChat],
-    queryFn: () => activeProject ? getMessages(activeProject.id.toString()) : Promise.resolve([]),
     enabled: !!activeProject
   });
 
