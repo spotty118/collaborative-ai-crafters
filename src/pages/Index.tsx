@@ -180,7 +180,7 @@ const Index: React.FC = () => {
   });
 
   const deleteProjectMutation = useMutation({
-    mutationFn: (id: string) => deleteProject(id),
+    mutationFn: deleteProject,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       toast.success("Project deleted successfully!");

@@ -126,6 +126,16 @@ export const checkProjectExists = async (id: string | number): Promise<boolean> 
   return !!data;
 };
 
+// Properly export the deleteProject function
+export const deleteProject = async (id: string): Promise<void> => {
+  const { error } = await supabase
+    .from('projects')
+    .delete()
+    .eq('id', id);
+  
+  if (error) throw error;
+};
+
 // Agents API
 export const getAgents = async (projectId: string): Promise<Agent[]> => {
   const { data, error } = await supabase
@@ -456,12 +466,3 @@ function getAgentAvatar(agentType: AgentType): string {
     default: return '🤖';
   }
 }
-
-export const deleteProject = async (id: string): Promise<void> => {
-  const { error } = await supabase
-    .from('projects')
-    .delete()
-    .eq('id', id);
-  
-  if (error) throw error;
-};
