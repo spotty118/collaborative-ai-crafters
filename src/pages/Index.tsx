@@ -292,7 +292,7 @@ const Index = () => {
     if (!agent) return;
     
     createMessageMutation.mutate({
-      project_id: String(activeProject.id), // Explicitly convert project_id to string
+      project_id: activeProject.id.toString(), // Convert to string using toString()
       content: message,
       sender: "You",
       type: "text"
@@ -304,7 +304,7 @@ const Index = () => {
       const response = await sendAgentPrompt(agent, message, activeProject);
       
       createMessageMutation.mutate({
-        project_id: String(activeProject.id), // Explicitly convert project_id to string
+        project_id: activeProject.id.toString(), // Convert to string using toString()
         content: response,
         sender: agent.name,
         type: "text"
@@ -315,7 +315,7 @@ const Index = () => {
       console.error('Error getting response from agent:', error);
       
       createMessageMutation.mutate({
-        project_id: String(activeProject.id), // Explicitly convert project_id to string
+        project_id: activeProject.id.toString(), // Convert to string using toString()
         content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
         sender: agent.name,
         type: "text"

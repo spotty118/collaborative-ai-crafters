@@ -1,5 +1,4 @@
-
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -9,9 +8,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { GithubUser, GithubRepo, updateFileInRepo } from "@/lib/github";
+import { GithubUser, GithubRepo, updateFileInRepo, getCurrentGithubUser } from "@/lib/github";
 import GitHubSettings from "./GitHubSettings";
 import GitHubRepoSelector from "./GitHubRepoSelector";
+import AutoGitHubSetup from "./AutoGitHubSetup";
 import { Project } from "@/lib/types";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -30,9 +30,23 @@ const GitHubIntegrationDialog: React.FC<GitHubIntegrationDialogProps> = ({
   const [user, setUser] = useState<GithubUser | null>(null);
   const [selectedRepo, setSelectedRepo] = useState<GithubRepo | null>(null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [showSetupWizard, setShowSetupWizard] = useState<boolean>(false);
+
+  useEffect(() => {
+    const checkGithubAuth = async () => {
+      const currentUser = await getCurrentGithubUser();
+      setUser(currentUser);
+      setShowSetupWizard(!currentUser);
+    };
+
+    if (isOpen) {
+      checkGithubAuth();
+    }
+  }, [isOpen]);
 
   const handleGitHubConnected = (connectedUser: GithubUser) => {
     setUser(connectedUser);
+    setShowSetupWizard(false);
   };
 
   const handleRepoSelect = (repo: GithubRepo) => {
@@ -79,6 +93,16 @@ Generated with the Agentic Development Platform
       setIsUploading(false);
     }
   };
+
+  if (showSetupWizard) {
+    return (
+      <AutoGitHubSetup 
+        isOpen={isOpen} 
+        onClose={onClose}
+        onSetupComplete={handleGitHubConnected}
+      />
+    );
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
