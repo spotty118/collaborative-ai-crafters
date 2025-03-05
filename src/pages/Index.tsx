@@ -284,7 +284,7 @@ const Index = () => {
     if (!agent) return;
     
     createMessageMutation.mutate({
-      project_id: activeProject.id,
+      project_id: typeof activeProject.id === 'number' ? activeProject.id.toString() : activeProject.id,
       content: message,
       sender: "You",
       type: "text"
@@ -296,7 +296,7 @@ const Index = () => {
       const response = await sendAgentPrompt(agent, message, activeProject);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id,
+        project_id: typeof activeProject.id === 'number' ? activeProject.id.toString() : activeProject.id,
         content: response,
         sender: agent.name,
         type: "text"
@@ -307,7 +307,7 @@ const Index = () => {
       console.error('Error getting response from agent:', error);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id,
+        project_id: typeof activeProject.id === 'number' ? activeProject.id.toString() : activeProject.id,
         content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
         sender: agent.name,
         type: "text"
