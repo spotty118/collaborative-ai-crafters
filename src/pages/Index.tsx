@@ -108,13 +108,34 @@ const Index: React.FC = () => {
       
       <main className="flex-1">
         {showForm ? (
-          <ProjectSetup
-            formType={formType}
-            form={form}
-            onSubmit={onSubmit}
-            onCancel={handleCancel}
-            isSubmitting={createProjectMutation.isPending}
-          />
+          <div className="max-w-3xl mx-auto p-4 sm:p-6 lg:p-8">
+            <h2 className="text-2xl font-bold mb-6">
+              {formType === "new" ? "Create New Project" : "Import from GitHub"}
+            </h2>
+            
+            <ProjectSetup
+              isOpen={showForm}
+              onClose={handleCancel}
+              onCreateProject={(projectData) => {
+                const newProjectData: ProjectDB = {
+                  name: projectData.name,
+                  description: projectData.description,
+                  requirements: "",
+                  source_type: projectData.mode === "existing" ? "github" : "",
+                  source_url: projectData.repoUrl || "",
+                  tech_stack: [
+                    projectData.techStack.frontend,
+                    projectData.techStack.backend,
+                    projectData.techStack.database,
+                    projectData.techStack.deployment
+                  ],
+                  status: "planning",
+                  progress: 0
+                };
+                createProjectMutation.mutate(newProjectData);
+              }}
+            />
+          </div>
         ) : (
           <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
             <div className="mb-8">
