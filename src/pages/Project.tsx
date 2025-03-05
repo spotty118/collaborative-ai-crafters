@@ -1,17 +1,21 @@
-
 import React, { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { getProject, getAgents, getTasks, getCodeFiles } from "@/lib/api";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import Dashboard from "@/components/layout/Dashboard";
+import { sendAgentPrompt } from "@/lib/openrouter";
+import { MessageDB } from "@/lib/types";
+import { toast } from "sonner";
 
 const Project = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("dashboard");
-  
+  const [activeChat, setActiveChat] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
   const { 
     data: project,
     isLoading: loadingProject,
@@ -48,6 +52,73 @@ const Project = () => {
     queryFn: () => id ? getCodeFiles(id) : Promise.resolve([]),
     enabled: !!id && activeTab === "code"
   });
+
+  const { 
+    data: messages = [], 
+    isLoading: loadingMessages 
+  } = useQuery({
+    queryKey: ['messages', id, activeChat],
+    queryFn: () => id ? getMessages(id) : Promise.resolve([]),
+    enabled: !!id && !!activeChat
+  });
+
+  const createMessageMutation = useMutation({
+    mutationFn: (messageData: MessageDB) => {
+      return createMessage(messageData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', id] });
+    }
+  });
+
+  const handleChatWithAgent = (agentId: string) => {
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent) return;
+    
+    setActiveChat(agentId);
+    toast.info(`Chat activated with ${agent.name}`);
+  };
+
+  const handleSendMessage = async (message: string) => {
+    if (!id || !message.trim() || !activeChat || !project) return;
+    
+    const agent = agents.find(a => a.id === activeChat);
+    if (!agent) return;
+    
+    createMessageMutation.mutate({
+      project_id: id,
+      content: message,
+      sender: "You",
+      type: "text"
+    });
+
+    const loadingToastId = toast.loading(`${agent.name} is thinking...`);
+    
+    try {
+      const response = await sendAgentPrompt(agent, message, project);
+      
+      createMessageMutation.mutate({
+        project_id: id,
+        content: response,
+        sender: agent.name,
+        type: "text"
+      });
+      
+      toast.dismiss(loadingToastId);
+    } catch (error) {
+      console.error('Error getting response from agent:', error);
+      
+      createMessageMutation.mutate({
+        project_id: id,
+        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        sender: agent.name,
+        type: "text"
+      });
+      
+      toast.dismiss(loadingToastId);
+      toast.error("Failed to get response from agent.");
+    }
+  };
 
   if (!id || loadingProject || projectError) {
     return (
@@ -106,12 +177,12 @@ const Project = () => {
         <Dashboard
           agents={agents}
           tasks={tasks}
-          messages={[]}
-          activeChat={null}
+          messages={messages}
+          activeChat={activeChat}
           onStartAgent={() => {}}
           onStopAgent={() => {}}
-          onChatWithAgent={() => {}}
-          onSendMessage={() => {}}
+          onChatWithAgent={handleChatWithAgent}
+          onSendMessage={handleSendMessage}
           project={{
             name: project.name,
             description: project.description,
@@ -120,7 +191,7 @@ const Project = () => {
           isLoading={{
             agents: loadingAgents,
             tasks: loadingTasks,
-            messages: false
+            messages: loadingMessages
           }}
         />
       </TabsContent>

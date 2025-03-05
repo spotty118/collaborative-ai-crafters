@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
@@ -16,6 +15,7 @@ import {
   getMessages, 
   createMessage 
 } from "@/lib/api";
+import { sendAgentPrompt } from "@/lib/openrouter";
 
 const Index = () => {
   const queryClient = useQueryClient();
@@ -164,7 +164,7 @@ const Index = () => {
     toast.info(`Chat activated with ${agent.name}`);
   };
 
-  const handleSendMessage = (message: string) => {
+  const handleSendMessage = async (message: string) => {
     if (!activeProject || !message.trim() || !activeChat) return;
     
     const agent = agents.find(a => a.id === activeChat);
@@ -176,15 +176,33 @@ const Index = () => {
       sender: "You",
       type: "text"
     });
+
+    const loadingToastId = toast.loading(`${agent.name} is thinking...`);
     
-    setTimeout(() => {
+    try {
+      const response = await sendAgentPrompt(agent, message, activeProject);
+      
       createMessageMutation.mutate({
         project_id: activeProject.id,
-        content: `I'm analyzing your request: "${message}"...`,
+        content: response,
         sender: agent.name,
         type: "text"
       });
-    }, 1000);
+      
+      toast.dismiss(loadingToastId);
+    } catch (error) {
+      console.error('Error getting response from agent:', error);
+      
+      createMessageMutation.mutate({
+        project_id: activeProject.id,
+        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        sender: agent.name,
+        type: "text"
+      });
+      
+      toast.dismiss(loadingToastId);
+      toast.error("Failed to get response from agent.");
+    }
   };
 
   const handleCreateProject = (projectData: {
