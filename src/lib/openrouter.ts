@@ -24,7 +24,7 @@ export const sendAgentPrompt = async (
   project?: Project
 ): Promise<string> => {
   try {
-    console.log(`Sending prompt to ${agent.name} (${agent.type}) agent`);
+    console.log(`Sending prompt to ${agent.name} (${agent.type}) agent using google/gemini-2.0-flash-thinking-exp:free model`);
     
     const { data, error } = await supabase.functions.invoke('openrouter', {
       body: {

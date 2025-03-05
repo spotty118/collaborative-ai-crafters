@@ -45,7 +45,7 @@ serve(async (req) => {
       ? `${systemPrompt} Project context: ${JSON.stringify(projectContext)}`
       : systemPrompt;
     
-    console.log('Sending request to OpenRouter API');
+    console.log('Sending request to OpenRouter API with model: google/gemini-2.0-flash-thinking-exp:free');
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -55,7 +55,7 @@ serve(async (req) => {
         'X-Title': 'Agentic Development Platform',
       },
       body: JSON.stringify({
-        model: 'anthropic/claude-3-opus:beta',
+        model: 'google/gemini-2.0-flash-thinking-exp:free',
         messages: [
           { role: 'system', content: fullSystemPrompt },
           { role: 'user', content: prompt }
