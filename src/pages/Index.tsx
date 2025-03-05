@@ -1,434 +1,369 @@
-import React, { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import Header from "@/components/layout/Header";
-import Dashboard from "@/components/layout/Dashboard";
-import ProjectSetup from "@/components/layout/ProjectSetup";
-import GitHubIntegrationDialog from "@/components/github/GitHubIntegrationDialog";
-import AutoGitHubSetup from "@/components/github/AutoGitHubSetup";
-import { Agent, Task, Message, Project, MessageDB, TaskDB } from "@/lib/types";
-import { toast } from "sonner";
-import { 
-  getProjects, 
-  createProject, 
-  createAgents,
-  getAgents, 
-  getTasks, 
-  getMessages, 
-  createMessage,
-  updateTask
-} from "@/lib/api";
-import { sendAgentPrompt } from "@/lib/openrouter";
-import { getCurrentGithubUser } from "@/lib/github";
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { GitHubIntegrationDialog } from "@/components/github/GitHubIntegrationDialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import { Stepper, Step, StepTitle, StepDescription } from "@/components/ui/stepper";
+import { useToast } from "@/hooks/use-toast"
+import { createProject, createAgents, getAgents, updateAgent } from "@/lib/api";
+import { ProjectDB, Agent } from "@/lib/types";
 
 const Index = () => {
-  const queryClient = useQueryClient();
-  const [isProjectSetupOpen, setIsProjectSetupOpen] = useState(false);
-  const [isGithubDialogOpen, setIsGithubDialogOpen] = useState(false);
-  const [isGithubSetupOpen, setIsGithubSetupOpen] = useState(false);
-  const [activeProject, setActiveProject] = useState<Project | null>(null);
-  const [activeChat, setActiveChat] = useState<string | null>(null);
-  const [isGithubConnected, setIsGithubConnected] = useState(false);
+  const [projectName, setProjectName] = useState('');
+  const [projectDescription, setProjectDescription] = useState('');
+  const [projectRequirements, setProjectRequirements] = useState('');
+  const [techStack, setTechStack] = useState<string[]>([]);
+  const [sourceType, setSourceType] = useState<'new' | 'existing'>('new');
+  const [sourceUrl, setSourceUrl] = useState('');
+  const [projectCreated, setProjectCreated] = useState(false);
+  const [projectId, setProjectId] = useState('');
+  const [isGitHubDialogOpen, setIsGitHubDialogOpen] = useState(false);
+  const [currentStep, setCurrentStep] = useState(1);
+  const navigate = useNavigate();
+  const { toast } = useToast()
 
-  useEffect(() => {
-    checkGithubConnection();
-  }, []);
-
-  const checkGithubConnection = async () => {
-    const user = await getCurrentGithubUser();
-    setIsGithubConnected(!!user);
+  const handleTechStackChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const selectedOptions = Array.from(e.target.selectedOptions, (option) => option.value);
+    setTechStack(selectedOptions);
   };
 
-  const { 
-    data: projects = [],
-    isLoading: loadingProjects,
-    error: projectsError 
-  } = useQuery({
-    queryKey: ['projects'],
-    queryFn: getProjects
-  });
-
-  useEffect(() => {
-    if (projects.length > 0 && !activeProject) {
-      setActiveProject(projects[0]);
-    }
-  }, [projects, activeProject]);
-
-  const { 
-    data: agents = [], 
-    isLoading: loadingAgents 
-  } = useQuery({
-    queryKey: ['agents', activeProject?.id],
-    queryFn: () => activeProject ? getAgents(activeProject.id.toString()) : Promise.resolve([]),
-    enabled: !!activeProject
-  });
-
-  const { 
-    data: tasks = [], 
-    isLoading: loadingTasks 
-  } = useQuery({
-    queryKey: ['tasks', activeProject?.id],
-    queryFn: () => activeProject ? getTasks(activeProject.id.toString()) : Promise.resolve([]),
-    enabled: !!activeProject
-  });
-
-  const { 
-    data: messages = [], 
-    isLoading: loadingMessages 
-  } = useQuery({
-    queryKey: ['messages', activeProject?.id, activeChat],
-    queryFn: () => activeProject ? getMessages(activeProject.id.toString()) : Promise.resolve([]),
-    enabled: !!activeProject
-  });
-
-  const createProjectMutation = useMutation({
-    mutationFn: async (projectData: {
-      name: string;
-      description: string;
-      tech_stack: string[];
-      source_type?: string;
-      source_url?: string;
-    }) => {
-      const newProject = await createProject({
-        ...projectData,
-        status: 'setup',
-        progress: 0
+  const handleCreateProject = async () => {
+    if (!projectName) {
+      toast({
+        title: "Error",
+        description: "Project name is required.",
+        variant: "destructive",
       });
-
-      await createAgents(newProject.id);
-
-      return newProject;
-    },
-    onSuccess: (newProject) => {
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
-      setActiveProject(newProject);
-      toast.success(`Project "${newProject.name}" has been created`);
-    },
-    onError: (error) => {
-      console.error("Error creating project:", error);
-      toast.error("Failed to create project. Please try again.");
-    }
-  });
-
-  const updateAgentMutation = useMutation({
-    mutationFn: (variables: { id: string } & Partial<Agent>) => {
-      return updateAgent(variables.id, variables);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agents', activeProject?.id] });
-    }
-  });
-
-  const createMessageMutation = useMutation({
-    mutationFn: (messageData: MessageDB) => {
-      return createMessage(messageData);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages', activeProject?.id] });
-    }
-  });
-
-  const updateTaskMutation = useMutation({
-    mutationFn: (variables: { id: string } & Partial<TaskDB>) => {
-      return updateTask(variables.id, variables);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks', activeProject?.id] });
-    }
-  });
-
-  const handleStartAgent = (agentId: string) => {
-    const agent = agents.find(a => a.id === agentId);
-    if (!agent || !activeProject) return;
-    
-    updateAgentMutation.mutate({ 
-      id: agentId, 
-      status: "working", 
-      progress: 10 
-    });
-    
-    toast.success(`${agent.name} started working`);
-
-    if (activeProject.source_url && activeProject.source_url.includes('github.com')) {
-      const analysisToast = toast.loading(`${agent.name} is analyzing your GitHub repository...`);
-      
-      import('@/lib/openrouter').then(module => {
-        module.analyzeGitHubAndCreateTasks(agent, activeProject)
-          .then(success => {
-            toast.dismiss(analysisToast);
-            
-            if (success) {
-              toast.success(`${agent.name} has analyzed your GitHub repo and created tasks`);
-              queryClient.invalidateQueries({ queryKey: ['tasks', activeProject.id] });
-            } else {
-              toast.error(`${agent.name} encountered an issue analyzing your GitHub repo`);
-            }
-          })
-          .catch(error => {
-            console.error('Error during GitHub analysis:', error);
-            toast.dismiss(analysisToast);
-            toast.error(`Failed to analyze GitHub repository: ${error.message}`);
-          });
-      });
-    }
-    
-    const agentTasks = tasks.filter(task => 
-      task.assigned_to === agentId && task.status === 'pending'
-    );
-    
-    if (agentTasks.length > 0) {
-      const executionToast = toast.loading(`${agent?.name} is starting to work on ${agentTasks.length} pending tasks...`);
-      
-      executeAgentTasks(agent as Agent, agentTasks, executionToast);
-    }
-    
-    let progress = 10;
-    const interval = setInterval(() => {
-      progress += 10;
-      
-      if (progress >= 100) {
-        updateAgentMutation.mutate({ 
-          id: agentId, 
-          status: "completed", 
-          progress: 100 
-        });
-        clearInterval(interval);
-      } else {
-        updateAgentMutation.mutate({ 
-          id: agentId, 
-          progress 
-        });
-      }
-    }, 2000);
-  };
-
-  const executeAgentTasks = async (agent: Agent, tasks: Task[], toastId: string) => {
-    if (!activeProject || tasks.length === 0) {
-      toast.dismiss(toastId);
       return;
     }
 
-    const currentTask = tasks[0];
-    const remainingTasks = tasks.slice(1);
-    
-    updateTaskMutation.mutate({ 
-      id: currentTask.id, 
-      status: 'in_progress' 
-    });
-    
-    toast.dismiss(toastId);
-    const taskToast = toast.loading(`${agent.name} is working on task: ${currentTask.title}`);
-    
-    try {
-      const taskPrompt = `Execute this task: ${currentTask.title}. ${currentTask.description || ''} Provide a detailed solution and implementation steps.`;
-      
-      const response = await sendAgentPrompt(agent, taskPrompt, activeProject);
-      
-      createMessageMutation.mutate({
-        project_id: activeProject.id.toString(), // Ensure project_id is a string
-        content: `Completed task: ${currentTask.title}\n\n${response}`,
-        sender: agent.name,
-        type: "text"
-      });
-      
-      updateTaskMutation.mutate({ 
-        id: currentTask.id, 
-        status: 'completed' 
-      });
-      
-      toast.dismiss(taskToast);
-      toast.success(`${agent.name} completed task: ${currentTask.title}`);
-      
-      if (remainingTasks.length > 0) {
-        setTimeout(() => {
-          executeAgentTasks(agent, remainingTasks, toast.loading(`${agent.name} is continuing with next task...`));
-        }, 1000);
-      }
-    } catch (error) {
-      console.error('Error executing task:', error);
-      
-      updateTaskMutation.mutate({ 
-        id: currentTask.id, 
-        status: 'failed' 
-      });
-      
-      toast.dismiss(taskToast);
-      toast.error(`${agent.name} failed to complete task: ${currentTask.title}`);
-      
-      createMessageMutation.mutate({
-        project_id: activeProject.id.toString(), // Ensure project_id is a string
-        content: `Failed to complete task: ${currentTask.title}\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        sender: agent.name,
-        type: "text"
-      });
-    }
-  };
-
-  const handleStopAgent = (agentId: string) => {
-    const agent = agents.find(a => a.id === agentId);
-    if (!agent) return;
-    
-    updateAgentMutation.mutate({ 
-      id: agentId, 
-      status: "idle"
-    });
-    
-    toast.info(`${agent.name} has been paused`);
-  };
-
-  const handleChatWithAgent = (agentId: string) => {
-    const agent = agents.find(a => a.id === agentId);
-    if (!agent) return;
-    
-    setActiveChat(agentId);
-    toast.info(`Chat activated with ${agent.name}`);
-  };
-
-  const handleSendMessage = async (message: string) => {
-    if (!activeProject || !message.trim() || !activeChat) return;
-    
-    const agent = agents.find(a => a.id === activeChat);
-    if (!agent) return;
-    
-    createMessageMutation.mutate({
-      project_id: activeProject.id.toString(), // Ensure project_id is a string
-      content: message,
-      sender: "You",
-      type: "text"
-    });
-
-    const loadingToastId = toast.loading(`${agent.name} is thinking...`);
-    
-    try {
-      const response = await sendAgentPrompt(agent, message, activeProject);
-      
-      createMessageMutation.mutate({
-        project_id: activeProject.id.toString(), // Ensure project_id is a string
-        content: response,
-        sender: agent.name,
-        type: "text"
-      });
-      
-      toast.dismiss(loadingToastId);
-    } catch (error) {
-      console.error('Error getting response from agent:', error);
-      
-      createMessageMutation.mutate({
-        project_id: activeProject.id.toString(), // Ensure project_id is a string
-        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        sender: agent.name,
-        type: "text"
-      });
-      
-      toast.dismiss(loadingToastId);
-      toast.error("Failed to get response from agent.");
-    }
-  };
-
-  const handleCreateProject = (projectData: {
-    name: string;
-    description: string;
-    mode: string;
-    techStack: {
-      frontend: string;
-      backend: string;
-      database: string;
-      deployment: string;
+    const newProject: ProjectDB = {
+      name: projectName,
+      description: projectDescription,
+      requirements: projectRequirements,
+      tech_stack: techStack,
+      source_type: sourceType === 'existing' ? 'github' : null,
+      source_url: sourceType === 'existing' ? sourceUrl : null,
+      status: 'pending',
+      progress: 0,
     };
-    repoUrl?: string;
-  }) => {
-    const tech_stack = [
-      projectData.techStack.frontend,
-      projectData.techStack.backend,
-      projectData.techStack.database,
-      projectData.techStack.deployment
-    ];
+
+    try {
+      const project = await createProject(newProject);
+      setProjectId(project.id);
+      setProjectCreated(true);
+      setCurrentStep(2);
+
+      // Create default agents for the project
+      await createAgents(project.id);
+
+      toast({
+        title: "Project Created",
+        description: "Your project has been created successfully.",
+      });
+    } catch (error: any) {
+      console.error("Error creating project:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create project.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const executeAgentTasks = async (project_id: string) => {
+    // Make sure we're using the API updateAgent function, not a local undefined variable
+    const agents = await getAgents(project_id);
     
-    createProjectMutation.mutate({
-      name: projectData.name,
-      description: projectData.description,
-      tech_stack,
-      source_type: projectData.mode === 'existing' ? 'git' : undefined,
-      source_url: projectData.repoUrl
+    // Update the architect agent to working state
+    if (agents.length > 0) {
+      const architectAgent = agents.find(agent => agent.type === 'architect');
+      if (architectAgent) {
+        await updateAgent(architectAgent.id, {
+          status: 'working',
+          progress: 10
+        });
+      }
+    }
+
+    toast({
+      title: "Generating Tasks",
+      description: "AI agents are now generating tasks for your project.",
     });
-    
-    setIsProjectSetupOpen(false);
-  };
 
-  const handleOpenGithubDialog = () => {
-    setIsGithubDialogOpen(true);
-  };
+    // Optimistically update the UI
+    // setAgents(prevAgents => {
+    //   return prevAgents.map(agent => {
+    //     if (agent.type === 'architect') {
+    //       return { ...agent, status: 'working', progress: 10 };
+    //     }
+    //     return agent;
+    //   });
+    // });
 
-  if (loadingProjects && !projectsError) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 border-4 border-t-primary rounded-full animate-spin mb-4"></div>
-          <p>Loading your projects...</p>
-        </div>
-      </div>
-    );
-  }
+    try {
+      // const response = await fetch('/functions/v1/openrouter', {
+      //   method: 'POST',
+      //   headers: {
+      //     'Content-Type': 'application/json',
+      //   },
+      //   body: JSON.stringify({
+      //     prompt: `Based on the project requirements, tech stack, and source code (if available), list the tasks that need to be done to build this project.`,
+      //     agentType: 'architect',
+      //     projectContext: {
+      //       requirements: projectRequirements,
+      //       tech_stack: techStack,
+      //       source_url: sourceUrl
+      //     }
+      //   }),
+      // });
+
+      // if (!response.ok) {
+      //   const errorData = await response.text();
+      //   console.error('OpenRouter API error:', errorData);
+      //   toast({
+      //     title: "Error",
+      //     description: `OpenRouter API error: ${errorData}`,
+      //     variant: "destructive",
+      //   });
+      //   return;
+      // }
+
+      // const data = await response.json();
+      // console.log('OpenRouter response:', data);
+
+      // toast({
+      //   title: "Tasks Generated",
+      //   description: "AI agents have generated tasks for your project.",
+      // });
+    } catch (error: any) {
+      console.error("Error generating tasks:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to generate tasks.",
+        variant: "destructive",
+      });
+    } finally {
+      // setAgents(prevAgents => {
+      //   return prevAgents.map(agent => {
+      //     if (agent.type === 'architect') {
+      //       return { ...agent, status: 'idle', progress: 100 };
+      //     }
+      //     return agent;
+      //   });
+      // });
+    }
+  };
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
-      <Header
-        onNewProject={() => setIsProjectSetupOpen(true)}
-        onImportProject={() => setIsProjectSetupOpen(true)}
-        onGithubPush={activeProject ? handleOpenGithubDialog : undefined}
-        hasActiveProject={!!activeProject}
-      />
-      
-      {activeProject ? (
-        <Dashboard
-          agents={agents}
-          tasks={tasks}
-          messages={messages}
-          onStartAgent={handleStartAgent}
-          onStopAgent={handleStopAgent}
-          onChatWithAgent={handleChatWithAgent}
-          onSendMessage={handleSendMessage}
-          activeChat={activeChat}
-          project={{
-            name: activeProject.name,
-            description: activeProject.description,
-            mode: activeProject.source_type ? 'existing' : 'new'
-          }}
-          isLoading={{
-            agents: loadingAgents,
-            tasks: loadingTasks,
-            messages: loadingMessages
-          }}
-        />
-      ) : (
-        <div className="flex-1 flex items-center justify-center p-8">
-          <div className="max-w-md w-full text-center p-8 bg-gray-50 rounded-lg border">
-            <h2 className="text-xl font-semibold mb-4">Welcome to the Agentic Development Platform</h2>
-            <p className="mb-6 text-gray-600">
-              Get started by creating a new project or importing an existing one.
-            </p>
-            <div className="flex flex-col space-y-3">
-              <button
-                onClick={() => setIsProjectSetupOpen(true)}
-                className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
-              >
-                Create New Project
-              </button>
+    <div className="container mx-auto py-10">
+      <Card className="max-w-2xl mx-auto">
+        <CardHeader>
+          <CardTitle className="text-2xl">Create a New Project</CardTitle>
+          <CardDescription>
+            Let's get started by setting up your project details.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Stepper value={currentStep}>
+            <Step index={1} active={currentStep === 1} completed={currentStep > 1}>
+              <StepTitle>Project Details</StepTitle>
+              <StepDescription>Basic information about your project</StepDescription>
+            </Step>
+            <Step index={2} active={currentStep === 2} completed={currentStep > 2}>
+              <StepTitle>AI Configuration</StepTitle>
+              <StepDescription>Configure AI agents for your project</StepDescription>
+            </Step>
+            <Step index={3} active={currentStep === 3} completed={currentStep > 3}>
+              <StepTitle>Review & Launch</StepTitle>
+              <StepDescription>Finalize and launch your project</StepDescription>
+            </Step>
+          </Stepper>
+
+          {currentStep === 1 && (
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="name">Project Name</Label>
+                <Input
+                  id="name"
+                  placeholder="My Awesome Project"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="description">Project Description</Label>
+                <Textarea
+                  id="description"
+                  placeholder="A brief description of your project"
+                  value={projectDescription}
+                  onChange={(e) => setProjectDescription(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="requirements">Project Requirements</Label>
+                <Textarea
+                  id="requirements"
+                  placeholder="List the detailed requirements for your project"
+                  value={projectRequirements}
+                  onChange={(e) => setProjectRequirements(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="techStack">Tech Stack</Label>
+                <Select multiple onValueChange={(value) => setTechStack(value)}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Select tech stack" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="react">React</SelectItem>
+                    <SelectItem value="typescript">TypeScript</SelectItem>
+                    <SelectItem value="nodejs">Node.js</SelectItem>
+                    <SelectItem value="express">Express</SelectItem>
+                    <SelectItem value="postgresql">PostgreSQL</SelectItem>
+                    <SelectItem value="mongodb">MongoDB</SelectItem>
+                    <SelectItem value="tailwindcss">Tailwind CSS</SelectItem>
+                    <SelectItem value="nextjs">Next.js</SelectItem>
+                    <SelectItem value="vuejs">Vue.js</SelectItem>
+                    <SelectItem value="angular">Angular</SelectItem>
+                    <SelectItem value="python">Python</SelectItem>
+                    <SelectItem value="django">Django</SelectItem>
+                    <SelectItem value="flask">Flask</SelectItem>
+                    <SelectItem value="java">Java</SelectItem>
+                    <SelectItem value="spring">Spring</SelectItem>
+                    <SelectItem value="docker">Docker</SelectItem>
+                    <SelectItem value="kubernetes">Kubernetes</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Source Type</Label>
+                <div className="flex items-center space-x-4">
+                  <div className="flex items-center">
+                    <Input
+                      type="radio"
+                      id="new"
+                      name="sourceType"
+                      value="new"
+                      checked={sourceType === 'new'}
+                      onChange={() => setSourceType('new')}
+                      className="mr-2"
+                    />
+                    <Label htmlFor="new">New Project</Label>
+                  </div>
+                  <div className="flex items-center">
+                    <Input
+                      type="radio"
+                      id="existing"
+                      name="sourceType"
+                      value="existing"
+                      checked={sourceType === 'existing'}
+                      onChange={() => setSourceType('existing')}
+                      className="mr-2"
+                    />
+                    <Label htmlFor="existing">Existing Repository</Label>
+                  </div>
+                </div>
+              </div>
+              {sourceType === 'existing' && (
+                <div>
+                  <Label htmlFor="sourceUrl">Repository URL</Label>
+                  <Input
+                    id="sourceUrl"
+                    placeholder="https://github.com/username/repo"
+                    value={sourceUrl}
+                    onChange={(e) => setSourceUrl(e.target.value)}
+                  />
+                </div>
+              )}
+              <Button onClick={handleCreateProject}>
+                Create Project
+              </Button>
             </div>
-          </div>
-        </div>
-      )}
-      
-      <ProjectSetup
-        isOpen={isProjectSetupOpen}
-        onClose={() => setIsProjectSetupOpen(false)}
-        onCreateProject={handleCreateProject}
-      />
-      
-      <GitHubIntegrationDialog
-        isOpen={isGithubDialogOpen}
-        onClose={() => setIsGithubDialogOpen(false)}
-        project={activeProject}
-      />
+          )}
+
+          {projectCreated && (
+            <div className="mt-8 p-6 bg-white rounded-lg shadow-md dark:bg-gray-900">
+              <h2 className="text-2xl font-bold mb-4">Project Created Successfully!</h2>
+              <p className="mb-4">Your project has been set up. Here's what happens next:</p>
+              <ol className="list-decimal pl-5 space-y-2 mb-6">
+                <li>
+                  <strong>Initial Analysis:</strong> Our AI agents are analyzing your project requirements and, if provided, your existing repository.
+                </li>
+                <li>
+                  <strong>Task Generation:</strong> Based on the analysis, the AI agents will generate a list of tasks to be completed.
+                </li>
+                <li>
+                  <strong>Task Assignment:</strong> Tasks will be assigned to the appropriate AI agents based on their expertise.
+                </li>
+                <li>
+                  <strong>Development:</strong> The AI agents will start working on the tasks, generating code and making changes to your project.
+                </li>
+                <li>
+                  <strong>Testing:</strong> The AI agents will run tests to ensure the quality of the code.
+                </li>
+                <li>
+                  <strong>Deployment:</strong> Once all tasks are completed and tested, your project will be deployed.
+                </li>
+              </ol>
+              <div className="flex space-x-4">
+                <Button onClick={() => navigate(`/project/${projectId.toString()}`)}>
+                  View Project Dashboard
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => executeAgentTasks(projectId.toString())}
+                >
+                  Generate Tasks with AI
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button variant="outline" onClick={() => setIsGitHubDialogOpen(true)}>
+            Connect GitHub
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Connect to GitHub</AlertDialogTitle>
+            <AlertDialogDescription>
+              Connecting to GitHub will allow us to access your repositories and
+              help you manage your projects.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <GitHubIntegrationDialog onClose={() => setIsGitHubDialogOpen(false)} />
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setIsGitHubDialogOpen(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction>Continue</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
