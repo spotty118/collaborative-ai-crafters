@@ -58,9 +58,12 @@ export const getProject = async (id: string): Promise<Project | null> => {
 };
 
 export const createProject = async (project: ProjectDB): Promise<Project> => {
+  // Map the github token to the appropriate field if needed
+  const projectToCreate = { ...project };
+  
   const { data, error } = await supabase
     .from('projects')
-    .insert([project])
+    .insert([projectToCreate])
     .select()
     .single();
   

@@ -47,7 +47,6 @@ const ProjectSetup: React.FC<ProjectSetupProps> = ({
   const [validationError, setValidationError] = useState("");
 
   const validateGithubUrl = (url: string): boolean => {
-    // Simple GitHub URL validation
     const githubRegex = /^https:\/\/github\.com\/[\w-]+\/[\w-]+/;
     return githubRegex.test(url);
   };
@@ -55,7 +54,6 @@ const ProjectSetup: React.FC<ProjectSetupProps> = ({
   const handleCreateProject = () => {
     if (!name) return;
     
-    // Validate GitHub URL when in existing project mode
     if (projectMode === "existing" && repoUrl) {
       if (!validateGithubUrl(repoUrl)) {
         setValidationError("Please enter a valid GitHub repository URL (https://github.com/username/repository)");

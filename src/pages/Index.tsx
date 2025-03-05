@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
@@ -154,7 +155,20 @@ const Index: React.FC = () => {
   });
 
   const createProjectMutation = useMutation({
-    mutationFn: (projectData: Omit<Project, "id">) => createProject(projectData as ProjectDB),
+    mutationFn: (projectData: Omit<Project, "id">) => {
+      // Transform the project data to match ProjectDB type
+      const dbProject: ProjectDB = {
+        name: projectData.name,
+        description: projectData.description,
+        tech_stack: projectData.techStack ? 
+          [projectData.techStack.frontend, projectData.techStack.backend, projectData.techStack.database, projectData.techStack.deployment] : 
+          undefined,
+        source_type: projectData.mode === 'existing' ? 'github' : undefined,
+        source_url: projectData.repoUrl
+      };
+      
+      return createProject(dbProject);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       setIsProjectSetupOpen(false);

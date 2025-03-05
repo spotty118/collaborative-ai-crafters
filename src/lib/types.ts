@@ -1,4 +1,3 @@
-
 export type ProjectMode = "new" | "existing";
 
 export type AgentStatus = "idle" | "working" | "completed" | "failed" | "waiting";
@@ -19,6 +18,7 @@ export interface Project {
   mode: ProjectMode;
   techStack?: TechStack;
   repoUrl?: string;
+  githubToken?: string;
   status?: string;
   sourceType?: string;
   sourceUrl?: string;
@@ -103,7 +103,7 @@ export interface CodeFile {
 
 // Database types (match Supabase structure)
 // Make id optional in DB types since they are often auto-generated
-export type ProjectDB = Omit<Project, 'techStack' | 'sourceType' | 'sourceUrl' | 'mode'> & {
+export type ProjectDB = Omit<Project, 'techStack' | 'sourceType' | 'sourceUrl' | 'mode' | 'githubToken'> & {
   id?: string; // Optional for inserts
   tech_stack?: string[];
   source_type?: string;
