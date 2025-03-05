@@ -13,6 +13,7 @@ import { CodeFile, Message, Project as ProjectType, Agent, Task } from "@/lib/ty
 import { useGitHub } from "@/contexts/GitHubContext";
 import { FileEditor } from "@/components/FileEditor";
 import { toast } from "sonner";
+import { GitHubTester } from '@/components/GitHubTester';
 
 interface DashboardProps {
   project: {
@@ -448,6 +449,13 @@ const Project: React.FC = () => {
                   {github.isConnected && (
                     <div className="mt-2 text-sm text-gray-500">
                       Currently using branch: <span className="font-medium">{github.currentBranch}</span>
+                    </div>
+                  )}
+
+                  {github.isConnected && (
+                    <div className="mt-6">
+                      <h3 className="text-base font-medium mb-4">GitHub Test</h3>
+                      <GitHubTester />
                     </div>
                   )}
                 </div>
