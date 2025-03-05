@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+
+import React, { useState, useRef, useEffect } from "react";
 import AgentCard from "@/components/agents/AgentCard";
 import TaskList from "@/components/ui/TaskList";
 import { Agent, Task, Message } from "@/lib/types";
@@ -45,6 +46,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   isLoading
 }) => {
   const [chatMessage, setChatMessage] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const handleSendMessage = () => {
     if (chatMessage.trim() && activeChat) {
@@ -64,6 +66,13 @@ const Dashboard: React.FC<DashboardProps> = ({
     m.sender === "You" || // Always show user messages
     m.sender === getActiveAgentName() // Show only selected agent's messages
   );
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [filteredMessages]);
 
   return (
     <div className="flex h-[calc(100vh-73px)]">
@@ -110,7 +119,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       <div className="flex-1 flex flex-col">
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-0">
           {/* Chat section */}
-          <div className="border-r flex flex-col">
+          <div className="border-r flex flex-col h-full">
             <div className="border-b p-4">
               <h2 className="text-lg font-semibold">
                 {activeChat 
@@ -120,39 +129,42 @@ const Dashboard: React.FC<DashboardProps> = ({
               </h2>
             </div>
             
-            <ScrollArea className="flex-1 p-4">
-              <div className="space-y-4">
-                {isLoading.messages ? (
-                  <div className="flex justify-center py-8">
-                    <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
-                  </div>
-                ) : filteredMessages.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    No messages yet. Start a conversation with an agent.
-                  </div>
-                ) : (
-                  filteredMessages.map((message) => (
-                    <div key={message.id} className="animate-fade-in">
-                      <div className="flex items-start gap-2 mb-1">
-                        <div className="font-medium text-sm">{message.sender}</div>
-                        <div className="text-xs text-gray-500 pt-1">
-                          {message.created_at && new Date(message.created_at).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit"
-                          })}
-                        </div>
-                      </div>
-                      <div className="pl-2 border-l-2 border-gray-200 text-sm text-gray-700">
-                        {message.content}
-                      </div>
-                      <Separator className="mt-4" />
+            <div className="flex-1 overflow-hidden flex flex-col">
+              <ScrollArea className="flex-1 h-[calc(100vh-220px)]">
+                <div className="space-y-4 p-4">
+                  {isLoading.messages ? (
+                    <div className="flex justify-center py-8">
+                      <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
                     </div>
-                  ))
-                )}
-              </div>
-            </ScrollArea>
+                  ) : filteredMessages.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      No messages yet. Start a conversation with an agent.
+                    </div>
+                  ) : (
+                    filteredMessages.map((message) => (
+                      <div key={message.id} className="animate-fade-in">
+                        <div className="flex items-start gap-2 mb-1">
+                          <div className="font-medium text-sm">{message.sender}</div>
+                          <div className="text-xs text-gray-500 pt-1">
+                            {message.created_at && new Date(message.created_at).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit"
+                            })}
+                          </div>
+                        </div>
+                        <div className="pl-2 border-l-2 border-gray-200 text-sm text-gray-700">
+                          {message.content}
+                        </div>
+                        <Separator className="mt-4" />
+                      </div>
+                    ))
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+              </ScrollArea>
+            </div>
             
-            <div className="p-4 border-t">
+            <div className="p-4 border-t mt-auto">
               <div className="flex gap-2">
                 <Input
                   placeholder={activeChat ? "Type a message..." : "Select an agent to chat"}
