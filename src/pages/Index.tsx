@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
 import Dashboard from "@/components/layout/Dashboard";
 import ProjectSetup from "@/components/layout/ProjectSetup";
-import { Agent, Task, Message, Project, MessageDB } from "@/lib/types";
+import GitHubWriteTester from "@/components/GitHubWriteTester";
+import { Agent, Task, Message, Project, TaskStatus } from "@/lib/types";
 import { toast } from "sonner";
 import { 
   getProjects, 
@@ -13,15 +14,18 @@ import {
   updateAgent, 
   getTasks, 
   getMessages, 
-  createMessage 
+  createMessage,
+  updateTask
 } from "@/lib/api";
 import { sendAgentPrompt } from "@/lib/openrouter";
+import { Button } from "@/components/ui/button";
 
 const Index = () => {
   const queryClient = useQueryClient();
   const [isProjectSetupOpen, setIsProjectSetupOpen] = useState(false);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [activeChat, setActiveChat] = useState<string | null>(null);
+  const [showGitHubTester, setShowGitHubTester] = useState(false);
 
   const { 
     data: projects = [],
@@ -43,7 +47,16 @@ const Index = () => {
     isLoading: loadingAgents 
   } = useQuery({
     queryKey: ['agents', activeProject?.id],
-    queryFn: () => activeProject ? getAgents(activeProject.id) : Promise.resolve([]),
+    queryFn: () => activeProject ? getAgents(activeProject.id.toString()) : Promise.resolve([]),
+    enabled: !!activeProject
+  });
+
+  const { 
+    data: messages = [], 
+    isLoading: loadingMessages 
+  } = useQuery({
+    queryKey: ['messages', activeProject?.id],
+    queryFn: () => activeProject ? getMessages(activeProject.id.toString()) : Promise.resolve([]),
     enabled: !!activeProject
   });
 
@@ -52,16 +65,7 @@ const Index = () => {
     isLoading: loadingTasks 
   } = useQuery({
     queryKey: ['tasks', activeProject?.id],
-    queryFn: () => activeProject ? getTasks(activeProject.id) : Promise.resolve([]),
-    enabled: !!activeProject
-  });
-
-  const { 
-    data: messages = [], 
-    isLoading: loadingMessages 
-  } = useQuery({
-    queryKey: ['messages', activeProject?.id, activeChat],
-    queryFn: () => activeProject ? getMessages(activeProject.id) : Promise.resolve([]),
+    queryFn: () => activeProject ? getTasks(activeProject.id.toString()) : Promise.resolve([]),
     enabled: !!activeProject
   });
 
@@ -74,9 +78,14 @@ const Index = () => {
       source_url?: string;
     }) => {
       const newProject = await createProject({
-        ...projectData,
+        id: undefined,
+        name: projectData.name,
+        description: projectData.description,
         status: 'setup',
-        progress: 0
+        progress: 0,
+        tech_stack: projectData.tech_stack,
+        source_type: projectData.source_type,
+        source_url: projectData.source_url
       });
 
       await createAgents(newProject.id);
@@ -104,11 +113,20 @@ const Index = () => {
   });
 
   const createMessageMutation = useMutation({
-    mutationFn: (messageData: MessageDB) => {
+    mutationFn: (messageData: Message) => {
       return createMessage(messageData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', activeProject?.id] });
+    }
+  });
+
+  const updateTaskMutation = useMutation({
+    mutationFn: (variables: { id: string } & Partial<Task>) => {
+      return updateTask(variables.id, variables);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks', activeProject?.id] });
     }
   });
 
@@ -124,27 +142,40 @@ const Index = () => {
     
     toast.success(`${agent.name} started working`);
 
-    if (activeProject.source_url && activeProject.source_url.includes('github.com')) {
-      const analysisToast = toast.loading(`${agent.name} is analyzing your GitHub repository...`);
+    if (activeProject.sourceUrl || (activeProject.source_url && activeProject.source_url.includes('github.com'))) {
+      const githubUrl = activeProject.sourceUrl || activeProject.source_url;
+      if (githubUrl && githubUrl.includes('github.com')) {
+        const analysisToast = toast.loading(`${agent.name} is analyzing your GitHub repository...`);
+        
+        import('@/lib/openrouter').then(module => {
+          module.analyzeGitHubAndCreateTasks(agent, activeProject)
+            .then(success => {
+              toast.dismiss(analysisToast);
+              
+              if (success) {
+                toast.success(`${agent.name} has analyzed your GitHub repo and created tasks`);
+                queryClient.invalidateQueries({ queryKey: ['tasks', activeProject.id] });
+              } else {
+                toast.error(`${agent.name} encountered an issue analyzing your GitHub repo`);
+              }
+            })
+            .catch(error => {
+              console.error('Error during GitHub analysis:', error);
+              toast.dismiss(analysisToast);
+              toast.error(`Failed to analyze GitHub repository: ${error.message}`);
+            });
+        });
+      }
+    }
+    
+    const agentTasks = tasks.filter(task => 
+      task.assigned_to === agentId && task.status === 'pending'
+    );
+    
+    if (agentTasks.length > 0) {
+      const executionToast = toast.loading(`${agent?.name} is starting to work on ${agentTasks.length} pending tasks...`);
       
-      import('@/lib/openrouter').then(module => {
-        module.analyzeGitHubAndCreateTasks(agent, activeProject)
-          .then(success => {
-            toast.dismiss(analysisToast);
-            
-            if (success) {
-              toast.success(`${agent.name} has analyzed your GitHub repo and created tasks`);
-              queryClient.invalidateQueries({ queryKey: ['tasks', activeProject.id] });
-            } else {
-              toast.error(`${agent.name} encountered an issue analyzing your GitHub repo`);
-            }
-          })
-          .catch(error => {
-            console.error('Error during GitHub analysis:', error);
-            toast.dismiss(analysisToast);
-            toast.error(`Failed to analyze GitHub repository: ${error.message}`);
-          });
-      });
+      executeAgentTasks(agent, agentTasks, executionToast);
     }
     
     let progress = 10;
@@ -165,6 +196,68 @@ const Index = () => {
         });
       }
     }, 2000);
+  };
+
+  const executeAgentTasks = async (agent: Agent, tasks: Task[], toastId: string) => {
+    if (!activeProject || tasks.length === 0) {
+      toast.dismiss(toastId);
+      return;
+    }
+
+    const currentTask = tasks[0];
+    const remainingTasks = tasks.slice(1);
+    
+    updateTaskMutation.mutate({ 
+      id: currentTask.id, 
+      status: 'in_progress' as TaskStatus
+    });
+    
+    toast.dismiss(toastId);
+    const taskToast = toast.loading(`${agent.name} is working on task: ${currentTask.title}`);
+    
+    try {
+      const taskPrompt = `Execute this task: ${currentTask.title}. ${currentTask.description || ''} Provide a detailed solution and implementation steps.`;
+      
+      const response = await sendAgentPrompt(agent, taskPrompt, activeProject);
+      
+      createMessageMutation.mutate({
+        project_id: activeProject.id, 
+        content: `Completed task: ${currentTask.title}\n\n${response}`,
+        sender: agent.name,
+        type: "text"
+      });
+      
+      updateTaskMutation.mutate({ 
+        id: currentTask.id, 
+        status: 'completed' as TaskStatus
+      });
+      
+      toast.dismiss(taskToast);
+      toast.success(`${agent.name} completed task: ${currentTask.title}`);
+      
+      if (remainingTasks.length > 0) {
+        setTimeout(() => {
+          executeAgentTasks(agent, remainingTasks, toast.loading(`${agent.name} is continuing with next task...`));
+        }, 1000);
+      }
+    } catch (error) {
+      console.error('Error executing task:', error);
+      
+      updateTaskMutation.mutate({ 
+        id: currentTask.id, 
+        status: 'failed' as TaskStatus
+      });
+      
+      toast.dismiss(taskToast);
+      toast.error(`${agent.name} failed to complete task: ${currentTask.title}`);
+      
+      createMessageMutation.mutate({
+        project_id: activeProject.id,
+        content: `Failed to complete task: ${currentTask.title}\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        sender: agent.name,
+        type: "text"
+      });
+    }
   };
 
   const handleStopAgent = (agentId: string) => {
@@ -193,8 +286,10 @@ const Index = () => {
     const agent = agents.find(a => a.id === activeChat);
     if (!agent) return;
     
+    const projectId = activeProject.id.toString();
+    
     createMessageMutation.mutate({
-      project_id: activeProject.id,
+      project_id: projectId,
       content: message,
       sender: "You",
       type: "text"
@@ -206,7 +301,7 @@ const Index = () => {
       const response = await sendAgentPrompt(agent, message, activeProject);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id,
+        project_id: projectId,
         content: response,
         sender: agent.name,
         type: "text"
@@ -217,7 +312,7 @@ const Index = () => {
       console.error('Error getting response from agent:', error);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id,
+        project_id: projectId,
         content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
         sender: agent.name,
         type: "text"
@@ -258,6 +353,10 @@ const Index = () => {
     setIsProjectSetupOpen(false);
   };
 
+  const toggleGitHubTester = () => {
+    setShowGitHubTester(prev => !prev);
+  };
+
   if (loadingProjects && !projectsError) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -274,29 +373,48 @@ const Index = () => {
       <Header
         onNewProject={() => setIsProjectSetupOpen(true)}
         onImportProject={() => setIsProjectSetupOpen(true)}
+        activeProjectId={activeProject?.id?.toString()}
       />
       
       {activeProject ? (
-        <Dashboard
-          agents={agents}
-          tasks={tasks}
-          messages={messages}
-          onStartAgent={handleStartAgent}
-          onStopAgent={handleStopAgent}
-          onChatWithAgent={handleChatWithAgent}
-          onSendMessage={handleSendMessage}
-          activeChat={activeChat}
-          project={{
-            name: activeProject.name,
-            description: activeProject.description,
-            mode: activeProject.source_type ? 'existing' : 'new'
-          }}
-          isLoading={{
-            agents: loadingAgents,
-            tasks: loadingTasks,
-            messages: loadingMessages
-          }}
-        />
+        <>
+          <div className="p-2 bg-gray-50 border-b flex justify-end">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={toggleGitHubTester}
+            >
+              {showGitHubTester ? 'Hide GitHub Tester' : 'Show GitHub Tester'}
+            </Button>
+          </div>
+          
+          {showGitHubTester ? (
+            <div className="p-6">
+              <GitHubWriteTester />
+            </div>
+          ) : (
+            <Dashboard
+              agents={agents}
+              tasks={tasks}
+              messages={messages}
+              onStartAgent={handleStartAgent}
+              onStopAgent={handleStopAgent}
+              onChatWithAgent={handleChatWithAgent}
+              onSendMessage={handleSendMessage}
+              activeChat={activeChat}
+              project={{
+                name: activeProject.name,
+                description: activeProject.description,
+                mode: activeProject.source_type ? 'existing' : 'new'
+              }}
+              isLoading={{
+                agents: loadingAgents,
+                tasks: loadingTasks,
+                messages: loadingMessages
+              }}
+            />
+          )}
+        </>
       ) : (
         <div className="flex-1 flex items-center justify-center p-8">
           <div className="max-w-md w-full text-center p-8 bg-gray-50 rounded-lg border">

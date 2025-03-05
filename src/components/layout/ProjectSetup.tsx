@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import {
   Dialog,
@@ -37,6 +36,7 @@ interface ProjectSetupProps {
       database: string;
       deployment: string;
     };
+    githubToken?: string;
     repoUrl?: string;
   }) => void;
 }
@@ -50,6 +50,8 @@ const ProjectSetup: React.FC<ProjectSetupProps> = ({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
+  const [githubToken, setGithubToken] = useState("");
+  const [showTokenInput, setShowTokenInput] = useState(false);
   const [frontend, setFrontend] = useState("react");
   const [backend, setBackend] = useState("node");
   const [database, setDatabase] = useState("supabase");
@@ -71,6 +73,12 @@ const ProjectSetup: React.FC<ProjectSetupProps> = ({
         setValidationError("Please enter a valid GitHub repository URL (https://github.com/username/repository)");
         return;
       }
+
+      if (!githubToken) {
+        setShowTokenInput(true);
+        setValidationError("GitHub personal access token is required for repository access");
+        return;
+      }
     }
     
     setValidationError("");
@@ -85,6 +93,7 @@ const ProjectSetup: React.FC<ProjectSetupProps> = ({
         database,
         deployment,
       },
+      githubToken: projectMode === "existing" ? githubToken : undefined,
       repoUrl: projectMode === "existing" ? repoUrl : undefined,
     });
     
@@ -94,6 +103,8 @@ const ProjectSetup: React.FC<ProjectSetupProps> = ({
   const resetForm = () => {
     setName("");
     setDescription("");
+    setGithubToken("");
+    setShowTokenInput(false);
     setRepoUrl("");
     setProjectMode("new");
     setFrontend("react");
@@ -245,6 +256,28 @@ const ProjectSetup: React.FC<ProjectSetupProps> = ({
                 Our agents will analyze your GitHub repository and suggest improvements
               </p>
             </div>
+            
+            {(showTokenInput || githubToken) && (
+              <div className="space-y-2">
+                <Label htmlFor="github-token">GitHub Personal Access Token</Label>
+                <Input
+                  id="github-token"
+                  type="password"
+                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                  value={githubToken}
+                  onChange={(e) => setGithubToken(e.target.value)}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Create a personal access token with 'repo' scope at{" "}
+                  <a
+                    href="https://github.com/settings/tokens"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 hover:underline"
+                  >GitHub Settings</a>
+                </p>
+              </div>
+            )}
           </TabsContent>
         </Tabs>
 
