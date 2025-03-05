@@ -335,47 +335,6 @@ const Project: React.FC = () => {
     }
   };
 
-  const handleSendMessage = async (message: string) => {
-    if (!id || !message.trim() || !activeChat || !project) return;
-    
-    const agent = agents.find(a => a.id === activeChat);
-    if (!agent) return;
-    
-    createMessageMutation.mutate({
-      project_id: id,
-      content: message,
-      sender: "You",
-      type: "text"
-    });
-
-    const loadingToastId = toast.loading(`${agent.name} is thinking...`);
-    
-    try {
-      const response = await sendAgentPrompt(agent, message, project);
-      
-      createMessageMutation.mutate({
-        project_id: id,
-        content: response,
-        sender: agent.name,
-        type: "text"
-      });
-      
-      toast.dismiss(loadingToastId);
-    } catch (error) {
-      console.error('Error getting response from agent:', error);
-      
-      createMessageMutation.mutate({
-        project_id: id,
-        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        sender: agent.name,
-        type: "text"
-      });
-      
-      toast.dismiss(loadingToastId);
-      toast.error("Failed to get response from agent.");
-    }
-  };
-
   const handleExecuteTask = async (taskId: string, agentId: string) => {
     const agent = agents.find(a => a.id === agentId);
     const task = tasks.find(t => t.id === taskId);
@@ -415,7 +374,7 @@ const Project: React.FC = () => {
           type: "text"
         });
         
-        const taskPrompt = `Execute the following task: ${task.title}. ${task.description}. Provide a detailed approach to complete this task. If code implementation is needed, provide it in markdown code blocks.`;
+        const taskPrompt = `Execute the following task: ${task.title}. ${task.description}. Please provide detailed implementation with code examples. IMPORTANT: When providing code, use markdown code blocks with language and file path like this: \`\`\`typescript [src/path/to/file.ts]\ncode here\n\`\`\``;
         
         const response = await sendAgentPrompt(agent, taskPrompt, project);
         
@@ -425,6 +384,8 @@ const Project: React.FC = () => {
           sender: agent.name,
           type: "text"
         });
+        
+        queryClient.invalidateQueries({ queryKey: ['files', id] });
         
         if (!response.toLowerCase().includes("error") && !response.toLowerCase().includes("failed")) {
           await updateTaskMutation.mutate({
@@ -459,6 +420,49 @@ const Project: React.FC = () => {
           status: "failed"
         }
       });
+    }
+  };
+
+  const handleSendMessage = async (message: string) => {
+    if (!id || !message.trim() || !activeChat || !project) return;
+    
+    const agent = agents.find(a => a.id === activeChat);
+    if (!agent) return;
+    
+    createMessageMutation.mutate({
+      project_id: id,
+      content: message,
+      sender: "You",
+      type: "text"
+    });
+
+    const loadingToastId = toast.loading(`${agent.name} is thinking...`);
+    
+    try {
+      const response = await sendAgentPrompt(agent, message, project);
+      
+      createMessageMutation.mutate({
+        project_id: id,
+        content: response,
+        sender: agent.name,
+        type: "text"
+      });
+      
+      queryClient.invalidateQueries({ queryKey: ['files', id] });
+      
+      toast.dismiss(loadingToastId);
+    } catch (error) {
+      console.error('Error getting response from agent:', error);
+      
+      createMessageMutation.mutate({
+        project_id: id,
+        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        sender: agent.name,
+        type: "text"
+      });
+      
+      toast.dismiss(loadingToastId);
+      toast.error("Failed to get response from agent.");
     }
   };
 

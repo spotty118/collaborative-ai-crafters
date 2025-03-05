@@ -49,6 +49,11 @@ export const sendAgentPrompt = async (
       }
     }
     
+    // Always include instruction to format code responses properly
+    if (!enhancedPrompt.includes('code blocks')) {
+      enhancedPrompt += ` When providing code, please use markdown code blocks with language and file path. For example: \`\`\`typescript [src/utils/helper.ts]\ncode here\n\`\`\``;
+    }
+    
     const { data, error } = await supabase.functions.invoke('openrouter', {
       body: {
         agentType: agent.type,
@@ -72,18 +77,31 @@ export const sendAgentPrompt = async (
     if (response.choices && response.choices.length > 0) {
       const content = response.choices[0].message.content;
       
+      console.log("Received response from OpenRouter, parsing code blocks...");
+      
       // Look for code blocks in the response
       const codeBlocks = parseCodeBlocks(content);
+      console.log(`Found ${codeBlocks.length} code blocks in response`);
       
       // If we have code blocks and project has a project ID, save them as code files
       if (codeBlocks.length > 0 && project?.id) {
         try {
+          console.log("Processing code blocks to save as files...");
           for (const block of codeBlocks) {
             const path = block.path || inferFilePath(block);
+            console.log(`Processing code block: ${path} (${block.language})`);
+            
+            if (!block.content || block.content.trim() === '') {
+              console.warn(`Empty content for ${path}, skipping`);
+              continue;
+            }
+            
+            const fileName = path.split('/').pop() || 'untitled';
             
             // Save to database
+            console.log(`Creating code file in database: ${path}`);
             await createCodeFile({
-              name: path.split('/').pop() || 'untitled',
+              name: fileName,
               path: path,
               content: block.content,
               language: block.language,
@@ -99,6 +117,11 @@ export const sendAgentPrompt = async (
             if (project.sourceUrl && project.sourceUrl.includes('github.com')) {
               try {
                 const github = getGitHubService();
+                if (!github) {
+                  console.warn('GitHub service not available - skipping commit');
+                  continue;
+                }
+                
                 await github.createOrUpdateFile(
                   path,
                   block.content,

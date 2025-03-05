@@ -53,6 +53,9 @@ serve(async (req) => {
       }
     }
     
+    // Add standard instructions for code formatting
+    fullSystemPrompt += ` IMPORTANT: When providing code examples or implementations, ALWAYS use markdown code blocks with language and file path in square brackets. Example: \`\`\`typescript [src/utils/helper.ts]\nconst helper = () => {};\n\`\`\`. This format is required for the code to be properly saved and used in the project.`;
+    
     // Add specific task generation instructions if this looks like a GitHub analysis request
     if (prompt.includes('list') && prompt.includes('task') && projectContext.sourceUrl) {
       fullSystemPrompt += ` Format your response as a numbered list of specific, actionable tasks. Each task should start with a clear, concise title followed by a brief description of what needs to be done and why it would improve the project.`;
@@ -60,7 +63,7 @@ serve(async (req) => {
 
     // Add instructions for task execution
     if (prompt.includes('Execute the following task:')) {
-      fullSystemPrompt += ` Provide a detailed solution to the task. Include code snippets in markdown format when applicable. Be thorough and practical in your implementation.`;
+      fullSystemPrompt += ` Provide a detailed solution to the task. Include code snippets in markdown format with language and file path as shown: \`\`\`language [filepath]\ncode\n\`\`\`. Be thorough and practical in your implementation.`;
     }
     
     console.log('Sending request to OpenRouter API with model: google/gemini-2.0-flash-thinking-exp:free');
