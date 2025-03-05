@@ -49,6 +49,11 @@ export const sendAgentPrompt = async (
       }
     }
     
+    // Add special instructions for Architect agent to lead the team
+    if (agent.type === 'architect') {
+      enhancedPrompt = `As the lead Architect agent, you are in charge of coordinating the entire development team. ${enhancedPrompt} Remember that you should delegate specialized tasks to the appropriate agents (frontend, backend, testing, devops) and make high-level design decisions that guide the project. Focus on system architecture, project structure, and technical leadership.`;
+    }
+    
     // Always include instruction to format code responses properly
     if (!enhancedPrompt.includes('code blocks')) {
       enhancedPrompt += ` When providing code, please use markdown code blocks with language and file path. For example: \`\`\`typescript [src/utils/helper.ts]\ncode here\n\`\`\``;
@@ -180,10 +185,19 @@ export const simulateAgentCommunication = async (
       type: "text"
     });
     
+    // Add special handling if Architect is the target agent
+    let responsePrompt = `Your colleague ${sourceAgent.name} says: "${message}". Please respond with your thoughts, considering your role as the ${targetAgent.type} agent.`;
+    
+    if (targetAgent.type === 'architect') {
+      responsePrompt = `Your colleague ${sourceAgent.name} is consulting you as the lead Architect. They say: "${message}". Please provide architectural guidance and coordinate next steps as the team lead.`;
+    } else if (sourceAgent.type === 'architect') {
+      responsePrompt = `The Architect (lead agent) is providing direction: "${message}". As the ${targetAgent.type} agent, respond with how you'll implement this direction within your specialization.`;
+    }
+    
     // Get response from target agent
     const response = await sendAgentPrompt(
       targetAgent,
-      `Your colleague ${sourceAgent.name} says: "${message}". Please respond with your thoughts, considering your role as the ${targetAgent.type} agent.`,
+      responsePrompt,
       project
     );
     
@@ -197,6 +211,32 @@ export const simulateAgentCommunication = async (
     
     console.log(`${targetAgent.name} responded to ${sourceAgent.name}`);
     
+    // If architect is involved, have them initiate further actions
+    if (targetAgent.type === 'architect' || sourceAgent.type === 'architect') {
+      setTimeout(() => {
+        const architectAgent = targetAgent.type === 'architect' ? targetAgent : sourceAgent;
+        const otherAgents = ['frontend', 'backend', 'testing', 'devops'].filter(
+          type => type !== (sourceAgent.type === 'architect' ? targetAgent.type : sourceAgent.type)
+        );
+        
+        // 50% chance of continuing the conversation by delegating to another agent
+        if (Math.random() > 0.5 && otherAgents.length > 0) {
+          const randomType = otherAgents[Math.floor(Math.random() * otherAgents.length)];
+          const foundAgent = (project as Project).agents?.find(a => a.type === randomType);
+          
+          if (foundAgent) {
+            simulateAgentCommunication(
+              architectAgent,
+              foundAgent,
+              `Based on my conversation with ${sourceAgent.type === 'architect' ? targetAgent.name : sourceAgent.name}, I need you to focus on ${randomType === 'frontend' ? 'user interface components' : 
+                randomType === 'backend' ? 'API implementation' : 
+                randomType === 'testing' ? 'test coverage' : 'deployment configuration'}.`,
+              project
+            );
+          }
+        }
+      }, 5000); // 5 second delay before initiating further communication
+    }
   } catch (error) {
     console.error('Error in agent communication:', error);
   }
@@ -215,24 +255,35 @@ export const analyzeGitHubAndCreateTasks = async (
   }
 
   try {
+    // Prioritize architect agent for analysis
+    let analysisAgent = agent;
+    if (agent.type !== 'architect') {
+      // Find architect agent if available
+      const architectAgent = project.agents?.find(a => a.type === 'architect');
+      if (architectAgent) {
+        console.log(`Delegating GitHub analysis to Architect agent instead of ${agent.name}`);
+        analysisAgent = architectAgent;
+      }
+    }
+    
     // Create an analysis prompt based on the agent type
     const analysisPrompts: Record<string, string> = {
-      'architect': `Analyze the GitHub repository architecture at ${project.sourceUrl} and list 3-5 specific tasks to improve the overall architecture and project structure.`,
+      'architect': `As the lead Architect, analyze the GitHub repository at ${project.sourceUrl} and create a comprehensive development plan. List 3-5 specific tasks to improve the overall architecture and project structure. Then specify which tasks should be delegated to other team members based on their specialties.`,
       'frontend': `Analyze the GitHub repository frontend at ${project.sourceUrl} and list 3-5 specific tasks to improve UI/UX, performance, and code quality.`,
       'backend': `Analyze the GitHub repository backend at ${project.sourceUrl} and list 3-5 specific tasks to improve API design, database optimization, and security.`,
       'testing': `Analyze the GitHub repository testing at ${project.sourceUrl} and list 3-5 specific tasks to improve test coverage and quality assurance.`,
       'devops': `Analyze the GitHub repository DevOps setup at ${project.sourceUrl} and list 3-5 specific tasks to improve CI/CD, deployment, and infrastructure.`
     };
     
-    const prompt = analysisPrompts[agent.type] || `Analyze the GitHub repository at ${project.sourceUrl} and list 3-5 specific tasks to improve it.`;
+    const prompt = analysisPrompts[analysisAgent.type] || `Analyze the GitHub repository at ${project.sourceUrl} and list 3-5 specific tasks to improve it.`;
     
-    console.log(`Agent ${agent.name} analyzing GitHub repository: ${project.sourceUrl}`);
+    console.log(`Agent ${analysisAgent.name} analyzing GitHub repository: ${project.sourceUrl}`);
     
     // Get analysis response from AI
-    const analysisResponse = await sendAgentPrompt(agent, prompt, project);
+    const analysisResponse = await sendAgentPrompt(analysisAgent, prompt, project);
     
     // Parse tasks from the response and create them
-    const tasks = parseTasksFromAIResponse(analysisResponse, agent, project);
+    const tasks = parseTasksFromAIResponse(analysisResponse, analysisAgent, project);
     
     // Create each task in the database
     for (const task of tasks) {
@@ -241,12 +292,38 @@ export const analyzeGitHubAndCreateTasks = async (
         description: task.description,
         priority: 'medium',
         status: 'pending',
-        assigned_to: agent.id,
+        assigned_to: task.title.toLowerCase().includes('frontend') ? 
+          project.agents?.find(a => a.type === 'frontend')?.id || analysisAgent.id :
+          task.title.toLowerCase().includes('backend') ?
+          project.agents?.find(a => a.type === 'backend')?.id || analysisAgent.id :
+          task.title.toLowerCase().includes('test') ?
+          project.agents?.find(a => a.type === 'testing')?.id || analysisAgent.id :
+          task.title.toLowerCase().includes('deploy') || task.title.toLowerCase().includes('ci/cd') ?
+          project.agents?.find(a => a.type === 'devops')?.id || analysisAgent.id :
+          analysisAgent.id,
         project_id: project.id
       });
     }
     
-    console.log(`Agent ${agent.name} created ${tasks.length} tasks from GitHub analysis`);
+    console.log(`Agent ${analysisAgent.name} created ${tasks.length} tasks from GitHub analysis`);
+    
+    // If architect performed the analysis, have them delegate tasks to other agents
+    if (analysisAgent.type === 'architect' && project.agents && project.agents.length > 0) {
+      setTimeout(() => {
+        const otherAgents = project.agents?.filter(a => a.type !== 'architect');
+        if (otherAgents.length > 0) {
+          // Randomly select an agent to communicate with
+          const randomAgent = otherAgents[Math.floor(Math.random() * otherAgents.length)];
+          simulateAgentCommunication(
+            analysisAgent,
+            randomAgent,
+            `I've analyzed the repository and created tasks. I'd like you to focus on the ${randomAgent.type}-related tasks.`,
+            project
+          );
+        }
+      }, 5000);
+    }
+    
     return true;
   } catch (error) {
     console.error('Error analyzing GitHub repository:', error);
@@ -298,7 +375,7 @@ function parseTasksFromAIResponse(
   // If we couldn't parse any tasks, create a general task based on the agent type
   if (tasks.length === 0) {
     const fallbackTasks: Record<string, string> = {
-      'architect': 'Improve project architecture',
+      'architect': 'Improve project architecture and coordinate team efforts',
       'frontend': 'Enhance user interface components',
       'backend': 'Optimize API and database operations',
       'testing': 'Increase test coverage',
@@ -339,8 +416,13 @@ export const continueAgentWork = async (
       type: "text"
     });
     
-    // Determine what other work the agent should do
-    const nextStepsPrompt = `Based on your role as the ${agent.type} agent for the project "${project.name}", what would be the next improvement you would recommend? Please provide a specific, actionable suggestion that could be implemented right away.`;
+    // If agent is architect, they should be more proactive
+    let nextStepsPrompt = "";
+    if (agent.type === 'architect') {
+      nextStepsPrompt = `As the lead Architect for the project "${project.name}", what is the next critical improvement the team should focus on? Please provide specific, actionable direction that you can delegate to appropriate team members based on their specialties.`;
+    } else {
+      nextStepsPrompt = `Based on your role as the ${agent.type} agent for the project "${project.name}", what would be the next improvement you would recommend? Please provide a specific, actionable suggestion that could be implemented right away.`;
+    }
     
     const response = await sendAgentPrompt(agent, nextStepsPrompt, project);
     
@@ -351,31 +433,98 @@ export const continueAgentWork = async (
       type: "text"
     });
     
-    // See if we should trigger communication with another agent
-    const otherAgentTypes = ['architect', 'frontend', 'backend', 'testing', 'devops'].filter(
-      type => type !== agent.type
-    );
-    
-    // Randomly decide if we should communicate with another agent (50% chance)
-    if (Math.random() > 0.5 && otherAgentTypes.length > 0) {
-      // Select a random agent type to communicate with
-      const randomType = otherAgentTypes[Math.floor(Math.random() * otherAgentTypes.length)];
+    // If architect agent, always communicate with another agent
+    if (agent.type === 'architect' && project.agents && project.agents.length > 0) {
+      setTimeout(() => {
+        const otherAgents = project.agents?.filter(a => a.type !== 'architect' && a.status === 'working');
+        if (otherAgents && otherAgents.length > 0) {
+          // Randomly select an agent to communicate with
+          const randomAgent = otherAgents[Math.floor(Math.random() * otherAgents.length)];
+          simulateAgentCommunication(
+            agent,
+            randomAgent,
+            `Based on my analysis, I need you to focus on the following ${randomAgent.type}-specific tasks: ${response.split('\n')[0]}`,
+            project
+          );
+        }
+      }, 5000);
+    } else {
+      // For non-architect agents, randomly decide if we should communicate with architect
+      const architectAgent = project.agents?.find(a => a.type === 'architect' && a.status === 'working');
       
-      // Create a collaboration prompt
-      const collaborationPrompt = `As the ${agent.type} agent, I'd like to collaborate with the ${randomType} agent on improving this project. What aspects should we focus on together?`;
-      
-      await createMessage({
-        project_id: project.id,
-        content: collaborationPrompt,
-        sender: agent.name,
-        type: "text"
-      });
-      
-      console.log(`${agent.name} is initiating collaboration with ${randomType} agent`);
-      
-      // The Project page will handle the actual communication when it detects this message
+      if (architectAgent && Math.random() > 0.3) { // 70% chance
+        setTimeout(() => {
+          simulateAgentCommunication(
+            agent,
+            architectAgent,
+            `I've been working on the project and identified: ${response.split('\n')[0]}. What direction should I take next?`,
+            project
+          );
+        }, 5000);
+      } else {
+        // If no architect communication, maybe talk to another agent
+        const otherAgentTypes = ['frontend', 'backend', 'testing', 'devops'].filter(
+          type => type !== agent.type
+        );
+        
+        // 50% chance of communication with another non-architect agent
+        if (Math.random() > 0.5 && otherAgentTypes.length > 0) {
+          const randomType = otherAgentTypes[Math.floor(Math.random() * otherAgentTypes.length)];
+          const randomAgent = project.agents?.find(a => a.type === randomType && a.status === 'working');
+          
+          if (randomAgent) {
+            setTimeout(() => {
+              simulateAgentCommunication(
+                agent,
+                randomAgent,
+                `I've been working on ${agent.type} tasks and would like to collaborate with you on ${randomType} integration.`,
+                project
+              );
+            }, 5000);
+          }
+        }
+      }
     }
   } catch (error) {
     console.error('Error in continuing agent work:', error);
+  }
+};
+
+// Update the OpenRouter function to ensure Architect agent leads the team
+export const updateOpenRouterForArchitectLeadership = async (project: Project): Promise<void> => {
+  if (!project.id) return;
+  
+  try {
+    const architectAgent = project.agents?.find(a => a.type === 'architect');
+    if (!architectAgent) {
+      console.log('No architect agent found to establish leadership');
+      return;
+    }
+    
+    // Inform the team that the architect is taking the lead
+    await createMessage({
+      project_id: project.id,
+      content: "I'm taking charge as the Architect Agent. I'll be coordinating our team's efforts to ensure we build a coherent, well-structured solution.",
+      sender: architectAgent.name,
+      type: "text"
+    });
+    
+    // Communicate with other active agents
+    const otherAgents = project.agents?.filter(a => a.type !== 'architect' && a.status === 'working');
+    if (otherAgents && otherAgents.length > 0) {
+      // Communicate with each active agent
+      for (const agent of otherAgents) {
+        setTimeout(() => {
+          simulateAgentCommunication(
+            architectAgent,
+            agent,
+            `As the project architect, I'm establishing our technical direction. I'd like you to focus on ${agent.type}-specific implementations while I handle overall structure and integration. What are your initial thoughts on the ${agent.type} requirements?`,
+            project
+          );
+        }, 3000 + Math.random() * 5000); // Stagger communications
+      }
+    }
+  } catch (error) {
+    console.error('Error establishing architect leadership:', error);
   }
 };
