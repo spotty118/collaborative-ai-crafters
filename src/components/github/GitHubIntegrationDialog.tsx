@@ -1,13 +1,13 @@
+
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Stepper, Step, StepTitle, StepDescription } from "@/components/ui/stepper";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { initiateGitHubOAuth } from "@/lib/github";
 import { extractGitHubCallbackParams, handleGitHubCallback, isGitHubAuthenticated } from "@/lib/github";
-import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 export const GitHubIntegrationDialog = ({ onClose }: { onClose: () => void }) => {
@@ -33,7 +33,7 @@ export const GitHubIntegrationDialog = ({ onClose }: { onClose: () => void }) =>
             description: "Your GitHub account has been connected.",
             variant: "default",
           });
-        } catch (error) {
+        } catch (error: any) {
           console.error("Error handling GitHub callback:", error);
           
           toast({

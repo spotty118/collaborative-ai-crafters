@@ -43,9 +43,8 @@ const Index = () => {
   const navigate = useNavigate();
   const { toast } = useToast()
 
-  const handleTechStackChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedOptions = Array.from(e.target.selectedOptions, (option) => option.value);
-    setTechStack(selectedOptions);
+  const handleTechStackChange = (value: string[]) => {
+    setTechStack(value);
   };
 
   const handleCreateProject = async () => {
@@ -187,15 +186,15 @@ const Index = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           <Stepper value={currentStep}>
-            <Step index={1} active={currentStep === 1} completed={currentStep > 1}>
+            <Step>
               <StepTitle>Project Details</StepTitle>
               <StepDescription>Basic information about your project</StepDescription>
             </Step>
-            <Step index={2} active={currentStep === 2} completed={currentStep > 2}>
+            <Step>
               <StepTitle>AI Configuration</StepTitle>
               <StepDescription>Configure AI agents for your project</StepDescription>
             </Step>
-            <Step index={3} active={currentStep === 3} completed={currentStep > 3}>
+            <Step>
               <StepTitle>Review & Launch</StepTitle>
               <StepDescription>Finalize and launch your project</StepDescription>
             </Step>
@@ -232,8 +231,8 @@ const Index = () => {
               </div>
               <div>
                 <Label htmlFor="techStack">Tech Stack</Label>
-                <Select multiple onValueChange={(value) => setTechStack(value)}>
-                  <SelectTrigger className="w-[180px]">
+                <Select onValueChange={(value) => handleTechStackChange(value.split(','))}>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select tech stack" />
                   </SelectTrigger>
                   <SelectContent>
@@ -328,12 +327,12 @@ const Index = () => {
                 </li>
               </ol>
               <div className="flex space-x-4">
-                <Button onClick={() => navigate(`/project/${projectId.toString()}`)}>
+                <Button onClick={() => navigate(`/project/${projectId}`)}>
                   View Project Dashboard
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => executeAgentTasks(projectId.toString())}
+                  onClick={() => executeAgentTasks(projectId)}
                 >
                   Generate Tasks with AI
                 </Button>
