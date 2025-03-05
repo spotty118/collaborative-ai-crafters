@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
 import Dashboard from "@/components/layout/Dashboard";
 import ProjectSetup from "@/components/layout/ProjectSetup";
-import { Agent, Task, Message, Project, MessageDB, TaskDB } from "@/lib/types";
+import { Agent, Task, Message, Project, TaskStatus } from "@/lib/types";
 import { toast } from "sonner";
 import { 
   getProjects, 
@@ -75,9 +75,14 @@ const Index = () => {
       source_url?: string;
     }) => {
       const newProject = await createProject({
-        ...projectData,
+        id: undefined,
+        name: projectData.name,
+        description: projectData.description,
         status: 'setup',
-        progress: 0
+        progress: 0,
+        tech_stack: projectData.tech_stack,
+        source_type: projectData.source_type,
+        source_url: projectData.source_url
       });
 
       await createAgents(newProject.id);
@@ -105,7 +110,7 @@ const Index = () => {
   });
 
   const createMessageMutation = useMutation({
-    mutationFn: (messageData: MessageDB) => {
+    mutationFn: (messageData: Message) => {
       return createMessage(messageData);
     },
     onSuccess: () => {
@@ -114,7 +119,7 @@ const Index = () => {
   });
 
   const updateTaskMutation = useMutation({
-    mutationFn: (variables: { id: string } & Partial<TaskDB>) => {
+    mutationFn: (variables: { id: string } & Partial<Task>) => {
       return updateTask(variables.id, variables);
     },
     onSuccess: () => {
@@ -134,27 +139,30 @@ const Index = () => {
     
     toast.success(`${agent.name} started working`);
 
-    if (activeProject.source_url && activeProject.source_url.includes('github.com')) {
-      const analysisToast = toast.loading(`${agent.name} is analyzing your GitHub repository...`);
-      
-      import('@/lib/openrouter').then(module => {
-        module.analyzeGitHubAndCreateTasks(agent, activeProject)
-          .then(success => {
-            toast.dismiss(analysisToast);
-            
-            if (success) {
-              toast.success(`${agent.name} has analyzed your GitHub repo and created tasks`);
-              queryClient.invalidateQueries({ queryKey: ['tasks', activeProject.id] });
-            } else {
-              toast.error(`${agent.name} encountered an issue analyzing your GitHub repo`);
-            }
-          })
-          .catch(error => {
-            console.error('Error during GitHub analysis:', error);
-            toast.dismiss(analysisToast);
-            toast.error(`Failed to analyze GitHub repository: ${error.message}`);
-          });
-      });
+    if (activeProject.sourceUrl || (activeProject.source_url && activeProject.source_url.includes('github.com'))) {
+      const githubUrl = activeProject.sourceUrl || activeProject.source_url;
+      if (githubUrl && githubUrl.includes('github.com')) {
+        const analysisToast = toast.loading(`${agent.name} is analyzing your GitHub repository...`);
+        
+        import('@/lib/openrouter').then(module => {
+          module.analyzeGitHubAndCreateTasks(agent, activeProject)
+            .then(success => {
+              toast.dismiss(analysisToast);
+              
+              if (success) {
+                toast.success(`${agent.name} has analyzed your GitHub repo and created tasks`);
+                queryClient.invalidateQueries({ queryKey: ['tasks', activeProject.id] });
+              } else {
+                toast.error(`${agent.name} encountered an issue analyzing your GitHub repo`);
+              }
+            })
+            .catch(error => {
+              console.error('Error during GitHub analysis:', error);
+              toast.dismiss(analysisToast);
+              toast.error(`Failed to analyze GitHub repository: ${error.message}`);
+            });
+        });
+      }
     }
     
     const agentTasks = tasks.filter(task => 
@@ -164,7 +172,7 @@ const Index = () => {
     if (agentTasks.length > 0) {
       const executionToast = toast.loading(`${agent?.name} is starting to work on ${agentTasks.length} pending tasks...`);
       
-      executeAgentTasks(agent as Agent, agentTasks, executionToast);
+      executeAgentTasks(agent, agentTasks, executionToast);
     }
     
     let progress = 10;
@@ -198,7 +206,7 @@ const Index = () => {
     
     updateTaskMutation.mutate({ 
       id: currentTask.id, 
-      status: 'in_progress' 
+      status: 'in_progress' as TaskStatus
     });
     
     toast.dismiss(toastId);
@@ -210,7 +218,7 @@ const Index = () => {
       const response = await sendAgentPrompt(agent, taskPrompt, activeProject);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id.toString(), // Ensure project_id is a string
+        project_id: activeProject.id, 
         content: `Completed task: ${currentTask.title}\n\n${response}`,
         sender: agent.name,
         type: "text"
@@ -218,7 +226,7 @@ const Index = () => {
       
       updateTaskMutation.mutate({ 
         id: currentTask.id, 
-        status: 'completed' 
+        status: 'completed' as TaskStatus
       });
       
       toast.dismiss(taskToast);
@@ -234,14 +242,14 @@ const Index = () => {
       
       updateTaskMutation.mutate({ 
         id: currentTask.id, 
-        status: 'failed' 
+        status: 'failed' as TaskStatus
       });
       
       toast.dismiss(taskToast);
       toast.error(`${agent.name} failed to complete task: ${currentTask.title}`);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id.toString(), // Ensure project_id is a string
+        project_id: activeProject.id,
         content: `Failed to complete task: ${currentTask.title}\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
         sender: agent.name,
         type: "text"
@@ -276,7 +284,7 @@ const Index = () => {
     if (!agent) return;
     
     createMessageMutation.mutate({
-      project_id: activeProject.id.toString(), // Ensure project_id is a string
+      project_id: activeProject.id,
       content: message,
       sender: "You",
       type: "text"
@@ -288,7 +296,7 @@ const Index = () => {
       const response = await sendAgentPrompt(agent, message, activeProject);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id.toString(), // Ensure project_id is a string
+        project_id: activeProject.id,
         content: response,
         sender: agent.name,
         type: "text"
@@ -299,7 +307,7 @@ const Index = () => {
       console.error('Error getting response from agent:', error);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id.toString(), // Ensure project_id is a string
+        project_id: activeProject.id,
         content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
         sender: agent.name,
         type: "text"
@@ -356,7 +364,7 @@ const Index = () => {
       <Header
         onNewProject={() => setIsProjectSetupOpen(true)}
         onImportProject={() => setIsProjectSetupOpen(true)}
-        activeProjectId={activeProject?.id?.toString()} // Pass the active project ID to Header
+        activeProjectId={activeProject?.id?.toString()}
       />
       
       {activeProject ? (

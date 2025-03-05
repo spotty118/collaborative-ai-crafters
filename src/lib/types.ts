@@ -92,26 +92,35 @@ export interface CodeFile {
   id: string;
   name: string;
   path: string;
-  content?: string;
+  content: string; // Making content required
   language?: string;
   created_by: string;
-  last_modified_by?: string;
-  project_id?: string;
+  last_modified_by: string; // Making last_modified_by required
+  project_id: string; // Making project_id required
   created_at?: string;
   updated_at?: string;
 }
 
 // Database types (match Supabase structure)
+// Make id optional in DB types since they are often auto-generated
 export type ProjectDB = Omit<Project, 'techStack' | 'sourceType' | 'sourceUrl' | 'mode'> & {
+  id?: string; // Optional for inserts
   tech_stack?: string[];
   source_type?: string;
   source_url?: string;
 };
 
-export type AgentDB = Omit<Agent, 'type'> & {
+export type AgentDB = Omit<Agent, 'type' | 'id'> & {
+  id?: string; // Optional for inserts
   agent_type: AgentType;
 };
 
-export type TaskDB = Task;
+export type TaskDB = Omit<Task, 'id'> & {
+  id?: string; // Optional for inserts
+};
+
 export type MessageDB = Message;
-export type CodeFileDB = CodeFile;
+
+export type CodeFileDB = Omit<CodeFile, 'id'> & {
+  id?: string; // Optional for inserts
+};

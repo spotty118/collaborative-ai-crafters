@@ -146,45 +146,45 @@ export const getAgents = async (projectId: string): Promise<Agent[]> => {
 };
 
 export const createAgents = async (projectId: string): Promise<Agent[]> => {
-  const defaultAgents: AgentDB[] = [
+  const defaultAgents = [
     {
       project_id: projectId,
-      agent_type: 'architect',
+      agent_type: 'architect' as AgentType,
       name: 'Architect Agent',
       description: 'Designs system architecture and project structure',
-      status: 'idle',
+      status: 'idle' as AgentStatus,
       progress: 0
     },
     {
       project_id: projectId,
-      agent_type: 'frontend',
+      agent_type: 'frontend' as AgentType,
       name: 'Frontend Agent',
       description: 'Builds UI components and client-side functionality',
-      status: 'idle',
+      status: 'idle' as AgentStatus,
       progress: 0
     },
     {
       project_id: projectId,
-      agent_type: 'backend',
+      agent_type: 'backend' as AgentType,
       name: 'Backend Agent',
       description: 'Develops APIs and database models',
-      status: 'idle',
+      status: 'idle' as AgentStatus,
       progress: 0
     },
     {
       project_id: projectId,
-      agent_type: 'testing',
+      agent_type: 'testing' as AgentType,
       name: 'Testing Agent',
       description: 'Creates tests and ensures quality',
-      status: 'idle',
+      status: 'idle' as AgentStatus,
       progress: 0
     },
     {
       project_id: projectId,
-      agent_type: 'devops',
+      agent_type: 'devops' as AgentType,
       name: 'DevOps Agent',
       description: 'Handles deployment and CI/CD setup',
-      status: 'idle',
+      status: 'idle' as AgentStatus,
       progress: 0
     }
   ];
@@ -263,7 +263,7 @@ export const getTasks = async (projectId: string): Promise<Task[]> => {
   }));
 };
 
-export const createTask = async (task: TaskDB): Promise<Task> => {
+export const createTask = async (task: Omit<TaskDB, 'id'>): Promise<Task> => {
   const { data, error } = await supabase
     .from('tasks')
     .insert([{
