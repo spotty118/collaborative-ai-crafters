@@ -1,18 +1,15 @@
 
 import React from "react";
-import { Task, Agent } from "@/lib/types";
-import { CheckCircle2, Circle, Clock, AlertCircle, RotateCw, Play } from "lucide-react";
+import { Task } from "@/lib/types";
+import { CheckCircle2, Circle, Clock, AlertCircle, RotateCw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 
 interface TaskListProps {
   tasks: Task[];
-  agents?: Agent[];
-  onExecuteTask?: (taskId: string, agentId: string) => void;
   className?: string;
 }
 
-const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, className }) => {
+const TaskList: React.FC<TaskListProps> = ({ tasks, className }) => {
   const getTaskStatusIcon = (status: Task["status"]) => {
     switch (status) {
       case "pending":
@@ -53,11 +50,6 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, 
     }).format(dateObject);
   };
 
-  const getAgentNameById = (agentId: string) => {
-    const agent = agents.find(a => a.id === agentId);
-    return agent ? agent.name : "Unassigned";
-  };
-
   return (
     <div className={cn("space-y-4", className)}>
       <h3 className="text-lg font-semibold">Tasks</h3>
@@ -82,28 +74,10 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, 
                   <p className="text-xs text-gray-500 mt-1 line-clamp-2">
                     {task.description}
                   </p>
-                  
-                  {task.assigned_to && (
-                    <div className="mt-2 text-xs text-gray-600">
-                      Assigned to: {getAgentNameById(task.assigned_to)}
-                    </div>
-                  )}
-                  
-                  <div className="flex justify-between items-center mt-2">
-                    <span className="text-xs text-gray-500">
-                      Updated: {formatDate(task.updated_at)}
-                    </span>
-                    
-                    {task.status === 'pending' && task.assigned_to && onExecuteTask && (
-                      <Button 
-                        size="sm" 
-                        variant="outline"
-                        className="h-7 gap-1 text-xs"
-                        onClick={() => onExecuteTask(task.id, task.assigned_to as string)}
-                      >
-                        <Play className="h-3 w-3" />
-                        Execute
-                      </Button>
+                  <div className="flex justify-between mt-2 text-xs text-gray-500">
+                    <span>Updated: {formatDate(task.updated_at)}</span>
+                    {task.dependencies && task.dependencies.length > 0 && (
+                      <span>{task.dependencies.length} dependencies</span>
                     )}
                   </div>
                 </div>

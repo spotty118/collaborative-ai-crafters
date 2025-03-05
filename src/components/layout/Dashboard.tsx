@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { SendHorizontal, Play } from "lucide-react";
+import { SendHorizontal } from "lucide-react";
 
 interface DashboardProps {
   agents: Agent[];
@@ -175,18 +175,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
               </div>
             ) : (
-              <TaskList 
-                tasks={tasks}
-                agents={agents}
-                onExecuteTask={(taskId, agentId) => {
-                  const agent = agents.find(a => a.id === agentId);
-                  const task = tasks.find(t => t.id === taskId);
-                  
-                  if (agent && task) {
-                    onStartAgent(agentId);
-                  }
-                }}
-              />
+              <TaskList tasks={tasks} />
             )}
           </div>
         </div>

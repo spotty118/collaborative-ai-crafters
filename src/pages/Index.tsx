@@ -3,8 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
 import Dashboard from "@/components/layout/Dashboard";
 import ProjectSetup from "@/components/layout/ProjectSetup";
-import GitHubIntegrationDialog from "@/components/github/GitHubIntegrationDialog";
-import { Agent, Task, Message, Project, MessageDB, TaskDB } from "@/lib/types";
+import { Agent, Task, Message, Project, MessageDB } from "@/lib/types";
 import { toast } from "sonner";
 import { 
   getProjects, 
@@ -14,15 +13,13 @@ import {
   updateAgent, 
   getTasks, 
   getMessages, 
-  createMessage,
-  updateTask
+  createMessage 
 } from "@/lib/api";
 import { sendAgentPrompt } from "@/lib/openrouter";
 
 const Index = () => {
   const queryClient = useQueryClient();
   const [isProjectSetupOpen, setIsProjectSetupOpen] = useState(false);
-  const [isGithubDialogOpen, setIsGithubDialogOpen] = useState(false);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [activeChat, setActiveChat] = useState<string | null>(null);
 
@@ -115,15 +112,6 @@ const Index = () => {
     }
   });
 
-  const updateTaskMutation = useMutation({
-    mutationFn: (variables: { id: string } & Partial<TaskDB>) => {
-      return updateTask(variables.id, variables);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks', activeProject?.id] });
-    }
-  });
-
   const handleStartAgent = (agentId: string) => {
     const agent = agents.find(a => a.id === agentId);
     if (!agent || !activeProject) return;
@@ -159,16 +147,6 @@ const Index = () => {
       });
     }
     
-    const agentTasks = tasks.filter(task => 
-      task.assigned_to === agentId && task.status === 'pending'
-    );
-    
-    if (agentTasks.length > 0) {
-      const executionToast = toast.loading(`${agent?.name} is starting to work on ${agentTasks.length} pending tasks...`);
-      
-      executeAgentTasks(agent as Agent, agentTasks, executionToast);
-    }
-    
     let progress = 10;
     const interval = setInterval(() => {
       progress += 10;
@@ -187,68 +165,6 @@ const Index = () => {
         });
       }
     }, 2000);
-  };
-
-  const executeAgentTasks = async (agent: Agent, tasks: Task[], toastId: string) => {
-    if (!activeProject || tasks.length === 0) {
-      toast.dismiss(toastId);
-      return;
-    }
-
-    const currentTask = tasks[0];
-    const remainingTasks = tasks.slice(1);
-    
-    updateTaskMutation.mutate({ 
-      id: currentTask.id, 
-      status: 'in_progress' 
-    });
-    
-    toast.dismiss(toastId);
-    const taskToast = toast.loading(`${agent.name} is working on task: ${currentTask.title}`);
-    
-    try {
-      const taskPrompt = `Execute this task: ${currentTask.title}. ${currentTask.description || ''} Provide a detailed solution and implementation steps.`;
-      
-      const response = await sendAgentPrompt(agent, taskPrompt, activeProject);
-      
-      createMessageMutation.mutate({
-        project_id: activeProject.id.toString(), // Ensure project_id is a string
-        content: `Completed task: ${currentTask.title}\n\n${response}`,
-        sender: agent.name,
-        type: "text"
-      });
-      
-      updateTaskMutation.mutate({ 
-        id: currentTask.id, 
-        status: 'completed' 
-      });
-      
-      toast.dismiss(taskToast);
-      toast.success(`${agent.name} completed task: ${currentTask.title}`);
-      
-      if (remainingTasks.length > 0) {
-        setTimeout(() => {
-          executeAgentTasks(agent, remainingTasks, toast.loading(`${agent.name} is continuing with next task...`));
-        }, 1000);
-      }
-    } catch (error) {
-      console.error('Error executing task:', error);
-      
-      updateTaskMutation.mutate({ 
-        id: currentTask.id, 
-        status: 'failed' 
-      });
-      
-      toast.dismiss(taskToast);
-      toast.error(`${agent.name} failed to complete task: ${currentTask.title}`);
-      
-      createMessageMutation.mutate({
-        project_id: activeProject.id.toString(), // Ensure project_id is a string
-        content: `Failed to complete task: ${currentTask.title}\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        sender: agent.name,
-        type: "text"
-      });
-    }
   };
 
   const handleStopAgent = (agentId: string) => {
@@ -278,7 +194,7 @@ const Index = () => {
     if (!agent) return;
     
     createMessageMutation.mutate({
-      project_id: activeProject.id.toString(), // Ensure project_id is a string
+      project_id: activeProject.id,
       content: message,
       sender: "You",
       type: "text"
@@ -290,7 +206,7 @@ const Index = () => {
       const response = await sendAgentPrompt(agent, message, activeProject);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id.toString(), // Ensure project_id is a string
+        project_id: activeProject.id,
         content: response,
         sender: agent.name,
         type: "text"
@@ -301,7 +217,7 @@ const Index = () => {
       console.error('Error getting response from agent:', error);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id.toString(), // Ensure project_id is a string
+        project_id: activeProject.id,
         content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
         sender: agent.name,
         type: "text"
@@ -342,10 +258,6 @@ const Index = () => {
     setIsProjectSetupOpen(false);
   };
 
-  const handleOpenGithubDialog = () => {
-    setIsGithubDialogOpen(true);
-  };
-
   if (loadingProjects && !projectsError) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -362,8 +274,6 @@ const Index = () => {
       <Header
         onNewProject={() => setIsProjectSetupOpen(true)}
         onImportProject={() => setIsProjectSetupOpen(true)}
-        onGithubPush={activeProject ? handleOpenGithubDialog : undefined}
-        hasActiveProject={!!activeProject}
       />
       
       {activeProject ? (
@@ -410,12 +320,6 @@ const Index = () => {
         isOpen={isProjectSetupOpen}
         onClose={() => setIsProjectSetupOpen(false)}
         onCreateProject={handleCreateProject}
-      />
-      
-      <GitHubIntegrationDialog
-        isOpen={isGithubDialogOpen}
-        onClose={() => setIsGithubDialogOpen(false)}
-        project={activeProject}
       />
     </div>
   );
