@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { SendHorizontal, Play } from "lucide-react";
+import { SendHorizontal } from "lucide-react";
 
 interface DashboardProps {
   agents: Agent[];
@@ -63,6 +63,8 @@ const Dashboard: React.FC<DashboardProps> = ({
     m.sender === getActiveAgentName() // Show only selected agent's messages
   );
 
+  console.log("Dashboard rendering with agents:", agents);
+
   return (
     <div className="flex h-[calc(100vh-73px)]">
       {/* Left sidebar with agents */}
@@ -81,7 +83,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           <div className="flex justify-center py-8">
             <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
           </div>
-        ) : (
+        ) : agents && agents.length > 0 ? (
           <div className="grid gap-3">
             {agents.map((agent) => (
               <AgentCard
@@ -93,6 +95,10 @@ const Dashboard: React.FC<DashboardProps> = ({
                 isActive={activeChat === agent.id}
               />
             ))}
+          </div>
+        ) : (
+          <div className="text-center py-4 text-gray-500">
+            No agents available
           </div>
         )}
       </div>
