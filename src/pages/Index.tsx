@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
@@ -221,7 +222,7 @@ const Index = () => {
       const response = await sendAgentPrompt(agent, taskPrompt, activeProject);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id, 
+        project_id: activeProject.id.toString(), 
         content: `Completed task: ${currentTask.title}\n\n${response}`,
         sender: agent.name,
         type: "text"
@@ -252,7 +253,7 @@ const Index = () => {
       toast.error(`${agent.name} failed to complete task: ${currentTask.title}`);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id,
+        project_id: activeProject.id.toString(),
         content: `Failed to complete task: ${currentTask.title}\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
         sender: agent.name,
         type: "text"
