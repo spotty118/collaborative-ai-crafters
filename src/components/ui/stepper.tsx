@@ -50,9 +50,9 @@ const Step = React.forwardRef<
     index?: number;
     active?: boolean;
     completed?: boolean;
-    value: number;
   }
->(({ className, index, active, completed, children, ...props }, ref) => {
+>(({ className, index, active, completed, children, value, ...props }, ref) => {
+  // Remove value prop before passing to div
   return (
     <div
       ref={ref}

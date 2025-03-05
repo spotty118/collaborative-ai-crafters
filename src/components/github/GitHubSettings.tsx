@@ -21,18 +21,19 @@ const GitHubSettings: React.FC<GitHubSettingsProps> = ({ onConnected }) => {
     // Check if the URL contains a code parameter (GitHub OAuth callback)
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get("code");
+    const state = urlParams.get("state");
     
     if (code) {
       // Remove the code from the URL to prevent issues on refresh
       const newUrl = window.location.pathname + 
-        (window.location.search ? window.location.search.replace(/[?&]code=[^&]+/, "") : "") + 
+        (window.location.search ? window.location.search.replace(/[?&]code=[^&]+/, "").replace(/[?&]state=[^&]+/, "") : "") + 
         window.location.hash;
       
       window.history.replaceState({}, document.title, newUrl);
       
-      // Handle the callback (in a real app, you would do this server-side)
+      // Handle the callback
       import("@/lib/github").then(module => {
-        module.handleGithubCallback(code).then(success => {
+        module.handleGithubCallback(code, state).then(success => {
           if (success) {
             checkGithubConnection();
           }
@@ -118,6 +119,11 @@ const GitHubSettings: React.FC<GitHubSettingsProps> = ({ onConnected }) => {
                   GitHub Developer Settings
                 </a>
                 {" "}and enter the client ID here.
+                <br />
+                Set Homepage URL and Authorization callback URL to:{" "}
+                <code className="bg-gray-100 px-1 py-0.5 rounded text-xs">
+                  {window.location.origin}
+                </code>
               </p>
             </div>
           </div>
