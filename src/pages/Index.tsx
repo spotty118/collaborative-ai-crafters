@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
 import Dashboard from "@/components/layout/Dashboard";
 import ProjectSetup from "@/components/layout/ProjectSetup";
+import GitHubWriteTester from "@/components/GitHubWriteTester";
 import { Agent, Task, Message, Project, TaskStatus } from "@/lib/types";
 import { toast } from "sonner";
 import { 
@@ -17,12 +18,14 @@ import {
   updateTask
 } from "@/lib/api";
 import { sendAgentPrompt } from "@/lib/openrouter";
+import { Button } from "@/components/ui/button";
 
 const Index = () => {
   const queryClient = useQueryClient();
   const [isProjectSetupOpen, setIsProjectSetupOpen] = useState(false);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [activeChat, setActiveChat] = useState<string | null>(null);
+  const [showGitHubTester, setShowGitHubTester] = useState(false);
 
   const { 
     data: projects = [],
@@ -350,6 +353,10 @@ const Index = () => {
     setIsProjectSetupOpen(false);
   };
 
+  const toggleGitHubTester = () => {
+    setShowGitHubTester(prev => !prev);
+  };
+
   if (loadingProjects && !projectsError) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -370,26 +377,44 @@ const Index = () => {
       />
       
       {activeProject ? (
-        <Dashboard
-          agents={agents}
-          tasks={tasks}
-          messages={messages}
-          onStartAgent={handleStartAgent}
-          onStopAgent={handleStopAgent}
-          onChatWithAgent={handleChatWithAgent}
-          onSendMessage={handleSendMessage}
-          activeChat={activeChat}
-          project={{
-            name: activeProject.name,
-            description: activeProject.description,
-            mode: activeProject.source_type ? 'existing' : 'new'
-          }}
-          isLoading={{
-            agents: loadingAgents,
-            tasks: loadingTasks,
-            messages: loadingMessages
-          }}
-        />
+        <>
+          <div className="p-2 bg-gray-50 border-b flex justify-end">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={toggleGitHubTester}
+            >
+              {showGitHubTester ? 'Hide GitHub Tester' : 'Show GitHub Tester'}
+            </Button>
+          </div>
+          
+          {showGitHubTester ? (
+            <div className="p-6">
+              <GitHubWriteTester />
+            </div>
+          ) : (
+            <Dashboard
+              agents={agents}
+              tasks={tasks}
+              messages={messages}
+              onStartAgent={handleStartAgent}
+              onStopAgent={handleStopAgent}
+              onChatWithAgent={handleChatWithAgent}
+              onSendMessage={handleSendMessage}
+              activeChat={activeChat}
+              project={{
+                name: activeProject.name,
+                description: activeProject.description,
+                mode: activeProject.source_type ? 'existing' : 'new'
+              }}
+              isLoading={{
+                agents: loadingAgents,
+                tasks: loadingTasks,
+                messages: loadingMessages
+              }}
+            />
+          )}
+        </>
       ) : (
         <div className="flex-1 flex items-center justify-center p-8">
           <div className="max-w-md w-full text-center p-8 bg-gray-50 rounded-lg border">
