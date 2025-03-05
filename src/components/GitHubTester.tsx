@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { useGitHub } from '@/contexts/GitHubContext';
 import { Loader2, CheckCircle, XCircle, GithubIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { isGitHubServiceInitialized } from '@/lib/services/GitHubService';
 
 export const GitHubTester: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -15,6 +16,14 @@ export const GitHubTester: React.FC = () => {
   const runGitHubTest = async () => {
     if (!github.isConnected) {
       toast.error('GitHub is not connected. Please configure GitHub access in project settings.');
+      return;
+    }
+
+    // Double-check that the service is initialized
+    if (!isGitHubServiceInitialized()) {
+      toast.error('GitHub service is not properly initialized. Please reconnect in project settings.');
+      setTestResult('error');
+      setTestDetails('GitHub service is not properly initialized. Try reconnecting in the project settings.');
       return;
     }
 

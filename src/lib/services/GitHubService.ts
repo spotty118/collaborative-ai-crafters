@@ -1,6 +1,7 @@
 
 import { GitHubService as BaseGitHubService, createGitHubService } from '../github';
 
+// Store the service instance
 let instance: BaseGitHubService | null = null;
 let currentBranch: string = 'main'; // Default branch
 let currentRepo: string = '';
@@ -24,6 +25,7 @@ export const initGitHubService = (url: string, token: string, branch?: string) =
     currentRepo = cleanUrl;
     currentToken = token;
     
+    // Create a new instance
     instance = createGitHubService(cleanUrl, token);
     
     // Set the branch if provided
@@ -40,7 +42,7 @@ export const initGitHubService = (url: string, token: string, branch?: string) =
         if (success) {
           console.log('GitHub connection verified successfully');
           // Check if branch exists
-          return instance.listBranches();
+          return instance?.listBranches() || [];
         } else {
           console.error('GitHub connection test failed');
           return [];

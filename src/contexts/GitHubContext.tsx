@@ -46,30 +46,33 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [availableBranches, setAvailableBranches] = useState<string[]>([]);
   const [isInitializing, setIsInitializing] = useState(true);
 
-  // Initialize from localStorage if available
+  // Check GitHub service initialization status on mount
   useEffect(() => {
-    // Check if we already have an initialized service
-    if (isGitHubServiceInitialized()) {
-      setIsConnected(true);
-      setCurrentBranchState(getCurrentBranch());
-      console.log('GitHub service was already initialized');
-      
-      // Fetch available branches
-      const github = getGitHubService();
-      github.listBranches()
-        .then(branches => {
-          setAvailableBranches(branches);
-          console.log('Available branches:', branches);
-        })
-        .catch(error => {
-          console.error('Failed to fetch branches:', error);
-        })
-        .finally(() => {
-          setIsInitializing(false);
-        });
-    } else {
-      setIsInitializing(false);
-    }
+    const checkInitialization = async () => {
+      try {
+        if (isGitHubServiceInitialized()) {
+          setIsConnected(true);
+          setCurrentBranchState(getCurrentBranch());
+          console.log('GitHub service was already initialized');
+          
+          // Fetch available branches
+          try {
+            const github = getGitHubService();
+            const branches = await github.listBranches();
+            setAvailableBranches(branches);
+            console.log('Available branches:', branches);
+          } catch (error) {
+            console.error('Failed to fetch branches:', error);
+          }
+        }
+      } catch (error) {
+        console.error('Error checking GitHub initialization:', error);
+      } finally {
+        setIsInitializing(false);
+      }
+    };
+    
+    checkInitialization();
   }, []);
 
   const connect = useCallback(async (url: string, token: string, branch?: string): Promise<boolean> => {
@@ -181,6 +184,11 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         throw new Error('GitHub is not connected');
       }
       
+      // Double-check that the service is initialized
+      if (!isGitHubServiceInitialized()) {
+        throw new Error('GitHub service is not properly initialized');
+      }
+      
       const github = getGitHubService();
       await github.createOrUpdateFile(path, content, message, currentBranch);
       console.log(`Successfully created/updated file: ${path} on branch: ${currentBranch}`);
@@ -251,6 +259,11 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         throw new Error('GitHub is not connected');
       }
       
+      // Double-check that the service is initialized
+      if (!isGitHubServiceInitialized()) {
+        throw new Error('GitHub service is not properly initialized');
+      }
+      
       const github = getGitHubService();
       return await github.listFiles(path, currentBranch);
     } catch (error) {
@@ -264,6 +277,11 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     try {
       if (!isConnected) {
         throw new Error('GitHub is not connected');
+      }
+      
+      // Double-check that the service is initialized
+      if (!isGitHubServiceInitialized()) {
+        throw new Error('GitHub service is not properly initialized');
       }
       
       const github = getGitHubService();

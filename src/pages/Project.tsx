@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -15,27 +14,7 @@ import { useGitHub } from "@/contexts/GitHubContext";
 import { FileEditor } from "@/components/FileEditor";
 import { toast } from "sonner";
 import { GitHubTester } from '@/components/GitHubTester';
-
-interface DashboardProps {
-  project: {
-    name: string;
-    description: string;
-    mode: 'new' | 'existing';
-  };
-  agents: Agent[];
-  tasks: Task[];
-  messages: Message[];
-  activeChat: string | null;
-  onStartAgent: (agentId: string) => void;
-  onStopAgent: (agentId: string) => void;
-  onChatWithAgent: (agentId: string) => void;
-  onSendMessage: (message: string) => void;
-  isLoading: {
-    agents: boolean;
-    tasks: boolean;
-    messages: boolean;
-  };
-}
+import { isGitHubServiceInitialized } from "@/lib/services/GitHubService";
 
 const Project: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -104,19 +83,35 @@ const Project: React.FC = () => {
   });
 
   useEffect(() => {
-    if (project?.sourceUrl && githubToken && !github.isConnected) {
-      try {
-        github.connect(project.sourceUrl, githubToken, githubBranch);
-      } catch (error) {
-        console.error('Failed to connect to GitHub:', error);
-        toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    const connectToGitHub = async () => {
+      if (project?.sourceUrl && githubToken && !github.isConnected) {
+        console.log('Attempting to connect to GitHub with:', {
+          url: project.sourceUrl,
+          tokenLength: githubToken.length,
+          branch: githubBranch
+        });
+        
+        try {
+          const success = await github.connect(project.sourceUrl, githubToken, githubBranch);
+          if (success) {
+            console.log('Successfully connected to GitHub');
+          } else {
+            console.error('Failed to connect to GitHub');
+          }
+        } catch (error) {
+          console.error('Error connecting to GitHub:', error);
+          toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
+        }
       }
-    }
+    };
+    
+    connectToGitHub();
   }, [project?.sourceUrl, githubToken, githubBranch, github]);
 
   useEffect(() => {
-    if (github.isConnected && githubToken) {
+    if (github.isConnected && githubToken && id) {
       localStorage.setItem(`github-token-${id}`, githubToken);
+      console.log('Saved GitHub token to localStorage');
     }
   }, [github.isConnected, githubToken, id]);
 
@@ -124,6 +119,7 @@ const Project: React.FC = () => {
     if (id) {
       const savedToken = localStorage.getItem(`github-token-${id}`);
       if (savedToken) {
+        console.log('Loaded GitHub token from localStorage');
         setGithubToken(savedToken);
       }
     }
@@ -132,6 +128,12 @@ const Project: React.FC = () => {
   const handleFileClick = async (file: CodeFile) => {
     if (!github.isConnected) {
       toast.error('GitHub is not connected. Please configure GitHub access in project settings.');
+      setActiveTab('settings');
+      return;
+    }
+
+    if (!isGitHubServiceInitialized()) {
+      toast.error('GitHub service is not properly initialized. Please reconnect in project settings.');
       setActiveTab('settings');
       return;
     }
@@ -352,9 +354,9 @@ const Project: React.FC = () => {
               onChatWithAgent={handleChatWithAgent}
               onSendMessage={handleSendMessage}
               project={{
-                name: project.name,
-                description: project.description,
-                mode: project.sourceType ? 'existing' : 'new'
+                name: project?.name || '',
+                description: project?.description || '',
+                mode: project?.sourceType ? 'existing' : 'new'
               }}
               isLoading={{
                 agents: loadingAgents,
@@ -374,16 +376,16 @@ const Project: React.FC = () => {
                   <div className="space-y-2">
                     <div className="flex items-center">
                       <span className="font-medium w-32">Name:</span>
-                      <span>{project.name}</span>
+                      <span>{project?.name}</span>
                     </div>
                     <div className="flex items-start">
                       <span className="font-medium w-32">Description:</span>
-                      <span>{project.description || 'No description'}</span>
+                      <span>{project?.description || 'No description'}</span>
                     </div>
                   </div>
                 </div>
                 
-                {project.sourceUrl && (
+                {project?.sourceUrl && (
                   <div>
                     <h3 className="text-base font-medium mb-4">GitHub Integration</h3>
                     <div className="space-y-4">
@@ -470,4 +472,3 @@ const Project: React.FC = () => {
 };
 
 export default Project;
-
