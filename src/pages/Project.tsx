@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, updateAgent } from "@/lib/api";
+import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, updateAgent, createAgents } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -42,12 +41,32 @@ const Project: React.FC = () => {
 
   const { 
     data: agents = [], 
-    isLoading: loadingAgents 
+    isLoading: loadingAgents,
+    isError: agentsError,
+    refetch: refetchAgents
   } = useQuery<Agent[]>({
     queryKey: ['agents', id],
     queryFn: () => id ? getAgents(id) : Promise.resolve([]),
     enabled: !!id
   });
+
+  useEffect(() => {
+    const initializeAgents = async () => {
+      if (id && agents && agents.length === 0 && !loadingAgents && !agentsError) {
+        console.log("No agents found, creating default agents");
+        try {
+          const newAgents = await createAgents(id);
+          console.log("Created agents:", newAgents);
+          refetchAgents();
+        } catch (error) {
+          console.error("Error creating agents:", error);
+          toast.error("Failed to create agents");
+        }
+      }
+    };
+    
+    initializeAgents();
+  }, [id, agents, loadingAgents, agentsError, refetchAgents]);
 
   const { 
     data: tasks = [], 
@@ -212,13 +231,11 @@ const Project: React.FC = () => {
     const agent = agents.find(a => a.id === agentId);
     if (!agent || !project || !id) return;
 
-    // Update agent status to working
     updateAgentMutation.mutate({
       agentId,
       updates: { status: 'working', progress: 10 }
     });
 
-    // Create a system message that the agent is working
     createMessageMutation.mutate({
       project_id: id,
       content: `I'm now analyzing the project and will help improve it. This might take a moment...`,
@@ -227,21 +244,17 @@ const Project: React.FC = () => {
     });
 
     try {
-      // If this is a GitHub project, analyze it and create tasks
       if (project.sourceUrl && project.sourceUrl.includes('github.com')) {
         const success = await analyzeGitHubAndCreateTasks(agent, project);
         
         if (success) {
-          // Update agent status to completed with high progress
           updateAgentMutation.mutate({
             agentId,
             updates: { status: 'completed', progress: 100 }
           });
           
-          // Refresh tasks
           queryClient.invalidateQueries({ queryKey: ['tasks', id] });
           
-          // Create a completion message
           createMessageMutation.mutate({
             project_id: id,
             content: `I've analyzed the GitHub repository and created tasks for improvements. Check the task list for details.`,
@@ -254,7 +267,6 @@ const Project: React.FC = () => {
           throw new Error('Failed to analyze GitHub repository');
         }
       } else {
-        // For non-GitHub projects, just simulate some progress
         setTimeout(() => {
           updateAgentMutation.mutate({
             agentId,
@@ -272,13 +284,11 @@ const Project: React.FC = () => {
     } catch (error) {
       console.error(`Error starting agent ${agent.name}:`, error);
       
-      // Update agent status to failed
       updateAgentMutation.mutate({
         agentId,
         updates: { status: 'failed', progress: 0 }
       });
       
-      // Create an error message
       createMessageMutation.mutate({
         project_id: id,
         content: `I encountered an error while analyzing the project: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -294,13 +304,11 @@ const Project: React.FC = () => {
     const agent = agents.find(a => a.id === agentId);
     if (!agent || !id) return;
     
-    // Update agent status to idle
     updateAgentMutation.mutate({
       agentId,
       updates: { status: 'idle', progress: agent.progress }
     });
     
-    // Create a system message that the agent is paused
     createMessageMutation.mutate({
       project_id: id,
       content: `I've paused my work. You can restart me at any time.`,
