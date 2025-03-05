@@ -14,6 +14,7 @@ interface GitHubContextType {
   getFileContent: (path: string) => Promise<string>;
   deleteFile: (path: string, message: string) => Promise<void>;
   commitChanges: (commit: GitHubCommit) => Promise<void>;
+  listFiles: (path?: string) => Promise<any[]>;
 }
 
 const GitHubContext = createContext<GitHubContextType | null>(null);
@@ -63,36 +64,14 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       console.log(`Connecting to GitHub repo: ${owner}/${repo}`);
       
       // Initialize the GitHub service
-      initGitHubService(url, token);
+      await initGitHubService(url, token);
       
-      // Verify the token by making a test API call
-      try {
-        const github = getGitHubService();
-        await github.getFileContent('README.md').catch(() => {
-          // It's okay if README.md doesn't exist, at least we tried to access the API
-          console.log('Could not find README.md, but connection established');
-        });
-        
-        setIsConnected(true);
-        toast.success('Successfully connected to GitHub repository');
-        
-        // Reset connection attempts on successful connection
-        setConnectionAttempts(0);
-      } catch (error) {
-        console.error('Failed to verify GitHub connection:', error);
-        
-        // Increment connection attempts
-        setConnectionAttempts(prev => prev + 1);
-        
-        if (connectionAttempts < 2) {
-          // If this is the first or second attempt, try again
-          throw new Error('Failed to verify GitHub connection. Please check your token and URL.');
-        } else {
-          // After multiple attempts, assume connection is okay and proceed
-          console.warn('Could not verify GitHub connection but proceeding anyway');
-          setIsConnected(true);
-        }
-      }
+      // If we get here, connection was successful because initGitHubService has its own verification
+      setIsConnected(true);
+      toast.success('Successfully connected to GitHub repository');
+      
+      // Reset connection attempts on successful connection
+      setConnectionAttempts(0);
     } catch (error) {
       console.error('Failed to connect to GitHub:', error);
       setIsConnected(false);
@@ -108,6 +87,10 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           errorMessage = 'Invalid GitHub token. Please check your token and try again.';
         } else if (errorMessage.includes('Not Found')) {
           errorMessage = 'Repository not found. Please check the URL and your access permissions.';
+        } else if (errorMessage.includes('verification timed out')) {
+          errorMessage = 'Connection timed out. Please check your network and try again.';
+        } else if (errorMessage.includes('Unable to access repository')) {
+          errorMessage = 'Cannot access repository. Check that your token has the correct permissions.';
         }
       }
       
@@ -205,6 +188,28 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, [isConnected, disconnect]);
 
+  // Add a listFiles function to get files from a directory
+  const listFiles = useCallback(async (path: string = '') => {
+    try {
+      if (!isConnected) {
+        throw new Error('GitHub is not connected. Please connect first.');
+      }
+      
+      const github = getGitHubService();
+      return await github.listFiles(path);
+    } catch (error) {
+      console.error(`Failed to list files for path ${path}:`, error);
+      
+      // Check for authentication errors
+      if (error instanceof Error && error.message.includes('Bad credentials')) {
+        disconnect();
+        toast.error('Invalid GitHub token. Please reconnect with a valid token.');
+      }
+      
+      throw error;
+    }
+  }, [isConnected, disconnect]);
+
   const commitChanges = useCallback(async (commit: GitHubCommit) => {
     try {
       if (!isConnected) {
@@ -269,6 +274,7 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     getFileContent,
     deleteFile,
     commitChanges,
+    listFiles,
   };
 
   return <GitHubContext.Provider value={value}>{children}</GitHubContext.Provider>;

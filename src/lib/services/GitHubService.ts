@@ -10,7 +10,7 @@ export const getGitHubService = () => {
   return instance;
 };
 
-export const initGitHubService = (url: string, token: string) => {
+export const initGitHubService = async (url: string, token: string) => {
   if (!url.trim() || !token.trim()) {
     throw new Error('GitHub URL and token are required');
   }
@@ -39,41 +39,63 @@ export const initGitHubService = (url: string, token: string) => {
     try {
       // We'll use a Promise.race to limit the wait time
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('GitHub connection verification timed out')), 10000)
+        setTimeout(() => reject(new Error('GitHub connection verification timed out')), 15000)
       );
       
-      Promise.race([
-        instance.getFileContent('.gitignore').catch(() => {
-          // Try another file if .gitignore fails
-          return instance.getFileContent('README.md').catch(() => {
-            // If both fail, try to list the repository contents
-            return instance.octokit.repos.getContent({
-              owner: instance.owner,
-              repo: instance.repo,
-              path: '',
-            }).then(() => {
-              console.log('Repository exists and is accessible');
-            });
-          });
-        }),
+      await Promise.race([
+        verifyGitHubConnection(instance),
         timeoutPromise
-      ])
-      .then(() => console.log('GitHub connection verified successfully'))
-      .catch(error => {
-        console.error('Failed to verify GitHub connection:', error);
-        // Don't clear the instance here as the repo might just be empty
-      });
+      ]);
+      
+      console.log('GitHub connection verified successfully');
+      return instance;
     } catch (error) {
       console.error('Failed to verify GitHub connection:', error);
+      // Don't clear the instance here as the repo might just be empty
+      throw error; // Propagate error up to caller
     }
-    
-    return instance;
   } catch (error) {
     console.error('Failed to initialize GitHub service:', error);
     instance = null; // Ensure instance is cleared on error
     throw error;
   }
 };
+
+// Separate function to verify GitHub connection with multiple fallbacks
+async function verifyGitHubConnection(github: BaseGitHubService) {
+  try {
+    // Try common files first
+    const commonFiles = ['.gitignore', 'README.md', 'package.json', 'src/index.js', 'src/index.ts'];
+    
+    for (const file of commonFiles) {
+      try {
+        await github.getFileContent(file);
+        console.log(`GitHub connection verified through file: ${file}`);
+        return true;
+      } catch (error) {
+        // Just try the next file
+        console.log(`File ${file} not found, trying next...`);
+      }
+    }
+    
+    // If no files found, try listing repository contents
+    const contents = await github.octokit.repos.getContent({
+      owner: github.owner,
+      repo: github.repo,
+      path: '',
+    });
+    
+    if (contents.status === 200) {
+      console.log('Repository exists and is accessible');
+      return true;
+    }
+    
+    throw new Error('Could not verify repository content');
+  } catch (error) {
+    console.error('All verification methods failed:', error);
+    throw new Error('Unable to access repository. Please check your token and repository URL.');
+  }
+}
 
 export const clearGitHubService = () => {
   instance = null;
@@ -95,7 +117,9 @@ try {
   if (storedToken && storedUrl) {
     console.log('Attempting to restore GitHub service from localStorage');
     try {
-      initGitHubService(storedUrl, storedToken);
+      initGitHubService(storedUrl, storedToken).catch(error => {
+        console.error('Failed to restore GitHub service:', error);
+      });
     } catch (error) {
       console.error('Failed to restore GitHub service from localStorage:', error);
     }

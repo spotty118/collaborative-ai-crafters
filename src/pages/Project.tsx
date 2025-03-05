@@ -22,6 +22,7 @@ const Project: React.FC = () => {
   const [activeChat, setActiveChat] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<CodeFile | null>(null);
   const [githubToken, setGithubToken] = useState("");
+  const [isVerifyingGithub, setIsVerifyingGithub] = useState(false);
 
   const github = useGitHub();
   const queryClient = useQueryClient();
@@ -96,19 +97,23 @@ const Project: React.FC = () => {
   });
 
   useEffect(() => {
-    if (project?.sourceUrl && githubToken && !github.isConnected) {
+    if (project?.sourceUrl && githubToken && !github.isConnected && !github.isConnecting) {
+      setIsVerifyingGithub(true);
       try {
         github.connect(project.sourceUrl, githubToken)
           .then(() => {
             toast.success('Successfully connected to GitHub repository');
+            setIsVerifyingGithub(false);
           })
           .catch((error) => {
             console.error('Failed to connect to GitHub:', error);
             toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
+            setIsVerifyingGithub(false);
           });
       } catch (error) {
         console.error('Failed to connect to GitHub:', error);
         toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
+        setIsVerifyingGithub(false);
       }
     }
   }, [project?.sourceUrl, githubToken, github]);
@@ -196,11 +201,23 @@ const Project: React.FC = () => {
     }
 
     try {
+      setIsVerifyingGithub(true);
       await github.connect(project.sourceUrl, githubToken);
       toast.success('Successfully connected to GitHub');
+      setIsVerifyingGithub(false);
     } catch (error) {
       toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      setIsVerifyingGithub(false);
     }
+  };
+
+  const verifyGithubAccess = async (): Promise<boolean> => {
+    if (!github.isConnected) {
+      toast.error('GitHub connection is required. Please connect to GitHub in the settings tab.');
+      setActiveTab('settings');
+      return false;
+    }
+    return true;
   };
 
   const handleChatWithAgent = (agentId: string) => {
@@ -215,9 +232,7 @@ const Project: React.FC = () => {
     const agent = agents.find(a => a.id === agentId);
     if (!agent || !id) return;
     
-    if (!github.isConnected) {
-      toast.error('GitHub connection is required to start agents. Please connect to GitHub in the settings tab.');
-      setActiveTab('settings');
+    if (!await verifyGithubAccess()) {
       return;
     }
     
@@ -244,14 +259,14 @@ const Project: React.FC = () => {
       
       toast.success(`${agent.name} completed analysis`);
       
-      const agentTasks = tasks.filter(t => t.agentId === agentId);
+      const agentTasks = tasks.filter(t => t.agent_id === agentId);
       if (agentTasks.length === 0) {
         const defaultTasks = getDefaultTasksForAgent(agent, id);
         
         for (const taskData of defaultTasks) {
           await createTask({
             project_id: id,
-            agentId: agentId,
+            agent_id: agentId,
             title: taskData.title,
             description: taskData.description,
             status: 'pending',
@@ -280,9 +295,7 @@ const Project: React.FC = () => {
     
     if (!task || !agent || !id || !project) return;
     
-    if (!github.isConnected) {
-      toast.error('GitHub connection is required to execute tasks. Please connect to GitHub in the settings tab.');
-      setActiveTab('settings');
+    if (!await verifyGithubAccess()) {
       return;
     }
     
@@ -661,23 +674,23 @@ const Project: React.FC = () => {
                   <div className="space-y-2">
                     <div className="flex items-center">
                       <span className="font-medium w-32">Name:</span>
-                      <span>{project.name}</span>
+                      <span>{project?.name}</span>
                     </div>
                     <div className="flex items-start">
                       <span className="font-medium w-32">Description:</span>
-                      <span>{project.description || 'No description'}</span>
+                      <span>{project?.description || 'No description'}</span>
                     </div>
                   </div>
                 </div>
                 
-                {project.sourceUrl && (
+                {project?.sourceUrl && (
                   <div>
                     <h3 className="text-base font-medium mb-4">GitHub Integration</h3>
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <span>Connection Status:</span>
                         <span className={`px-2 py-1 rounded text-sm ${github.isConnected ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                          {github.isConnected ? 'Connected' : 'Not Connected'}
+                          {github.isConnecting || isVerifyingGithub ? 'Connecting...' : github.isConnected ? 'Connected' : 'Not Connected'}
                         </span>
                       </div>
 
@@ -713,8 +726,12 @@ const Project: React.FC = () => {
                             GitHub Settings
                           </a>
                         </p>
-                        <Button onClick={handleConnectGitHub} className="mt-2">
-                          {github.isConnected ? 'Reconnect GitHub' : 'Connect GitHub'}
+                        <Button 
+                          onClick={handleConnectGitHub} 
+                          className="mt-2"
+                          disabled={github.isConnecting || isVerifyingGithub}
+                        >
+                          {github.isConnecting || isVerifyingGithub ? 'Connecting...' : github.isConnected ? 'Reconnect GitHub' : 'Connect GitHub'}
                         </Button>
                       </div>
                     </div>
