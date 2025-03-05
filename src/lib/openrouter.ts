@@ -78,21 +78,15 @@ export const sendAgentPrompt = async (
       if (codeBlocks.length > 0 && project?.sourceUrl) {
         try {
           const github = getGitHubService();
-          if (!github) {
-            console.warn('GitHub service not initialized - skipping code commits');
-          } else {
-            for (const block of codeBlocks) {
-              const path = block.path || inferFilePath(block);
-              if (path) {
-                await github.createOrUpdateFile(
-                  path,
-                  block.content,
-                  `feat: ${agent.name} generated ${path}`
-                );
-                console.log(`Successfully committed ${path} to GitHub`);
-                toast.success(`Created/updated ${path}`);
-              }
-            }
+          for (const block of codeBlocks) {
+            const path = block.path || inferFilePath(block);
+            await github.createOrUpdateFile(
+              path,
+              block.content,
+              `feat: ${agent.name} generated ${path}`
+            );
+            console.log(`Successfully committed ${path} to GitHub`);
+            toast.success(`Created/updated ${path}`);
           }
         } catch (error) {
           if (error instanceof Error && error.message.includes('not initialized')) {
