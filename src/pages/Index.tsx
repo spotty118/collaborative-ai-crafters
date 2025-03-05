@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
 import Dashboard from "@/components/layout/Dashboard";
 import ProjectSetup from "@/components/layout/ProjectSetup";
-import { Agent, Task, Message, Project, MessageDB } from "@/lib/types";
+import { Agent, Task, Message, Project, MessageDB, TaskDB } from "@/lib/types";
 import { toast } from "sonner";
 import { 
   getProjects, 
@@ -114,7 +115,7 @@ const Index = () => {
   });
 
   const updateTaskMutation = useMutation({
-    mutationFn: (variables: { id: string } & Partial<Task>) => {
+    mutationFn: (variables: { id: string } & Partial<TaskDB>) => {
       return updateTask(variables.id, variables);
     },
     onSuccess: () => {
