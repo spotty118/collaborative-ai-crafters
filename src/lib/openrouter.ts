@@ -24,6 +24,8 @@ export const sendAgentPrompt = async (
   project?: Project
 ): Promise<string> => {
   try {
+    console.log(`Sending prompt to ${agent.name} (${agent.type}) agent`);
+    
     const { data, error } = await supabase.functions.invoke('openrouter', {
       body: {
         agentType: agent.type,

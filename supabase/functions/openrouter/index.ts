@@ -41,10 +41,11 @@ serve(async (req) => {
     const systemPrompt = systemPrompts[agentType] || 'You are an AI assistant helping with software development.';
     
     // Add project context to system prompt if available
-    const fullSystemPrompt = projectContext.description 
+    const fullSystemPrompt = projectContext && Object.keys(projectContext).length > 0
       ? `${systemPrompt} Project context: ${JSON.stringify(projectContext)}`
       : systemPrompt;
     
+    console.log('Sending request to OpenRouter API');
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -64,8 +65,17 @@ serve(async (req) => {
       }),
     });
 
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error('OpenRouter API error:', errorData);
+      return new Response(
+        JSON.stringify({ error: `OpenRouter API returned status ${response.status}: ${errorData}` }),
+        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const data = await response.json();
-    console.log('OpenRouter response received');
+    console.log('OpenRouter response received successfully');
     
     return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -73,7 +83,7 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error in openrouter function:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: error.message || 'Unknown error occurred' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
