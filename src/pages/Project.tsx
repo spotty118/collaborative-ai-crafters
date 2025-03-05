@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, updateAgent, createAgents } from "@/lib/api";
@@ -25,6 +25,7 @@ const Project: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<CodeFile | null>(null);
   const [githubToken, setGithubToken] = useState("");
   const [githubBranch, setGithubBranch] = useState("main");
+  const agentsInitialized = useRef(false);
 
   const github = useGitHub();
   const queryClient = useQueryClient();
@@ -52,7 +53,8 @@ const Project: React.FC = () => {
 
   useEffect(() => {
     const initializeAgents = async () => {
-      if (id && agents && agents.length === 0 && !loadingAgents && !agentsError) {
+      if (id && agents && agents.length === 0 && !loadingAgents && !agentsError && !agentsInitialized.current) {
+        agentsInitialized.current = true;
         console.log("No agents found, creating default agents");
         try {
           const newAgents = await createAgents(id);
@@ -61,6 +63,7 @@ const Project: React.FC = () => {
         } catch (error) {
           console.error("Error creating agents:", error);
           toast.error("Failed to create agents");
+          agentsInitialized.current = false;
         }
       }
     };
@@ -230,6 +233,11 @@ const Project: React.FC = () => {
   const handleStartAgent = async (agentId: string) => {
     const agent = agents.find(a => a.id === agentId);
     if (!agent || !project || !id) return;
+
+    if (agent.status === 'working') {
+      toast.info(`${agent.name} is already running`);
+      return;
+    }
 
     updateAgentMutation.mutate({
       agentId,
