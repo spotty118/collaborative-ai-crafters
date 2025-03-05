@@ -1,147 +1,104 @@
 
+"use client";
+
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-interface StepperProps {
-  value: number;
-  children: React.ReactNode;
-  className?: string;
-}
-
 const Stepper = React.forwardRef<
   HTMLDivElement,
-  StepperProps
->(({ value, children, className, ...props }, ref) => {
-  const steps = React.Children.toArray(children).filter(
-    (child) => React.isValidElement(child) && child.type === Step
-  ) as React.ReactElement[];
-  
+  React.HTMLAttributes<HTMLDivElement> & { value: number }
+>(({ className, value, children, ...props }, ref) => {
+  const childrenArray = React.Children.toArray(children);
+
   return (
     <div
       ref={ref}
-      className={cn("flex w-full items-center", className)}
+      className={cn("space-y-4", className)}
       {...props}
     >
-      {steps.map((step, index) => {
-        const stepValue = step.props.value;
-        const isActive = stepValue === value;
-        const isCompleted = stepValue < value;
-        const isLast = index === steps.length - 1;
-        
-        return (
+      <div className="flex items-center">
+        {childrenArray.map((child, index) => (
           <React.Fragment key={index}>
-            {React.cloneElement(step, {
-              isActive,
-              isCompleted,
-            })}
-            
-            {!isLast && (
+            {index > 0 && (
               <div
                 className={cn(
                   "h-1 flex-1 mx-2",
-                  isCompleted ? "bg-primary" : "bg-gray-200"
+                  index <= value - 1
+                    ? "bg-primary"
+                    : "bg-gray-200"
                 )}
               />
             )}
+            {React.isValidElement(child) &&
+              React.cloneElement(child as React.ReactElement<any>, {
+                index: index + 1,
+                active: index + 1 === value,
+                completed: index + 1 < value
+              })}
           </React.Fragment>
-        );
-      })}
+        ))}
+      </div>
+      <div>{children}</div>
     </div>
   );
 });
-
 Stepper.displayName = "Stepper";
-
-interface StepProps {
-  value: number;
-  isActive?: boolean;
-  isCompleted?: boolean;
-  children: React.ReactNode;
-}
 
 const Step = React.forwardRef<
   HTMLDivElement,
-  StepProps
->(({ isActive, isCompleted, children, ...props }, ref) => {
+  React.HTMLAttributes<HTMLDivElement> & {
+    index?: number;
+    active?: boolean;
+    completed?: boolean;
+    value: number;
+  }
+>(({ className, index, active, completed, children, ...props }, ref) => {
   return (
-    <div ref={ref} className="flex flex-col items-center" {...props}>
-      <div
-        className={cn(
-          "w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium border",
-          isActive
-            ? "border-primary bg-primary text-white"
-            : isCompleted
-            ? "border-primary bg-primary text-white"
-            : "border-gray-300 bg-white text-gray-500"
-        )}
-      >
-        {isCompleted ? (
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        ) : (
-          props.value
-        )}
-      </div>
-      <div className="mt-2 text-center">{children}</div>
+    <div
+      ref={ref}
+      className={cn(
+        "flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium transition-colors",
+        active
+          ? "bg-primary text-primary-foreground"
+          : completed
+          ? "bg-primary text-primary-foreground"
+          : "bg-gray-200 text-gray-700",
+        className
+      )}
+      {...props}
+    >
+      {index}
     </div>
   );
 });
-
 Step.displayName = "Step";
-
-interface StepTitleProps {
-  children: React.ReactNode;
-  className?: string;
-}
 
 const StepTitle = React.forwardRef<
   HTMLParagraphElement,
-  StepTitleProps
->(({ children, className, ...props }, ref) => {
+  React.HTMLAttributes<HTMLParagraphElement>
+>(({ className, ...props }, ref) => {
   return (
     <p
       ref={ref}
       className={cn("text-sm font-medium", className)}
       {...props}
-    >
-      {children}
-    </p>
+    />
   );
 });
-
 StepTitle.displayName = "StepTitle";
-
-interface StepDescriptionProps {
-  children: React.ReactNode;
-  className?: string;
-}
 
 const StepDescription = React.forwardRef<
   HTMLParagraphElement,
-  StepDescriptionProps
->(({ children, className, ...props }, ref) => {
+  React.HTMLAttributes<HTMLParagraphElement>
+>(({ className, ...props }, ref) => {
   return (
     <p
       ref={ref}
       className={cn("text-xs text-gray-500", className)}
       {...props}
-    >
-      {children}
-    </p>
+    />
   );
 });
-
 StepDescription.displayName = "StepDescription";
 
 export { Stepper, Step, StepTitle, StepDescription };
