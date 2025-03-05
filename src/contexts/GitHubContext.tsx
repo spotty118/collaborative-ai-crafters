@@ -183,9 +183,7 @@ export const GitHubProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const github = getGitHubService();
       const normalizedPath = path.replace(/^[/\\]+/, '').replace(/\\/g, '/');
       
-      await github.createOrUpdateFile(normalizedPath, content, message, currentBranch);
-      console.log(`Successfully created/updated file: ${normalizedPath} on branch: ${currentBranch}`);
-      return true;
+      return await github.createOrUpdateFile(normalizedPath, content, message, currentBranch);
     } catch (error) {
       console.error(`Failed to create/update file ${path}:`, error);
       toast.error('Failed to save file: ' + (error instanceof Error ? error.message : 'Unknown error'));

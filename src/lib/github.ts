@@ -1,3 +1,4 @@
+
 import { Octokit } from '@octokit/rest';
 
 interface GitHubConfig {
@@ -57,17 +58,24 @@ export class GitHubService {
    * @param content File content
    * @param message Commit message
    * @param branch Branch name (defaults to main)
+   * @param attempts Number of retry attempts (used internally for recursion)
    */
   async createOrUpdateFile(
     path: string,
     content: string,
     message: string,
-    branch = 'main'
-  ): Promise<void> {
+    branch = 'main',
+    attempts = 0
+  ): Promise<boolean> {
+    // Prevent infinite recursion
+    if (attempts > 3) {
+      throw new Error('Too many retries when updating file, giving up');
+    }
+    
     // Normalize the file path for GitHub API
     const normalizedPath = path.replace(/^[/\\]+/, '').replace(/\\/g, '/');
     
-    console.log(`Creating/updating file ${normalizedPath} on branch ${branch}`);
+    console.log(`Creating/updating file ${normalizedPath} on branch ${branch} (attempt ${attempts + 1})`);
     try {
       // Get the current file (if it exists) to get the SHA
       let sha: string | undefined;
@@ -109,11 +117,23 @@ export class GitHubService {
       
       console.log(`Successfully ${sha ? 'updated' : 'created'} file ${normalizedPath} on branch ${branch}`);
       console.log(`Commit URL: ${response.data.commit.html_url}`);
-      return;
+      return true;
     } catch (error) {
       console.error('Error creating/updating file:', error);
+      
+      // Check if the error is a 409 conflict (SHA mismatch)
       if (error instanceof Error) {
         console.error(`Error details: ${error.message}`);
+        
+        // @ts-ignore - Octokit error has response property
+        if (error.response?.status === 409) {
+          console.log('Detected SHA conflict. Retrying with fresh SHA...');
+          // Wait a bit before retrying to avoid rate limits
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Recursive call with incremented attempt counter
+          return this.createOrUpdateFile(path, content, message, branch, attempts + 1);
+        }
+        
         if ('response' in error) {
           // @ts-ignore
           console.error(`GitHub API response: ${JSON.stringify(error.response?.data)}`);

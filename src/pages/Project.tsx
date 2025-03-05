@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -208,8 +209,12 @@ const Project: React.FC = () => {
       for (const file of files) {
         if (file.content) {
           try {
-            await github.createOrUpdateFile(file.path, file.content, `chore: sync ${file.path}`);
-            successCount++;
+            const result = await github.createOrUpdateFile(file.path, file.content, `chore: sync ${file.path}`);
+            if (result) {
+              successCount++;
+            } else {
+              errorCount++;
+            }
           } catch (error) {
             console.error(`Failed to push file ${file.path}:`, error);
             errorCount++;
