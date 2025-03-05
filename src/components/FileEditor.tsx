@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -39,14 +40,21 @@ export const FileEditor: React.FC<FileEditorProps> = ({ file, onClose }) => {
 
     try {
       setIsSaving(true);
+      console.log(`Saving file: ${file.path}`);
+      
       await github.createOrUpdateFile(
         file.path,
         content,
         `Update ${file.path}`
       );
+      
+      // Update local state
+      file.content = content;
+      
       setIsEditing(false);
       toast.success('File saved successfully');
     } catch (error) {
+      console.error('Failed to save file:', error);
       toast.error('Failed to save file: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setIsSaving(false);

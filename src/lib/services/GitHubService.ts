@@ -1,3 +1,4 @@
+
 import { GitHubService as BaseGitHubService, createGitHubService } from '../github';
 
 let instance: BaseGitHubService | null = null;
@@ -10,10 +11,25 @@ export const getGitHubService = () => {
 };
 
 export const initGitHubService = (url: string, token: string) => {
-  instance = createGitHubService(url, token);
-  return instance;
+  if (!url.trim() || !token.trim()) {
+    throw new Error('GitHub URL and token are required');
+  }
+  
+  try {
+    instance = createGitHubService(url, token);
+    console.log('GitHub service initialized successfully');
+    return instance;
+  } catch (error) {
+    console.error('Failed to initialize GitHub service:', error);
+    throw error;
+  }
 };
 
 export const clearGitHubService = () => {
   instance = null;
+  console.log('GitHub service cleared');
+};
+
+export const isGitHubServiceInitialized = () => {
+  return instance !== null;
 };

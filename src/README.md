@@ -1,3 +1,4 @@
+
 # GitHub Integration Guide
 
 ## Setup
@@ -15,27 +16,27 @@
    - Go to project settings tab
    - Enter your GitHub token
    - Click "Connect GitHub"
+   - Look for the green "Connected" status indicator
 
-## Usage
+## Troubleshooting
 
-### Automatic Code Syncing
-When agents generate code, it will automatically be:
-1. Parsed from their responses
-2. Committed to your GitHub repository
-3. Displayed in the Code Files tab
+If changes aren't being committed to GitHub:
 
-### Manual File Editing
-1. Navigate to the Code Files tab
-2. Click on any file to open the editor
-3. Make your changes
-4. Click Save to commit back to GitHub
+1. Check your connection:
+   - Verify the green "Connected" status in the settings tab
+   - Try disconnecting and reconnecting with your token
 
-### Troubleshooting
+2. Check your token:
+   - Ensure your token has the 'repo' scope
+   - Create a new token if needed and update it in settings
 
-If files aren't being committed:
-1. Check your GitHub token permissions
-2. Ensure you're connected (green status in settings)
-3. Check the browser console for any errors
-4. Try reconnecting in project settings
+3. Debug common issues:
+   - Check browser console for any errors (F12 to open developer tools)
+   - Ensure the repository URL is correct (should be in format: https://github.com/username/repo)
+   - Make sure the repository exists and you have write access
+
+4. Ensure proper commit messages:
+   - When saving files, use descriptive commit messages
+   - Avoid special characters in commit messages
 
 Remember: Your GitHub token is stored securely in your browser's local storage and is only used for this project.
