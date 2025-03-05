@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, createAgents } from "@/lib/api";
+import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, createAgents, updateAgent } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -79,6 +79,14 @@ const Project: React.FC = () => {
     mutationFn: (messageData: Message) => createMessage(messageData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', id] });
+    }
+  });
+
+  const updateAgentMutation = useMutation({
+    mutationFn: ({ agentId, updates }: { agentId: string, updates: Partial<Agent> }) => 
+      updateAgent(agentId, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agents', id] });
     }
   });
 
@@ -214,6 +222,75 @@ const Project: React.FC = () => {
     
     setActiveChat(agentId);
     toast.info(`Chat activated with ${agent.name}`);
+  };
+
+  const handleStartAgent = async (agentId: string) => {
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent) return;
+    
+    const loadingToastId = toast.loading(`Starting ${agent.name}...`);
+    
+    try {
+      await updateAgentMutation.mutate({
+        agentId,
+        updates: {
+          status: 'running',
+          progress: 10
+        }
+      });
+      
+      toast.dismiss(loadingToastId);
+      toast.success(`${agent.name} started successfully`);
+      
+      setActiveChat(agentId);
+      
+      if (id && project) {
+        const message = `I'm starting to work on this project. I'll analyze the requirements and get started.`;
+        
+        createMessageMutation.mutate({
+          project_id: id,
+          content: message,
+          sender: agent.name,
+          type: "text"
+        });
+      }
+    } catch (error) {
+      toast.dismiss(loadingToastId);
+      toast.error(`Failed to start ${agent.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Error starting agent:', error);
+    }
+  };
+
+  const handleStopAgent = async (agentId: string) => {
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent) return;
+    
+    const loadingToastId = toast.loading(`Pausing ${agent.name}...`);
+    
+    try {
+      await updateAgentMutation.mutate({
+        agentId,
+        updates: {
+          status: 'idle'
+        }
+      });
+      
+      toast.dismiss(loadingToastId);
+      toast.success(`${agent.name} paused successfully`);
+      
+      if (id) {
+        createMessageMutation.mutate({
+          project_id: id,
+          content: `I've paused my work. You can resume me when you're ready.`,
+          sender: agent.name,
+          type: "text"
+        });
+      }
+    } catch (error) {
+      toast.dismiss(loadingToastId);
+      toast.error(`Failed to pause ${agent.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Error pausing agent:', error);
+    }
   };
 
   const handleSendMessage = async (message: string) => {
@@ -366,8 +443,8 @@ const Project: React.FC = () => {
               tasks={tasks}
               messages={messages}
               activeChat={activeChat}
-              onStartAgent={() => {}}
-              onStopAgent={() => {}}
+              onStartAgent={handleStartAgent}
+              onStopAgent={handleStopAgent}
               onChatWithAgent={handleChatWithAgent}
               onSendMessage={handleSendMessage}
               project={{
