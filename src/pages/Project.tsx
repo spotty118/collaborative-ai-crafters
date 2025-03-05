@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, createAgents, updateAgent } from "@/lib/api";
+import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, createAgents, updateAgent, createTask } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -219,7 +219,7 @@ const Project: React.FC = () => {
 
   const handleStartAgent = async (agentId: string) => {
     const agent = agents.find(a => a.id === agentId);
-    if (!agent) return;
+    if (!agent || !id) return;
     
     updateAgentMutation.mutate({
       id: agentId,
@@ -233,7 +233,9 @@ const Project: React.FC = () => {
     
     try {
       if (project?.sourceUrl && github.isConnected) {
+        console.log(`Agent ${agent.name} analyzing GitHub repository: ${project.sourceUrl}`);
         const success = await analyzeGitHubAndCreateTasks(agent, project);
+        
         if (success) {
           updateAgentMutation.mutate({
             id: agentId,
@@ -256,7 +258,31 @@ const Project: React.FC = () => {
           toast.error(`${agent.name} failed to complete the task`);
         }
       } else {
-        setTimeout(() => {
+        console.log(`Creating generic tasks for ${agent.name} (${agent.type})`);
+        updateAgentMutation.mutate({
+          id: agentId,
+          updates: { 
+            status: 'working',
+            progress: 40
+          }
+        });
+        
+        const defaultTasks = getDefaultTasksForAgent(agent, id);
+        
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        try {
+          for (const task of defaultTasks) {
+            await createTask({
+              title: task.title,
+              description: task.description,
+              priority: 'medium',
+              status: 'pending',
+              assigned_to: agent.id,
+              project_id: id
+            });
+          }
+          
           updateAgentMutation.mutate({
             id: agentId,
             updates: { 
@@ -264,8 +290,20 @@ const Project: React.FC = () => {
               progress: 100
             }
           });
-          toast.success(`${agent.name} completed its task`);
-        }, 3000);
+          
+          toast.success(`${agent.name} created ${defaultTasks.length} tasks`);
+          queryClient.invalidateQueries({ queryKey: ['tasks', id] });
+        } catch (error) {
+          console.error('Error creating tasks:', error);
+          updateAgentMutation.mutate({
+            id: agentId,
+            updates: { 
+              status: 'failed',
+              progress: 0
+            }
+          });
+          toast.error(`Failed to create tasks: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
       }
     } catch (error) {
       console.error('Error starting agent:', error);
@@ -277,6 +315,93 @@ const Project: React.FC = () => {
         }
       });
       toast.error(`${agent.name} encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const getDefaultTasksForAgent = (agent: Agent, projectId: string): Array<{title: string, description: string}> => {
+    switch (agent.type) {
+      case 'architect':
+        return [
+          {
+            title: 'Define project architecture',
+            description: 'Create a high-level architecture diagram and component structure for the project.'
+          },
+          {
+            title: 'Set up project structure',
+            description: 'Set up the initial folder structure and core configuration files.'
+          },
+          {
+            title: 'Define data models',
+            description: 'Define the core data models and relationships for the project.'
+          }
+        ];
+      case 'frontend':
+        return [
+          {
+            title: 'Create UI components',
+            description: 'Build reusable UI components for the application interface.'
+          },
+          {
+            title: 'Implement responsive design',
+            description: 'Ensure the application works on all screen sizes and devices.'
+          },
+          {
+            title: 'Add client-side validation',
+            description: 'Implement form validation and error handling in the UI.'
+          }
+        ];
+      case 'backend':
+        return [
+          {
+            title: 'Implement API endpoints',
+            description: 'Create the necessary API endpoints for the application.'
+          },
+          {
+            title: 'Set up database models',
+            description: 'Implement database models and migrations.'
+          },
+          {
+            title: 'Add authentication',
+            description: 'Implement user authentication and authorization.'
+          }
+        ];
+      case 'testing':
+        return [
+          {
+            title: 'Write unit tests',
+            description: 'Create unit tests for core components and functions.'
+          },
+          {
+            title: 'Set up integration tests',
+            description: 'Implement integration tests for API endpoints and services.'
+          },
+          {
+            title: 'Create end-to-end tests',
+            description: 'Build end-to-end tests to verify key user flows.'
+          }
+        ];
+      case 'devops':
+        return [
+          {
+            title: 'Set up CI/CD pipeline',
+            description: 'Configure continuous integration and deployment workflows.'
+          },
+          {
+            title: 'Configure deployment environments',
+            description: 'Set up development, staging, and production environments.'
+          },
+          {
+            title: 'Implement monitoring',
+            description: 'Add monitoring and alerting for the application.'
+          }
+        ];
+      default:
+        return [
+          {
+            title: `${agent.name} task`,
+            description: `Default task generated for ${agent.name}.`
+          }
+        ];
     }
   };
 
