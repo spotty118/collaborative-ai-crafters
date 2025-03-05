@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Agent } from "@/lib/types";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -17,6 +17,26 @@ interface AgentCardProps {
 
 const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, isActive = false }) => {
   const [isHovered, setIsHovered] = useState(false);
+  const [progressValue, setProgressValue] = useState(0);
+  
+  // Smoothly animate progress changes
+  useEffect(() => {
+    // Start with current value
+    setProgressValue(prev => {
+      // If the difference is large, start at a minimum value to show animation
+      if (agent.progress > prev + 20) {
+        return prev > 0 ? prev : 5;
+      }
+      return prev;
+    });
+    
+    // Animate to target value
+    const timeout = setTimeout(() => {
+      setProgressValue(agent.progress);
+    }, 100);
+    
+    return () => clearTimeout(timeout);
+  }, [agent.progress]);
 
   const getAgentColorClass = () => {
     switch (agent.type) {
@@ -57,7 +77,10 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, i
             <span>Progress</span>
             <span>{agent.progress}%</span>
           </div>
-          <Progress value={agent.progress} className="h-1" />
+          <Progress 
+            value={progressValue} 
+            className="h-2 transition-all duration-700 ease-in-out" 
+          />
         </div>
       </CardContent>
       <CardFooter className="p-4 pt-0 flex gap-2">
