@@ -1,6 +1,6 @@
+
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useUser } from "@supabase/auth-helpers-react";
 import { supabase } from "@/lib/supabase";
 import { ProjectCard } from "@/components/ProjectCard";
 import { AuthButton } from "@/components/auth/AuthButton";
@@ -48,12 +48,37 @@ const createProjectSchema = z.object({
   techStack: z.string().optional(),
 });
 
+type ImportProjectFormValues = z.infer<typeof importProjectSchema>;
+type CreateProjectFormValues = z.infer<typeof createProjectSchema>;
+
 const Index: React.FC = () => {
   const [projects, setProjects] = useState<any[]>([]);
   const [importing, setImporting] = useState(false);
   const [creating, setCreating] = useState(false);
-  const user = useUser();
   const navigate = useNavigate();
+
+  // Get current user from Supabase
+  const [user, setUser] = useState<any>(null);
+  
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data } = await supabase.auth.getUser();
+      setUser(data.user);
+    };
+    
+    fetchUser();
+    
+    // Setup auth state listener
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setUser(session?.user || null);
+      }
+    );
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     const fetchProjects = async () => {
@@ -76,7 +101,7 @@ const Index: React.FC = () => {
     fetchProjects();
   }, [user]);
 
-  const importProjectForm = useForm<z.infer<typeof importProjectSchema>>({
+  const importProjectForm = useForm<ImportProjectFormValues>({
     resolver: zodResolver(importProjectSchema),
     defaultValues: {
       name: "",
@@ -85,7 +110,7 @@ const Index: React.FC = () => {
     },
   });
 
-  const createProjectForm = useForm<z.infer<typeof createProjectSchema>>({
+  const createProjectForm = useForm<CreateProjectFormValues>({
     resolver: zodResolver(createProjectSchema),
     defaultValues: {
       name: "",
@@ -94,14 +119,14 @@ const Index: React.FC = () => {
     },
   });
 
-  const handleImportProject = async (values: z.infer<typeof importProjectSchema>) => {
+  const handleImportProject = async (values: ImportProjectFormValues) => {
     try {
       setImporting(true);
       const { data, error } = await supabase
         .from('projects')
         .insert({
           name: values.name,
-          description: values.description,
+          description: values.description || null,
           source_url: values.sourceUrl,
           source_type: 'github',
           owner_id: user?.id,
@@ -113,26 +138,31 @@ const Index: React.FC = () => {
       if (error) throw error;
 
       if (data) {
-        navigate(`/project/${data.id?.toString()}`);
+        navigate(`/project/${data.id}`);
         toast.success('Project imported successfully');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error importing project:', error);
-      toast.error('Failed to import project');
+      toast.error('Failed to import project: ' + (error.message || 'Unknown error'));
     } finally {
       setImporting(false);
     }
   };
 
-  const handleCreateProject = async (values: z.infer<typeof createProjectSchema>) => {
+  const handleCreateProject = async (values: CreateProjectFormValues) => {
     try {
       setCreating(true);
+      // Parse tech stack string into an array
+      const techStackArray = values.techStack 
+        ? values.techStack.split(',').map(item => item.trim())
+        : [];
+      
       const { data, error } = await supabase
         .from('projects')
         .insert({
           name: values.name,
-          description: values.description,
-          tech_stack: values.techStack,
+          description: values.description || null,
+          tech_stack: techStackArray,
           owner_id: user?.id,
           status: 'active'
         })
@@ -142,12 +172,12 @@ const Index: React.FC = () => {
       if (error) throw error;
 
       if (data) {
-        navigate(`/project/${data.id?.toString()}`);
+        navigate(`/project/${data.id}`);
         toast.success('Project created successfully');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating project:', error);
-      toast.error('Failed to create project');
+      toast.error('Failed to create project: ' + (error.message || 'Unknown error'));
     } finally {
       setCreating(false);
     }
@@ -283,9 +313,15 @@ const Index: React.FC = () => {
                       <FormItem>
                         <FormLabel>Tech Stack</FormLabel>
                         <FormControl>
-                          <Input placeholder="e.g., React, Node.js, PostgreSQL" {...field} />
+                          <Input 
+                            placeholder="e.g., React, Node.js, PostgreSQL"
+                            {...field}
+                          />
                         </FormControl>
                         <FormMessage />
+                        <p className="text-xs text-muted-foreground">
+                          Comma-separated list of technologies
+                        </p>
                       </FormItem>
                     )}
                   />
