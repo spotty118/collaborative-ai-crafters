@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, createAgents, updateAgent, createTask } from "@/lib/api";
+import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, createAgents, updateAgent, createTask, updateTask } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -28,6 +28,7 @@ interface DashboardProps {
   onStopAgent: (agentId: string) => void;
   onChatWithAgent: (agentId: string) => void;
   onSendMessage: (message: string) => void;
+  onExecuteTask: (taskId: string, agentId: string) => void;
   isLoading: {
     agents: boolean;
     tasks: boolean;
@@ -105,6 +106,14 @@ const Project: React.FC = () => {
       updateAgent(id, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agents', id] });
+    }
+  });
+
+  const updateTaskMutation = useMutation({
+    mutationFn: ({ id, updates }: { id: string, updates: Partial<Task> }) => 
+      updateTask(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks', id] });
     }
   });
 
@@ -315,6 +324,102 @@ const Project: React.FC = () => {
         }
       });
       toast.error(`${agent.name} encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleExecuteTask = async (taskId: string, agentId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    const agent = agents.find(a => a.id === agentId);
+    
+    if (!task || !agent || !id) return;
+    
+    updateTaskMutation.mutate({
+      id: taskId,
+      updates: { 
+        status: 'in_progress'
+      }
+    });
+    
+    updateAgentMutation.mutate({
+      id: agentId,
+      updates: { 
+        status: 'working',
+        progress: 50
+      }
+    });
+    
+    toast.info(`${agent.name} is working on: ${task.title}`);
+    
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    try {
+      if (project?.sourceUrl && github.isConnected) {
+        console.log(`Agent ${agent.name} working on task: ${task.title}`);
+        updateTaskMutation.mutate({
+          id: taskId,
+          updates: { 
+            status: 'completed'
+          }
+        });
+        
+        updateAgentMutation.mutate({
+          id: agentId,
+          updates: { 
+            status: 'completed',
+            progress: 100
+          }
+        });
+        
+        toast.success(`${agent.name} completed: ${task.title}`);
+      } else {
+        console.log(`Simulating completion of task: ${task.title}`);
+        
+        updateAgentMutation.mutate({
+          id: agentId,
+          updates: { 
+            status: 'working',
+            progress: 80
+          }
+        });
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        updateTaskMutation.mutate({
+          id: taskId,
+          updates: { 
+            status: 'completed'
+          }
+        });
+        
+        updateAgentMutation.mutate({
+          id: agentId,
+          updates: { 
+            status: 'completed',
+            progress: 100
+          }
+        });
+        
+        toast.success(`${agent.name} completed: ${task.title}`);
+      }
+    } catch (error) {
+      console.error('Error executing task:', error);
+      
+      updateTaskMutation.mutate({
+        id: taskId,
+        updates: { 
+          status: 'failed'
+        }
+      });
+      
+      updateAgentMutation.mutate({
+        id: agentId,
+        updates: { 
+          status: 'failed',
+          progress: 0
+        }
+      });
+      
+      toast.error(`Task failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -574,6 +679,7 @@ const Project: React.FC = () => {
               onStopAgent={handleStopAgent}
               onChatWithAgent={handleChatWithAgent}
               onSendMessage={handleSendMessage}
+              onExecuteTask={handleExecuteTask}
               project={{
                 name: project.name,
                 description: project.description,

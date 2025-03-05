@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import AgentCard from "@/components/agents/AgentCard";
 import TaskList from "@/components/ui/TaskList";
@@ -18,6 +17,7 @@ interface DashboardProps {
   onStopAgent: (agentId: string) => void;
   onChatWithAgent: (agentId: string) => void;
   onSendMessage: (message: string) => void;
+  onExecuteTask?: (taskId: string, agentId: string) => void;
   project: {
     name: string;
     description: string;
@@ -39,6 +39,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   onStopAgent,
   onChatWithAgent,
   onSendMessage,
+  onExecuteTask,
   project,
   isLoading
 }) => {
@@ -183,14 +184,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               <TaskList 
                 tasks={tasks}
                 agents={agents}
-                onExecuteTask={(taskId, agentId) => {
-                  const agent = agents.find(a => a.id === agentId);
-                  const task = tasks.find(t => t.id === taskId);
-                  
-                  if (agent && task) {
-                    onStartAgent(agentId);
-                  }
-                }}
+                onExecuteTask={onExecuteTask}
               />
             )}
           </div>
