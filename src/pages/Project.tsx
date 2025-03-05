@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages } from "@/lib/api";
+import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, createAgents } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -82,6 +82,17 @@ const Project: React.FC = () => {
     }
   });
 
+  const createAgentsMutation = useMutation({
+    mutationFn: (projectId: string) => createAgents(projectId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agents', id] });
+      toast.success("Default agents created for this project");
+    },
+    onError: (error) => {
+      toast.error("Failed to create agents: " + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  });
+
   useEffect(() => {
     const connectToGitHub = async () => {
       if (project?.sourceUrl && githubToken && !github.isConnected) {
@@ -124,6 +135,12 @@ const Project: React.FC = () => {
       }
     }
   }, [id]);
+
+  useEffect(() => {
+    if (id && project && !loadingAgents && agents.length === 0) {
+      createAgentsMutation.mutate(id);
+    }
+  }, [id, project, agents.length, loadingAgents]);
 
   const handleFileClick = async (file: CodeFile) => {
     if (!github.isConnected) {
