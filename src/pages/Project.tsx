@@ -9,26 +9,48 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Dashboard from "@/components/layout/Dashboard";
 import { sendAgentPrompt } from "@/lib/openrouter";
-import { CodeFile, Message, Project as ProjectType } from "@/lib/types";
+import { CodeFile, Message, Project as ProjectType, Agent, Task } from "@/lib/types";
 import { useGitHub } from "@/contexts/GitHubContext";
 import { FileEditor } from "@/components/FileEditor";
 import { toast } from "sonner";
 
-interface HandleChatParams {
-  agentId: string;
-  message: string;
+interface DashboardProps {
+  project: {
+    name: string;
+    description: string;
+    mode: 'new' | 'existing';
+  };
+  agents: Agent[];
+  tasks: Task[];
+  messages: Message[];
+  activeChat: string | null;
+  onStartAgent: (agentId: string) => void;
+  onStopAgent: (agentId: string) => void;
+  onChatWithAgent: (agentId: string) => void;
+  onSendMessage: (message: string) => void;
+  isLoading: {
+    agents: boolean;
+    tasks: boolean;
+    messages: boolean;
+  };
 }
 
 const Project: React.FC = () => {
+  // Router hooks
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+
+  // Local state
   const [activeTab, setActiveTab] = useState("dashboard");
   const [activeChat, setActiveChat] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<CodeFile | null>(null);
   const [githubToken, setGithubToken] = useState("");
+
+  // Global state hooks
   const github = useGitHub();
   const queryClient = useQueryClient();
 
+  // Query hooks
   const { 
     data: project,
     isLoading: loadingProject,
@@ -42,7 +64,7 @@ const Project: React.FC = () => {
   const { 
     data: agents = [], 
     isLoading: loadingAgents 
-  } = useQuery({
+  } = useQuery<Agent[]>({
     queryKey: ['agents', id],
     queryFn: () => id ? getAgents(id) : Promise.resolve([]),
     enabled: !!id
@@ -51,7 +73,7 @@ const Project: React.FC = () => {
   const { 
     data: tasks = [], 
     isLoading: loadingTasks 
-  } = useQuery({
+  } = useQuery<Task[]>({
     queryKey: ['tasks', id],
     queryFn: () => id ? getTasks(id) : Promise.resolve([]),
     enabled: !!id
@@ -75,6 +97,7 @@ const Project: React.FC = () => {
     enabled: !!id && activeTab === "code"
   });
 
+  // Mutations
   const createMessageMutation = useMutation({
     mutationFn: (messageData: Message) => createMessage(messageData),
     onSuccess: () => {
@@ -82,7 +105,7 @@ const Project: React.FC = () => {
     }
   });
 
-  // Try to connect GitHub when project loads or token changes
+  // Effect hooks
   useEffect(() => {
     if (project?.sourceUrl && githubToken && !github.isConnected) {
       try {
@@ -94,14 +117,12 @@ const Project: React.FC = () => {
     }
   }, [project?.sourceUrl, githubToken, github]);
 
-  // Save GitHub token to local storage when connected
   useEffect(() => {
     if (github.isConnected && githubToken) {
       localStorage.setItem(`github-token-${id}`, githubToken);
     }
   }, [github.isConnected, githubToken, id]);
 
-  // Load GitHub token from local storage on mount
   useEffect(() => {
     if (id) {
       const savedToken = localStorage.getItem(`github-token-${id}`);
@@ -111,6 +132,7 @@ const Project: React.FC = () => {
     }
   }, [id]);
 
+  // Event handlers
   const handleFileClick = async (file: CodeFile) => {
     if (!github.isConnected) {
       toast.error('GitHub is not connected. Please configure GitHub access in project settings.');
@@ -129,8 +151,27 @@ const Project: React.FC = () => {
     }
   };
 
-  const handleCloseFile = () => {
-    setSelectedFile(null);
+  const handlePushToGitHub = async () => {
+    if (!github.isConnected) {
+      toast.error('GitHub is not connected. Please configure GitHub access in project settings.');
+      setActiveTab('settings');
+      return;
+    }
+
+    const loadingToastId = toast.loading('Pushing changes to GitHub...');
+
+    try {
+      for (const file of files) {
+        if (file.content) {
+          await github.createOrUpdateFile(file.path, file.content, `chore: sync ${file.path}`);
+        }
+      }
+      toast.dismiss(loadingToastId);
+      toast.success('Successfully pushed changes to GitHub');
+    } catch (error) {
+      toast.dismiss(loadingToastId);
+      toast.error('Failed to push to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
   };
 
   const handleConnectGitHub = async () => {
@@ -201,6 +242,7 @@ const Project: React.FC = () => {
     }
   };
 
+  // Loading and error states
   if (!id || loadingProject || projectError) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -237,6 +279,7 @@ const Project: React.FC = () => {
     );
   }
 
+  // Main render
   return (
     <div className="min-h-screen flex flex-col bg-white">
       <Header
@@ -253,6 +296,58 @@ const Project: React.FC = () => {
           </TabsList>
         </Tabs>
       </div>
+
+      <TabsContent value="code" className="flex-1 p-4">
+        <div className="bg-white rounded-lg border h-full">
+          <div className="border-b px-4 py-3 flex justify-between items-center">
+            <h2 className="font-semibold">Code Files</h2>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={handlePushToGitHub}
+                disabled={!github.isConnected || files.length === 0}
+              >
+                {github.isConnected ? 'Push to GitHub' : 'Connect GitHub to Push'}
+              </Button>
+            </div>
+          </div>
+          
+          {loadingFiles ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="h-8 w-8 border-4 border-t-primary rounded-full animate-spin"></div>
+            </div>
+          ) : files.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-center p-6">
+              <p className="text-gray-500 mb-4">No code files have been generated yet.</p>
+              <p className="text-sm text-gray-400">Files will appear here as the agents generate code.</p>
+            </div>
+          ) : selectedFile ? (
+            <FileEditor
+              file={selectedFile}
+              onClose={() => setSelectedFile(null)}
+            />
+          ) : (
+            <div className="grid md:grid-cols-2 gap-4 p-4">
+              {files.map(file => (
+                <div
+                  key={file.id}
+                  className="border rounded-md p-3 hover:bg-gray-50 cursor-pointer"
+                  onClick={() => handleFileClick(file)}
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="font-medium">{file.name}</h3>
+                    <span className="text-xs bg-gray-100 px-2 py-1 rounded">{file.language || 'Unknown'}</span>
+                  </div>
+                  <p className="text-sm text-gray-600 truncate">{file.path}</p>
+                  <div className="mt-2 flex justify-between items-center text-xs text-gray-500">
+                    Created by: {file.created_by}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </TabsContent>
 
       <TabsContent value="dashboard" className="flex-1 mt-0">
         <Dashboard
@@ -277,57 +372,12 @@ const Project: React.FC = () => {
         />
       </TabsContent>
 
-      <TabsContent value="code" className="flex-1 p-4">
-        <div className="bg-white rounded-lg border h-full">
-          <div className="border-b px-4 py-3 flex justify-between items-center">
-            <h2 className="font-semibold">Code Files</h2>
-          </div>
-          
-          {loadingFiles ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="h-8 w-8 border-4 border-t-primary rounded-full animate-spin"></div>
-            </div>
-          ) : files.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-64 text-center p-6">
-              <p className="text-gray-500 mb-4">No code files have been generated yet.</p>
-              <p className="text-sm text-gray-400">Files will appear here as the agents generate code.</p>
-            </div>
-          ) : selectedFile ? (
-            <FileEditor
-              file={selectedFile}
-              onClose={handleCloseFile}
-            />
-          ) : (
-            <div className="grid md:grid-cols-2 gap-4 p-4">
-              {files.map(file => (
-                <div
-                  key={file.id}
-                  className="border rounded-md p-3 hover:bg-gray-50 cursor-pointer"
-                  onClick={() => handleFileClick(file)}
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className="font-medium">{file.name}</h3>
-                    <span className="text-xs bg-gray-100 px-2 py-1 rounded">{file.language || 'Unknown'}</span>
-                  </div>
-                  <p className="text-sm text-gray-600 truncate">{file.path}</p>
-                  <div className="mt-2 flex justify-between items-center text-xs text-gray-500">
-                    Created by: {file.created_by}
-                    <button className="px-2 py-1 text-blue-600 hover:bg-blue-50 rounded">
-                      Open
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </TabsContent>
-
       <TabsContent value="settings" className="flex-1 p-4">
         <div className="bg-white rounded-lg border p-6 max-w-2xl mx-auto">
           <h2 className="text-xl font-semibold mb-6">Project Settings</h2>
           
           <div className="space-y-6">
+            {/* Project Info */}
             <div>
               <h3 className="text-base font-medium mb-2">Project Information</h3>
               <div className="space-y-2">
@@ -339,28 +389,10 @@ const Project: React.FC = () => {
                   <span className="font-medium w-32">Description:</span>
                   <span>{project.description || 'No description'}</span>
                 </div>
-                <div className="flex items-center">
-                  <span className="font-medium w-32">Status:</span>
-                  <span className="capitalize">{project.status}</span>
-                </div>
-                <div className="flex items-center">
-                  <span className="font-medium w-32">Progress:</span>
-                  <span>{project.progress}%</span>
-                </div>
               </div>
             </div>
             
-            <div>
-              <h3 className="text-base font-medium mb-2">Tech Stack</h3>
-              <div className="flex flex-wrap gap-2">
-                {project.tech_stack?.map((tech, index) => (
-                  <span key={index} className="px-2 py-1 bg-gray-100 rounded text-sm">
-                    {tech}
-                  </span>
-                ))}
-              </div>
-            </div>
-            
+            {/* GitHub Settings */}
             {project.sourceUrl && (
               <div>
                 <h3 className="text-base font-medium mb-4">GitHub Integration</h3>
