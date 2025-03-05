@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { Agent } from "@/lib/types";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -32,11 +31,23 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, i
     
     // Animate to target value
     const timeout = setTimeout(() => {
-      setProgressValue(agent.progress);
+      setProgressValue(agent.progress || 0);
     }, 100);
     
     return () => clearTimeout(timeout);
   }, [agent.progress]);
+
+  // Automatically update progress based on status
+  useEffect(() => {
+    if (agent.status === "completed") {
+      setProgressValue(100);
+    } else if (agent.status === "idle" && progressValue > 0) {
+      // When paused, keep the current progress
+    } else if (agent.status === "working" && (agent.progress === undefined || agent.progress < 10)) {
+      // Ensure we show some progress when working
+      setProgressValue(10);
+    }
+  }, [agent.status, agent.progress, progressValue]);
 
   const getAgentColorClass = () => {
     switch (agent.type) {
@@ -75,7 +86,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, i
         <div className="mt-3">
           <div className="flex justify-between mb-1 text-xs">
             <span>Progress</span>
-            <span>{agent.progress}%</span>
+            <span>{agent.progress || 0}%</span>
           </div>
           <Progress 
             value={progressValue} 

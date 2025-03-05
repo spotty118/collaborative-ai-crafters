@@ -25,9 +25,13 @@ serve(async (req) => {
   }
 
   try {
-    const { prompt, agentType, projectContext = {} } = await req.json();
+    const { prompt, agentType, projectContext = {}, taskId } = await req.json();
     
     console.log(`Processing request for ${agentType} agent with project context: ${JSON.stringify(projectContext)}`);
+    
+    // Track task progress for updating agent status later
+    const isTaskExecution = prompt.includes('Execute the following task:') || !!taskId;
+    const progressUpdate = isTaskExecution ? { progress: calculateProgress(projectContext) } : {};
     
     // Different system prompts based on agent type
     const systemPrompts = {
@@ -150,6 +154,17 @@ IMPORTANT: Your success is measured by how effectively you delegate, not by how 
     const data = await response.json();
     console.log('OpenRouter response received successfully');
     
+    // Adjust progress data based on task completion status
+    if (isTaskExecution) {
+      const agentProgressData = {
+        ...data,
+        progressUpdate
+      };
+      return new Response(JSON.stringify(agentProgressData), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
     // Process the response to extract and save code files
     try {
       if (data.choices && data.choices[0] && data.choices[0].message) {
@@ -173,3 +188,23 @@ IMPORTANT: Your success is measured by how effectively you delegate, not by how 
     );
   }
 });
+
+// Function to calculate progress based on tasks completed
+function calculateProgress(projectContext: any): number {
+  if (!projectContext) return 10; // Default starting progress
+  
+  // If we have completed a task, bump progress to at least 50%
+  const baseProgress = 50;
+  
+  // If we have analysis completed, add more progress
+  if (projectContext.requirements) {
+    return baseProgress + 20;
+  }
+  
+  // If we have source code being analyzed, progress further
+  if (projectContext.sourceUrl) {
+    return baseProgress + 30;
+  }
+  
+  return baseProgress;
+}
