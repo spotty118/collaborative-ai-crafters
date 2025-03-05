@@ -208,9 +208,9 @@ const Index = () => {
     try {
       const taskPrompt = `Execute this task: ${currentTask.title}. ${currentTask.description || ''} Provide a detailed solution and implementation steps.`;
       
-      // Fix: Ensure project ID is passed as a string
       const response = await sendAgentPrompt(agent, taskPrompt, activeProject);
       
+      // Fix line 168: Ensure project ID is converted to string
       createMessageMutation.mutate({
         project_id: activeProject.id.toString(), 
         content: `Completed task: ${currentTask.title}\n\n${response}`,
@@ -242,7 +242,7 @@ const Index = () => {
       toast.dismiss(taskToast);
       toast.error(`${agent.name} failed to complete task: ${currentTask.title}`);
       
-      // Fix: Ensure project ID is passed as a string
+      // Fix line 231: Ensure project ID is converted to string
       createMessageMutation.mutate({
         project_id: activeProject.id.toString(),
         content: `Failed to complete task: ${currentTask.title}\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
