@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
@@ -210,7 +209,6 @@ const Index = () => {
       
       const response = await sendAgentPrompt(agent, taskPrompt, activeProject);
       
-      // Fix line 168: Ensure project ID is converted to string
       createMessageMutation.mutate({
         project_id: activeProject.id.toString(), 
         content: `Completed task: ${currentTask.title}\n\n${response}`,
@@ -242,7 +240,6 @@ const Index = () => {
       toast.dismiss(taskToast);
       toast.error(`${agent.name} failed to complete task: ${currentTask.title}`);
       
-      // Fix line 231: Ensure project ID is converted to string
       createMessageMutation.mutate({
         project_id: activeProject.id.toString(),
         content: `Failed to complete task: ${currentTask.title}\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -359,7 +356,7 @@ const Index = () => {
       <Header
         onNewProject={() => setIsProjectSetupOpen(true)}
         onImportProject={() => setIsProjectSetupOpen(true)}
-        activeProjectId={activeProject?.id?.toString()} // Pass the active project ID to Header
+        activeProjectId={activeProject?.id?.toString()}
       />
       
       {activeProject ? (
