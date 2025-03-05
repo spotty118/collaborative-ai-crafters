@@ -1,14 +1,15 @@
+
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages } from "@/lib/api";
+import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, updateAgent } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Dashboard from "@/components/layout/Dashboard";
-import { sendAgentPrompt } from "@/lib/openrouter";
+import { sendAgentPrompt, analyzeGitHubAndCreateTasks } from "@/lib/openrouter";
 import { CodeFile, Message, Project as ProjectType, Agent, Task } from "@/lib/types";
 import { useGitHub } from "@/contexts/GitHubContext";
 import { FileEditor } from "@/components/FileEditor";
@@ -61,9 +62,9 @@ const Project: React.FC = () => {
     data: messages = [],
     isLoading: loadingMessages
   } = useQuery<Message[]>({
-    queryKey: ['messages', id, activeChat],
+    queryKey: ['messages', id],
     queryFn: () => id ? getMessages(id) : Promise.resolve([]),
-    enabled: !!id && !!activeChat
+    enabled: !!id
   });
 
   const { 
@@ -79,6 +80,14 @@ const Project: React.FC = () => {
     mutationFn: (messageData: Message) => createMessage(messageData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', id] });
+    }
+  });
+
+  const updateAgentMutation = useMutation({
+    mutationFn: ({ agentId, updates }: { agentId: string, updates: Partial<Agent> }) => 
+      updateAgent(agentId, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agents', id] });
     }
   });
 
@@ -199,6 +208,109 @@ const Project: React.FC = () => {
     toast.info(`Chat activated with ${agent.name}`);
   };
 
+  const handleStartAgent = async (agentId: string) => {
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent || !project || !id) return;
+
+    // Update agent status to working
+    updateAgentMutation.mutate({
+      agentId,
+      updates: { status: 'working', progress: 10 }
+    });
+
+    // Create a system message that the agent is working
+    createMessageMutation.mutate({
+      project_id: id,
+      content: `I'm now analyzing the project and will help improve it. This might take a moment...`,
+      sender: agent.name,
+      type: "text"
+    });
+
+    try {
+      // If this is a GitHub project, analyze it and create tasks
+      if (project.sourceUrl && project.sourceUrl.includes('github.com')) {
+        const success = await analyzeGitHubAndCreateTasks(agent, project);
+        
+        if (success) {
+          // Update agent status to completed with high progress
+          updateAgentMutation.mutate({
+            agentId,
+            updates: { status: 'completed', progress: 100 }
+          });
+          
+          // Refresh tasks
+          queryClient.invalidateQueries({ queryKey: ['tasks', id] });
+          
+          // Create a completion message
+          createMessageMutation.mutate({
+            project_id: id,
+            content: `I've analyzed the GitHub repository and created tasks for improvements. Check the task list for details.`,
+            sender: agent.name,
+            type: "text"
+          });
+          
+          toast.success(`${agent.name} has created tasks for the project`);
+        } else {
+          throw new Error('Failed to analyze GitHub repository');
+        }
+      } else {
+        // For non-GitHub projects, just simulate some progress
+        setTimeout(() => {
+          updateAgentMutation.mutate({
+            agentId,
+            updates: { status: 'completed', progress: 100 }
+          });
+          
+          createMessageMutation.mutate({
+            project_id: id,
+            content: `I've completed my analysis of the project. Let me know if you need any specific help!`,
+            sender: agent.name,
+            type: "text"
+          });
+        }, 3000);
+      }
+    } catch (error) {
+      console.error(`Error starting agent ${agent.name}:`, error);
+      
+      // Update agent status to failed
+      updateAgentMutation.mutate({
+        agentId,
+        updates: { status: 'failed', progress: 0 }
+      });
+      
+      // Create an error message
+      createMessageMutation.mutate({
+        project_id: id,
+        content: `I encountered an error while analyzing the project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        sender: agent.name,
+        type: "text"
+      });
+      
+      toast.error(`${agent.name} encountered an error`);
+    }
+  };
+
+  const handleStopAgent = (agentId: string) => {
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent || !id) return;
+    
+    // Update agent status to idle
+    updateAgentMutation.mutate({
+      agentId,
+      updates: { status: 'idle', progress: agent.progress }
+    });
+    
+    // Create a system message that the agent is paused
+    createMessageMutation.mutate({
+      project_id: id,
+      content: `I've paused my work. You can restart me at any time.`,
+      sender: agent.name,
+      type: "text"
+    });
+    
+    toast.info(`${agent.name} has been paused`);
+  };
+
   const handleSendMessage = async (message: string) => {
     if (!id || !message.trim() || !activeChat || !project) return;
     
@@ -291,6 +403,29 @@ const Project: React.FC = () => {
             <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
           
+          <TabsContent value="dashboard" className="flex-1 mt-0">
+            <Dashboard
+              agents={agents}
+              tasks={tasks}
+              messages={messages}
+              activeChat={activeChat}
+              onStartAgent={handleStartAgent}
+              onStopAgent={handleStopAgent}
+              onChatWithAgent={handleChatWithAgent}
+              onSendMessage={handleSendMessage}
+              project={{
+                name: project?.name || '',
+                description: project?.description || '',
+                mode: project?.sourceType ? 'existing' : 'new'
+              }}
+              isLoading={{
+                agents: loadingAgents,
+                tasks: loadingTasks,
+                messages: loadingMessages
+              }}
+            />
+          </TabsContent>
+          
           <TabsContent value="code" className="flex-1 p-4">
             <div className="bg-white rounded-lg border h-full">
               <div className="border-b px-4 py-3 flex justify-between items-center">
@@ -341,29 +476,6 @@ const Project: React.FC = () => {
                 </div>
               )}
             </div>
-          </TabsContent>
-
-          <TabsContent value="dashboard" className="flex-1 mt-0">
-            <Dashboard
-              agents={agents}
-              tasks={tasks}
-              messages={messages}
-              activeChat={activeChat}
-              onStartAgent={() => {}}
-              onStopAgent={() => {}}
-              onChatWithAgent={handleChatWithAgent}
-              onSendMessage={handleSendMessage}
-              project={{
-                name: project?.name || '',
-                description: project?.description || '',
-                mode: project?.sourceType ? 'existing' : 'new'
-              }}
-              isLoading={{
-                agents: loadingAgents,
-                tasks: loadingTasks,
-                messages: loadingMessages
-              }}
-            />
           </TabsContent>
 
           <TabsContent value="settings" className="flex-1 p-4">
