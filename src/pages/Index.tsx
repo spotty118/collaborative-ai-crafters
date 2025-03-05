@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
@@ -225,7 +226,7 @@ const Index = () => {
       const response = await sendAgentPrompt(agent, taskPrompt, activeProject);
       
       createMessageMutation.mutate({
-        project_id: String(activeProject.id), // Ensure project_id is a string
+        project_id: activeProject.id.toString(), // Ensure project_id is a string
         content: `Completed task: ${currentTask.title}\n\n${response}`,
         sender: agent.name,
         type: "text"
@@ -256,7 +257,7 @@ const Index = () => {
       toast.error(`${agent.name} failed to complete task: ${currentTask.title}`);
       
       createMessageMutation.mutate({
-        project_id: String(activeProject.id), // Ensure project_id is a string
+        project_id: activeProject.id.toString(), // Ensure project_id is a string
         content: `Failed to complete task: ${currentTask.title}\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
         sender: agent.name,
         type: "text"
@@ -291,7 +292,7 @@ const Index = () => {
     if (!agent) return;
     
     createMessageMutation.mutate({
-      project_id: activeProject.id.toString(),
+      project_id: activeProject.id.toString(), // Convert to string using toString()
       content: message,
       sender: "You",
       type: "text"
@@ -303,7 +304,7 @@ const Index = () => {
       const response = await sendAgentPrompt(agent, message, activeProject);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id.toString(),
+        project_id: activeProject.id.toString(), // Convert to string using toString()
         content: response,
         sender: agent.name,
         type: "text"
@@ -314,7 +315,7 @@ const Index = () => {
       console.error('Error getting response from agent:', error);
       
       createMessageMutation.mutate({
-        project_id: activeProject.id.toString(),
+        project_id: activeProject.id.toString(), // Convert to string using toString()
         content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
         sender: agent.name,
         type: "text"
