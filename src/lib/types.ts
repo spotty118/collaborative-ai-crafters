@@ -1,4 +1,9 @@
+
 export type ProjectMode = "new" | "existing";
+
+export type AgentStatus = "idle" | "working" | "completed" | "failed" | "waiting";
+export type TaskStatus = "pending" | "in_progress" | "completed" | "failed";
+export type TaskPriority = "low" | "medium" | "high";
 
 export interface TechStack {
   frontend: string;
@@ -12,13 +17,18 @@ export interface Project {
   name: string;
   description: string;
   mode: ProjectMode;
-  techStack: TechStack;
+  techStack?: TechStack;
   repoUrl?: string;
   status?: string;
   sourceType?: string;
   sourceUrl?: string;
   progress?: number;
   tech_stack?: string[]; // For backward compatibility
+  source_type?: string;  // For backward compatibility
+  source_url?: string;   // For backward compatibility
+  created_at?: string;
+  updated_at?: string;
+  requirements?: string;
 }
 
 export type AgentType = 'architect' | 'frontend' | 'backend' | 'testing' | 'devops';
@@ -27,7 +37,13 @@ export interface Agent {
   id: string;
   name: string;
   type: AgentType;
-  status?: string;
+  status?: AgentStatus;
+  progress?: number;
+  project_id?: string;
+  description?: string;
+  avatar?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface GitHubConfig {
@@ -48,21 +64,28 @@ export interface GitHubCommit {
 }
 
 export interface Task {
+  id: string;
   title: string;
   description: string;
-  priority?: 'low' | 'medium' | 'high';
-  status?: string;
+  priority?: TaskPriority;
+  status?: TaskStatus;
   assigned_to?: string;
   project_id: string;
+  dependencies?: string[];
+  created_at?: string;
+  updated_at?: string;
+  completed_at?: string;
 }
 
 export interface Message {
+  id?: string;
   project_id: string;
   content: string;
   sender: string;
   type: string;
+  code_language?: string;
+  created_at?: string;
   timestamp?: string;
-  id?: string;
 }
 
 export interface CodeFile {
@@ -72,4 +95,23 @@ export interface CodeFile {
   content?: string;
   language?: string;
   created_by: string;
+  last_modified_by?: string;
+  project_id?: string;
+  created_at?: string;
+  updated_at?: string;
 }
+
+// Database types (match Supabase structure)
+export type ProjectDB = Omit<Project, 'techStack' | 'sourceType' | 'sourceUrl' | 'mode'> & {
+  tech_stack?: string[];
+  source_type?: string;
+  source_url?: string;
+};
+
+export type AgentDB = Omit<Agent, 'type'> & {
+  agent_type: AgentType;
+};
+
+export type TaskDB = Task;
+export type MessageDB = Message;
+export type CodeFileDB = CodeFile;
