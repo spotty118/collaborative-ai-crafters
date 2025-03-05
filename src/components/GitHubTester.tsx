@@ -121,5 +121,3 @@ export const GitHubTester: React.FC = () => {
     </Card>
   );
 };
-
-export default GitHubTester;

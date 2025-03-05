@@ -127,7 +127,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                       <div className="flex items-start gap-2 mb-1">
                         <div className="font-medium text-sm">{message.sender}</div>
                         <div className="text-xs text-gray-500 pt-1">
-                          {new Date(message.created_at).toLocaleTimeString([], {
+                          {message.created_at && new Date(message.created_at).toLocaleTimeString([], {
                             hour: "2-digit",
                             minute: "2-digit"
                           })}

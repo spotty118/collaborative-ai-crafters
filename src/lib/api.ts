@@ -21,12 +21,18 @@ export const getProjects = async (): Promise<Project[]> => {
     status: item.status,
     progress: item.progress || 0,
     tech_stack: item.tech_stack || [],
-    source_type: item.source_type,
-    source_url: item.source_url,
+    sourceType: item.source_type,
+    sourceUrl: item.source_url,
     requirements: item.requirements,
     created_at: item.created_at,
     updated_at: item.updated_at,
-    mode: item.source_type ? 'existing' : 'new'
+    mode: item.source_type ? 'existing' : 'new',
+    techStack: {
+      frontend: item.tech_stack?.[0] || '',
+      backend: item.tech_stack?.[1] || '',
+      database: item.tech_stack?.[2] || '',
+      deployment: item.tech_stack?.[3] || ''
+    }
   }));
 };
 
@@ -48,12 +54,18 @@ export const getProject = async (id: string): Promise<Project | null> => {
     status: data.status,
     progress: data.progress || 0,
     tech_stack: data.tech_stack || [],
-    source_type: data.source_type,
-    source_url: data.source_url,
+    sourceType: data.source_type,
+    sourceUrl: data.source_url,
     requirements: data.requirements,
     created_at: data.created_at,
     updated_at: data.updated_at,
-    mode: data.source_type ? 'existing' : 'new'
+    mode: data.source_type ? 'existing' : 'new',
+    techStack: {
+      frontend: data.tech_stack?.[0] || '',
+      backend: data.tech_stack?.[1] || '',
+      database: data.tech_stack?.[2] || '',
+      deployment: data.tech_stack?.[3] || ''
+    }
   };
 };
 
@@ -73,12 +85,18 @@ export const createProject = async (project: ProjectDB): Promise<Project> => {
     status: data.status,
     progress: data.progress || 0,
     tech_stack: data.tech_stack || [],
-    source_type: data.source_type,
-    source_url: data.source_url,
+    sourceType: data.source_type,
+    sourceUrl: data.source_url,
     requirements: data.requirements,
     created_at: data.created_at,
     updated_at: data.updated_at,
-    mode: data.source_type ? 'existing' : 'new'
+    mode: data.source_type ? 'existing' : 'new',
+    techStack: {
+      frontend: data.tech_stack?.[0] || '',
+      backend: data.tech_stack?.[1] || '',
+      database: data.tech_stack?.[2] || '',
+      deployment: data.tech_stack?.[3] || ''
+    }
   };
 };
 
@@ -99,18 +117,22 @@ export const updateProject = async (id: string, updates: Partial<ProjectDB>): Pr
     status: data.status,
     progress: data.progress || 0,
     tech_stack: data.tech_stack || [],
-    source_type: data.source_type,
-    source_url: data.source_url,
+    sourceType: data.source_type,
+    sourceUrl: data.source_url,
     requirements: data.requirements,
     created_at: data.created_at,
     updated_at: data.updated_at,
-    mode: data.source_type ? 'existing' : 'new'
+    mode: data.source_type ? 'existing' : 'new',
+    techStack: {
+      frontend: data.tech_stack?.[0] || '',
+      backend: data.tech_stack?.[1] || '',
+      database: data.tech_stack?.[2] || '',
+      deployment: data.tech_stack?.[3] || ''
+    }
   };
 };
 
-// Fix the current error by adding a function to check if a project ID exists
 export const checkProjectExists = async (id: string | number): Promise<boolean> => {
-  // Convert id to string if it's a number
   const projectId = typeof id === 'number' ? id.toString() : id;
   
   const { data, error } = await supabase
@@ -132,7 +154,6 @@ export const getAgents = async (projectId: string): Promise<Agent[]> => {
   
   if (error) throw error;
   
-  // Transform from DB schema to our app types
   return (data || []).map(agent => ({
     id: agent.id,
     type: agent.agent_type as AgentType,
@@ -146,45 +167,45 @@ export const getAgents = async (projectId: string): Promise<Agent[]> => {
 };
 
 export const createAgents = async (projectId: string): Promise<Agent[]> => {
-  const defaultAgents = [
+  const defaultAgents: AgentDB[] = [
     {
       project_id: projectId,
-      agent_type: 'architect' as AgentType,
+      agent_type: 'architect',
       name: 'Architect Agent',
       description: 'Designs system architecture and project structure',
-      status: 'idle' as AgentStatus,
+      status: 'idle',
       progress: 0
     },
     {
       project_id: projectId,
-      agent_type: 'frontend' as AgentType,
+      agent_type: 'frontend',
       name: 'Frontend Agent',
       description: 'Builds UI components and client-side functionality',
-      status: 'idle' as AgentStatus,
+      status: 'idle',
       progress: 0
     },
     {
       project_id: projectId,
-      agent_type: 'backend' as AgentType,
+      agent_type: 'backend',
       name: 'Backend Agent',
       description: 'Develops APIs and database models',
-      status: 'idle' as AgentStatus,
+      status: 'idle',
       progress: 0
     },
     {
       project_id: projectId,
-      agent_type: 'testing' as AgentType,
+      agent_type: 'testing',
       name: 'Testing Agent',
       description: 'Creates tests and ensures quality',
-      status: 'idle' as AgentStatus,
+      status: 'idle',
       progress: 0
     },
     {
       project_id: projectId,
-      agent_type: 'devops' as AgentType,
+      agent_type: 'devops',
       name: 'DevOps Agent',
       description: 'Handles deployment and CI/CD setup',
-      status: 'idle' as AgentStatus,
+      status: 'idle',
       progress: 0
     }
   ];
@@ -209,7 +230,6 @@ export const createAgents = async (projectId: string): Promise<Agent[]> => {
 };
 
 export const updateAgent = async (id: string, updates: Partial<Agent>): Promise<Agent> => {
-  // Transform our app types to DB schema
   const dbUpdates: Partial<AgentDB> = {};
   if (updates.status) dbUpdates.status = updates.status;
   if (updates.progress !== undefined) dbUpdates.progress = updates.progress;
@@ -263,7 +283,7 @@ export const getTasks = async (projectId: string): Promise<Task[]> => {
   }));
 };
 
-export const createTask = async (task: Omit<TaskDB, 'id'>): Promise<Task> => {
+export const createTask = async (task: TaskDB): Promise<Task> => {
   const { data, error } = await supabase
     .from('tasks')
     .insert([{
