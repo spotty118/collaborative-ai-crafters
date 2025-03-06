@@ -88,27 +88,62 @@ export const sendAgentPrompt = async (
       }
     }
     
-    // Process any tasks that were created
+    // Process any tasks that were created - ENHANCED EXTRACTION
     const tasksInfo = extractTasksInfo(agentResponse);
     if (tasksInfo && tasksInfo.length > 0) {
       console.log(`Agent ${agent.name} created ${tasksInfo.length} tasks`);
       
+      // Create a short summary message about task creation
+      const taskSummary = `I've identified ${tasksInfo.length} tasks that need to be completed for this project.`;
+      await createMessage({
+        project_id: project.id,
+        content: taskSummary,
+        sender: agent.name,
+        type: "text"
+      });
+      
       for (const taskInfo of tasksInfo) {
         // Get the right agent ID based on the assigned agent type
         let assignedAgentId = agent.id; // Default to the current agent
+        let assignedAgentType = taskInfo.assignedTo.toLowerCase();
         
-        if (taskInfo.assignedTo !== agent.type && taskInfo.assignedTo.toLowerCase().includes('agent')) {
-          // Try to find the correct agent by type
-          const agentType = taskInfo.assignedTo.replace(/\s+agent/i, '').toLowerCase();
-          // This would need access to all agents, which we don't have here
-          console.log(`Task being assigned to ${agentType} agent type`);
+        if (assignedAgentType !== agent.type.toLowerCase()) {
+          // Try to find matching agent based on various possible formats
+          if (assignedAgentType.includes('front')) assignedAgentType = 'frontend';
+          else if (assignedAgentType.includes('back')) assignedAgentType = 'backend';
+          else if (assignedAgentType.includes('test')) assignedAgentType = 'testing';
+          else if (assignedAgentType.includes('dev') && assignedAgentType.includes('ops')) assignedAgentType = 'devops';
+          else if (assignedAgentType.includes('arch')) assignedAgentType = 'architect';
           
-          // For now, keep it assigned to the current agent and let the UI handle it
+          console.log(`Looking for agent type: ${assignedAgentType}`);
+          
+          // Fetch agents for this project
+          try {
+            const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/agent_statuses?project_id=eq.${project.id}&agent_type=ilike.${assignedAgentType}%`, {
+              headers: {
+                'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+                'Content-Type': 'application/json'
+              }
+            });
+            
+            if (response.ok) {
+              const agents = await response.json();
+              if (agents && agents.length > 0) {
+                assignedAgentId = agents[0].id;
+                console.log(`Found matching agent: ${agents[0].name} (${assignedAgentId})`);
+              }
+            }
+          } catch (error) {
+            console.error("Error finding matching agent:", error);
+          }
         }
         
-        // Create the task with a more descriptive title that includes the agent name
-        const taskTitle = `[${agent.name}] ${taskInfo.title}`;
-        console.log(`Creating task: ${taskTitle} for agent ${assignedAgentId}`);
+        // Create a descriptive title that includes the agent name
+        const taskTitle = agent.type === 'architect' ? 
+          taskInfo.title : // Keep architect's task titles clean
+          `[${agent.name}] ${taskInfo.title}`; // Add creator prefix for other agents
+          
+        console.log(`Creating task: ${taskTitle} assigned to agent ${assignedAgentId}`);
         
         try {
           // Create the task
@@ -119,14 +154,6 @@ export const sendAgentPrompt = async (
             assigned_to: assignedAgentId,
             status: 'pending',
             priority: taskInfo.priority as TaskPriority || 'medium'
-          });
-          
-          // Add a message about the created task
-          await createMessage({
-            project_id: project.id,
-            content: `I've created a new task: "${taskInfo.title}" with ${taskInfo.priority} priority`,
-            sender: agent.name,
-            type: "text"
           });
         } catch (error) {
           console.error(`Error creating task ${taskTitle}:`, error);
@@ -177,13 +204,13 @@ function extractCodeSnippets(content: string): { filePath: string; code: string 
 }
 
 /**
- * Extract task information from content
+ * Extract task information from content - SIGNIFICANTLY IMPROVED
  */
 function extractTasksInfo(content: string): { title: string; assignedTo: string; description: string; priority: string }[] {
   const tasks = [];
   
   // Match TASK: format (standard format)
-  const standardRegex = /TASK: (.*?)\nASSIGNED TO: (.*?)\nDESCRIPTION: (.*?)\nPRIORITY: (.*?)(?:\n|$)/gs;
+  const standardRegex = /TASK:\s*(.*?)\nASSIGNED TO:\s*(.*?)\nDESCRIPTION:\s*(.*?)\nPRIORITY:\s*(.*?)(?:\n\n|\n$|$)/gs;
   let match;
   
   while ((match = standardRegex.exec(content)) !== null) {
@@ -197,7 +224,7 @@ function extractTasksInfo(content: string): { title: string; assignedTo: string;
   
   // If no tasks found in standard format, try alternative format (for compatibility)
   if (tasks.length === 0) {
-    const altRegex = /Task: (.*?)\nAssigned to: (.*?)\nDescription: (.*?)\nPriority: (.*?)(?:\n|$)/gis;
+    const altRegex = /Task:\s*(.*?)\nAssigned to:\s*(.*?)\nDescription:\s*(.*?)\nPriority:\s*(.*?)(?:\n\n|\n$|$)/gis;
     while ((match = altRegex.exec(content)) !== null) {
       tasks.push({
         title: match[1].trim(),
@@ -210,14 +237,37 @@ function extractTasksInfo(content: string): { title: string; assignedTo: string;
   
   // Third fallback - look for tasks in a more flexible way
   if (tasks.length === 0) {
-    const flexRegex = /(?:task|todo|to-do):\s*(.*?)(?:\n|$).*?(?:assigned|agent):\s*(.*?)(?:\n|$).*?(?:description|details):\s*(.*?)(?:\n|$).*?(?:priority):\s*(.*?)(?:\n|$)/gis;
+    // Look for any combination of "task", "assigned", "description", "priority" in flexible order
+    const flexRegex = /(?:task|todo|to-do|task name|title)[\s\:]+([^\n]+)(?:[\s\n]+(?:assigned|agent|assigned to|for)[\s\:]+([^\n]+))?(?:[\s\n]+(?:description|details|task description)[\s\:]+([^\n]+))?(?:[\s\n]+(?:priority|importance)[\s\:]+([^\n]+))?/gis;
     while ((match = flexRegex.exec(content)) !== null) {
-      tasks.push({
-        title: match[1].trim(),
-        assignedTo: match[2].trim(),
-        description: match[3].trim(),
-        priority: match[4].trim().toLowerCase() || 'medium'
-      });
+      // Only add if we can extract at minimum a title
+      if (match[1] && match[1].trim().length > 0) {
+        tasks.push({
+          title: match[1].trim(),
+          assignedTo: (match[2] || 'Architect Agent').trim(),
+          description: (match[3] || match[1]).trim(), // Use title as description if missing
+          priority: (match[4] || 'medium').trim().toLowerCase()
+        });
+      }
+    }
+  }
+  
+  // Fourth ultra-flexible fallback - catch anything that looks task-like
+  if (tasks.length === 0) {
+    // Extract any numbered or bullet list items that look like tasks
+    const listRegex = /(?:^\d+\.|\*|\-)\s+([^:]+?)(?::\s*([^:\n]+))?(?:\n|$)/gm;
+    while ((match = listRegex.exec(content)) !== null) {
+      // If it looks like a task (has reasonable length and not too generic)
+      const possibleTitle = match[1].trim();
+      if (possibleTitle.length > 10 && possibleTitle.length < 100 &&
+          !possibleTitle.match(/^(introduction|overview|summary|conclusion)$/i)) {
+        tasks.push({
+          title: possibleTitle,
+          assignedTo: 'Architect Agent', // Default to architect
+          description: match[2] ? match[2].trim() : `Complete the task: ${possibleTitle}`,
+          priority: 'medium'
+        });
+      }
     }
   }
   

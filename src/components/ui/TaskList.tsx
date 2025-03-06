@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import { Task, Agent } from "@/lib/types";
 import { CheckCircle2, Circle, Clock, AlertCircle, RotateCw, Play, RefreshCw } from "lucide-react";
@@ -26,6 +25,12 @@ const TaskList: React.FC<TaskListProps> = ({
   const [displayedTaskMap, setDisplayedTaskMap] = useState<Map<string, Set<string>>>(new Map());
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   
+  // Reset the task map when tasks change significantly or when component loads
+  useEffect(() => {
+    setDisplayedTaskMap(new Map());
+    console.log("Reset task map due to tasks changing or component loading");
+  }, []);
+  
   // Function to normalize task titles for deduplication
   const normalizeTitle = (title: string) => {
     // Remove agent prefix if present [AgentName]
@@ -33,107 +38,20 @@ const TaskList: React.FC<TaskListProps> = ({
     return titleWithoutPrefix.toLowerCase().replace(/[^\w\s]/g, '').trim();
   };
   
-  // Reset the task map when tasks change significantly
-  useEffect(() => {
-    if (tasks.length === 0) {
-      setDisplayedTaskMap(new Map());
-      console.log("Reset task map due to empty tasks array");
-    }
-  }, [tasks.length === 0]);
-  
-  const uniqueTasks = tasks.reduce((acc: Task[], task) => {
-    // Skip tasks with no title
-    if (!task.title || task.title.trim() === '') {
-      console.log("Skipping task with empty title");
-      return acc;
-    }
-    
-    console.log(`Processing task: ${task.id} - ${task.title}`);
-    const normalizedTitle = normalizeTitle(task.title);
-    
-    if (displayedTaskMap.has(normalizedTitle)) {
-      const taskIds = displayedTaskMap.get(normalizedTitle);
-      if (taskIds && taskIds.has(task.id)) {
-        console.log(`Task ${task.id} already in displayed map, skipping`);
-        return acc;
-      }
-      
-      const existingTaskIndex = acc.findIndex(t => 
-        normalizeTitle(t.title) === normalizedTitle
+  // Process tasks with improved deduplication
+  const processedTasks = [...tasks]
+    // Sort by creation date - newest first
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    // Filter out empty titles
+    .filter(task => task.title && task.title.trim() !== '')
+    // Remove duplicates - keep the newest version
+    .filter((task, index, self) => {
+      return index === self.findIndex(t => 
+        normalizeTitle(t.title) === normalizeTitle(task.title)
       );
-      
-      if (existingTaskIndex !== -1) {
-        const existingTask = acc[existingTaskIndex];
-        console.log(`Found existing task with similar title: ${existingTask.title}`);
-        
-        if (new Date(existingTask.created_at) < new Date(task.created_at)) {
-          console.log(`Replacing older task ${existingTask.id} with newer ${task.id}`);
-          acc.splice(existingTaskIndex, 1);
-          const updatedTaskIds = new Set(displayedTaskMap.get(normalizedTitle) || []);
-          updatedTaskIds.add(task.id);
-          setDisplayedTaskMap(prev => {
-            const newMap = new Map(prev);
-            newMap.set(normalizedTitle, updatedTaskIds);
-            return newMap;
-          });
-          acc.push(task);
-        } else {
-          console.log(`Keeping existing task ${existingTask.id}, it's newer than ${task.id}`);
-          const updatedTaskIds = new Set(displayedTaskMap.get(normalizedTitle) || []);
-          updatedTaskIds.add(task.id);
-          setDisplayedTaskMap(prev => {
-            const newMap = new Map(prev);
-            newMap.set(normalizedTitle, updatedTaskIds);
-            return newMap;
-          });
-        }
-      } else {
-        console.log(`No existing task with title ${normalizedTitle}, adding ${task.id}`);
-        const updatedTaskIds = new Set(displayedTaskMap.get(normalizedTitle) || []);
-        updatedTaskIds.add(task.id);
-        setDisplayedTaskMap(prev => {
-          const newMap = new Map(prev);
-          newMap.set(normalizedTitle, updatedTaskIds);
-          return newMap;
-        });
-        acc.push(task);
-      }
-    } else {
-      console.log(`First occurrence of title ${normalizedTitle}, adding ${task.id}`);
-      setDisplayedTaskMap(prev => {
-        const newMap = new Map(prev);
-        newMap.set(normalizedTitle, new Set([task.id]));
-        return newMap;
-      });
-      acc.push(task);
-    }
-    
-    return acc;
-  }, []);
-  
-  console.log(`After deduplication: ${uniqueTasks.length} tasks (from original ${tasks.length})`);
-  
-  const finalFilteredTasks = uniqueTasks.filter((task, index, self) => {
-    const isDuplicate = self.some((otherTask, otherIndex) => {
-      if (index === otherIndex) return false;
-      
-      if (task.assigned_to === otherTask.assigned_to && 
-          task.status === otherTask.status &&
-          areSimilarDescriptions(task.description, otherTask.description)) {
-        return new Date(task.created_at) < new Date(otherTask.created_at);
-      }
-      return false;
     });
-    
-    return !isDuplicate;
-  });
-
-  function areSimilarDescriptions(desc1: string, desc2: string): boolean {
-    const start1 = desc1.substring(0, 50).toLowerCase();
-    const start2 = desc2.substring(0, 50).toLowerCase();
-    
-    return start1 === start2;
-  }
+  
+  console.log(`After processing: ${processedTasks.length} tasks (from original ${tasks.length})`);
 
   function cleanTaskTitle(title: string): string {
     // Remove agent prefix if present [AgentName]
@@ -192,6 +110,7 @@ const TaskList: React.FC<TaskListProps> = ({
   };
 
   const formatTaskDescription = (description: string) => {
+    if (!description) return "No description provided";
     if (description.includes('Error:')) {
       return description.replace(/Error: \[object Object\]/g, 'Error occurred - check logs for details');
     }
@@ -206,12 +125,10 @@ const TaskList: React.FC<TaskListProps> = ({
     }
   };
 
-  console.log(`Rendering ${finalFilteredTasks.length} tasks after all filtering`);
-
   return (
     <div className={cn("space-y-4", className)}>
       <div className="flex justify-between items-center">
-        <h3 className="text-lg font-semibold">Tasks ({finalFilteredTasks.length})</h3>
+        <h3 className="text-lg font-semibold">Tasks ({processedTasks.length})</h3>
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500">
             Updated: {formatDate(lastUpdated)}
@@ -233,7 +150,7 @@ const TaskList: React.FC<TaskListProps> = ({
           <div className="flex justify-center py-8">
             <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
           </div>
-        ) : finalFilteredTasks.length === 0 ? (
+        ) : processedTasks.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <p>No tasks yet</p>
             <p className="text-xs mt-2">Tasks will appear here as the agents generate them</p>
@@ -245,7 +162,7 @@ const TaskList: React.FC<TaskListProps> = ({
             )}
           </div>
         ) : (
-          finalFilteredTasks.map((task) => {
+          processedTasks.map((task) => {
             const agentPrefix = getAgentPrefixFromTitle(task.title);
             const cleanTitle = cleanTaskTitle(task.title);
             
@@ -273,7 +190,7 @@ const TaskList: React.FC<TaskListProps> = ({
                     )}
                     
                     <p className="text-xs text-gray-500 mt-1 line-clamp-2">
-                      {formatTaskDescription(task.description)}
+                      {formatTaskDescription(task.description || '')}
                     </p>
                     
                     {task.assigned_to && (

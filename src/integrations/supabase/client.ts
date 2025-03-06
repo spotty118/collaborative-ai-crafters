@@ -6,11 +6,24 @@ import type { Database } from './types';
 const SUPABASE_URL = "https://igzuqirgmwgxfpbtpsdc.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlnenVxaXJnbXdneGZwYnRwc2RjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzgzNjc5OTAsImV4cCI6MjA1Mzk0Mzk5MH0.FgHcJys1LDlJIVbFSOHKb0fepKdKge0Ai5SGMB0vJlg";
 
+// Make these available globally for other modules to use directly
+if (typeof window !== 'undefined') {
+  window.SUPABASE_URL = SUPABASE_URL;
+  window.SUPABASE_KEY = SUPABASE_PUBLISHABLE_KEY;
+}
+
 // Create supabase client once to avoid multiple instances
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true
+  },
+  global: {
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_PUBLISHABLE_KEY
+    }
   }
 });
+

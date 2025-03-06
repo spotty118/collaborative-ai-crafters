@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { supabase } from "../_shared/supabase-client.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
@@ -197,33 +196,30 @@ async function processTeamCollaboration(projectId, projectData, agents, projectC
       return;
     }
     
-    // Generate initial plan with the architect
+    // Generate initial plan with the architect - UPDATED PROMPT
     const architectPlan = await callOpenRouter(
       'architect',
       `You are the lead architect for project "${projectData.name}". ${projectData.description || ''}
-      Create a detailed plan for implementing this project, breaking it down into specific tasks for each team member.
-      For each task, specify:
-      1. Task title
-      2. Which agent should work on it (Frontend, Backend, DevOps, or Testing)
-      3. A detailed description of what needs to be implemented
-      4. Priority (High, Medium, Low)
       
-      Format each task as:
-      TASK: [Task Title]
-      ASSIGNED TO: [Agent Type] Agent
-      DESCRIPTION: [Detailed description]
-      PRIORITY: [Priority]
+      Create a concise plan with specific tasks for each team member.
       
-      Include at least one task for each team member.`,
+      TASK FORMAT - FOLLOW THIS EXACTLY:
+      TASK: [Clear task title]
+      ASSIGNED TO: [Agent Type] 
+      DESCRIPTION: [Brief description]
+      PRIORITY: [High/Medium/Low]
+      
+      Assign at least one task to each agent type: Frontend, Backend, DevOps, Testing.
+      Keep your analysis brief and focus on creating well-defined tasks.`,
       { projectId, projectName: projectData.name, projectDescription: projectData.description }
     );
     
-    // Add the architect's plan to chat
+    // Add the architect's plan to chat - SIMPLIFIED
     await supabase
       .from('chat_messages')
       .insert([{
         project_id: projectId,
-        content: architectPlan,
+        content: "I've analyzed the project requirements and am assigning initial tasks to the team.",
         sender: architect.name,
         type: 'text'
       }]);
@@ -237,7 +233,8 @@ async function processTeamCollaboration(projectId, projectData, agents, projectC
       // Create the tasks in the database
       for (const taskInfo of tasksInfo) {
         const agentType = taskInfo.assignedTo.replace(' Agent', '').toLowerCase();
-        const assignedAgent = agents.find(a => a.type.toLowerCase() === agentType);
+        const assignedAgent = agents.find(a => a.type.toLowerCase() === agentType || 
+                                               a.type.toLowerCase().includes(agentType));
         
         if (assignedAgent) {
           await supabase
@@ -255,6 +252,16 @@ async function processTeamCollaboration(projectId, projectData, agents, projectC
         }
       }
       
+      // Add a message about task creation
+      await supabase
+        .from('chat_messages')
+        .insert([{
+          project_id: projectId,
+          content: `I've created ${tasksInfo.length} initial tasks and assigned them to the appropriate team members.`,
+          sender: architect.name,
+          type: 'text'
+        }]);
+      
       // Have each agent acknowledge their tasks
       for (const agent of agents) {
         if (agent.type !== 'architect') {
@@ -267,15 +274,14 @@ async function processTeamCollaboration(projectId, projectData, agents, projectC
             .eq('status', 'pending');
             
           if (agentTasks && agentTasks.length > 0) {
-            // Generate acknowledgment using AI
-            const acknowledgment = await callOpenRouter(
-              agent.type,
-              `You've been assigned ${agentTasks.length} task(s) for project "${projectData.name}":
-              ${agentTasks.map((t, i) => `${i+1}. ${t.title}: ${t.description}`).join('\n')}
+            // Update agent status to working
+            await supabase
+              .from('agent_statuses')
+              .update({ status: 'working', progress: 10 })
+              .eq('id', agent.id);
               
-              Acknowledge these tasks and briefly mention how you plan to approach them.`,
-              { projectId, projectName: projectData.name, agentTasks }
-            );
+            // Generate brief acknowledgment
+            const acknowledgment = `I've received ${agentTasks.length} task(s) and will begin working on them immediately.`;
             
             await supabase
               .from('chat_messages')
@@ -296,7 +302,7 @@ async function processTeamCollaboration(projectId, projectData, agents, projectC
                 
                 await processTask(projectId, agent.id, { name: agent.name, agent_type: agent.type }, firstTask);
               }
-            }, 5000 + Math.random() * 5000); // Random delay between 5-10 seconds
+            }, 2000 + Math.random() * 3000); // Shorter random delay
           }
         }
       }
@@ -307,10 +313,10 @@ async function processTeamCollaboration(projectId, projectData, agents, projectC
       await createInitialTasks(projectId, agents);
     }
     
-    // Set up periodic check for pending tasks
+    // Set up more frequent check for pending tasks
     setTimeout(() => {
       checkAndAssignPendingTasks(projectId, agents);
-    }, 30000); // Check after 30 seconds
+    }, 15000); // Check after 15 seconds
     
   } catch (error) {
     console.error('Error in team collaboration:', error);
@@ -1163,13 +1169,15 @@ function extractCodeSnippets(content) {
   return snippets;
 }
 
-// Function to extract task information from content
+// Function to extract task information from content - IMPROVED
 function extractTasksInfo(content) {
   const tasks = [];
-  const regex = /TASK: (.*?)\nASSIGNED TO: (.*?)\nDESCRIPTION: (.*?)\nPRIORITY: (.*?)(?:\n|$)/gs;
+  
+  // Match TASK: format (standard format)
+  const standardRegex = /TASK:\s*(.*?)\nASSIGNED TO:\s*(.*?)\nDESCRIPTION:\s*(.*?)\nPRIORITY:\s*(.*?)(?:\n\n|\n$|$)/gs;
   let match;
   
-  while ((match = regex.exec(content)) !== null) {
+  while ((match = standardRegex.exec(content)) !== null) {
     tasks.push({
       title: match[1].trim(),
       assignedTo: match[2].trim(),
@@ -1178,6 +1186,37 @@ function extractTasksInfo(content) {
     });
   }
   
+  // If no tasks found in standard format, try alternative format (for compatibility)
+  if (tasks.length === 0) {
+    const altRegex = /Task:\s*(.*?)\nAssigned to:\s*(.*?)\nDescription:\s*(.*?)\nPriority:\s*(.*?)(?:\n\n|\n$|$)/gis;
+    while ((match = altRegex.exec(content)) !== null) {
+      tasks.push({
+        title: match[1].trim(),
+        assignedTo: match[2].trim(),
+        description: match[3].trim(),
+        priority: match[4].trim().toLowerCase()
+      });
+    }
+  }
+  
+  // Third fallback - look for tasks in a more flexible way
+  if (tasks.length === 0) {
+    // Look for any combination of "task", "assigned", "description", "priority" in flexible order
+    const flexRegex = /(?:task|todo|to-do|task name|title)[\s\:]+([^\n]+)(?:[\s\n]+(?:assigned|agent|assigned to|for)[\s\:]+([^\n]+))?(?:[\s\n]+(?:description|details|task description)[\s\:]+([^\n]+))?(?:[\s\n]+(?:priority|importance)[\s\:]+([^\n]+))?/gis;
+    while ((match = flexRegex.exec(content)) !== null) {
+      // Only add if we can extract at minimum a title
+      if (match[1] && match[1].trim().length > 0) {
+        tasks.push({
+          title: match[1].trim(),
+          assignedTo: (match[2] || 'Architect Agent').trim(),
+          description: (match[3] || match[1]).trim(), // Use title as description if missing
+          priority: (match[4] || 'medium').trim().toLowerCase()
+        });
+      }
+    }
+  }
+  
+  console.log(`Extracted ${tasks.length} tasks from agent response`);
   return tasks;
 }
 
