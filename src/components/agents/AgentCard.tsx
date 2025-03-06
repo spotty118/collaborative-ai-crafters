@@ -25,76 +25,27 @@ const AgentCard: React.FC<AgentCardProps> = ({
   isActive = false 
 }) => {
   const [isHovered, setIsHovered] = useState(false);
-  const [progressValue, setProgressValue] = useState(0);
+  const [progressValue, setProgressValue] = useState(agent.progress || 0);
   const [animating, setAnimating] = useState(false);
   
-  // Smoothly animate progress changes
+  // Smoothly animate progress changes - with proper dependency array to prevent infinite updates
   useEffect(() => {
-    // Start with current value
-    setProgressValue(prev => {
-      // If the difference is large, start at a minimum value to show animation
-      if (agent.progress > prev + 10) {
+    // Only update if agent progress has changed
+    if (agent.progress !== progressValue) {
+      // Start animation if significant progress change
+      if (agent.progress > progressValue + 5) {
         setAnimating(true);
-        return prev > 0 ? prev : agent.type === 'architect' ? 20 : 15;
       }
-      return prev;
-    });
-    
-    // Animate to target value
-    const timeout = setTimeout(() => {
-      setProgressValue(agent.progress || 0);
-      setTimeout(() => setAnimating(false), 700); // Animation time
-    }, 100);
-    
-    return () => clearTimeout(timeout);
-  }, [agent.progress]);
-
-  // Automatically update progress based on status and agent type
-  useEffect(() => {
-    if (agent.status === "completed") {
-      setProgressValue(100);
-    } else if (agent.status === "idle" && progressValue > 0) {
-      // When paused, keep the current progress
-    } else if (agent.status === "working") {
-      // For working agents, ensure we show different starting progress values by agent type
-      // This ensures visual differentiation between agents
-      if (agent.progress === undefined || agent.progress < 15) {
-        // Different base progress values for different agent types
-        let baseProgress;
-        switch(agent.type) {
-          case 'architect':
-            baseProgress = 20 + (Math.random() * 5);
-            break;
-          case 'frontend':
-            baseProgress = 15 + (Math.random() * 8);
-            break;
-          case 'backend':
-            baseProgress = 18 + (Math.random() * 7);
-            break; 
-          case 'testing':
-            baseProgress = 12 + (Math.random() * 6);
-            break;
-          case 'devops':
-            baseProgress = 16 + (Math.random() * 7);
-            break;
-          default:
-            baseProgress = 15 + (Math.random() * 5);
-        }
-        
-        setProgressValue(baseProgress);
-        
-        // Add subtle progress animation for working agents
-        const interval = setInterval(() => {
-          setProgressValue(prev => {
-            // Subtle animation with different ranges for different agent types
-            return prev + (Math.random() * 0.8);
-          });
-        }, 3000);
-        
-        return () => clearInterval(interval);
-      }
+      
+      // Animate to target value
+      const timeout = setTimeout(() => {
+        setProgressValue(agent.progress || 0);
+        setTimeout(() => setAnimating(false), 700); // Animation time
+      }, 100);
+      
+      return () => clearTimeout(timeout);
     }
-  }, [agent.status, agent.progress, agent.type, progressValue]);
+  }, [agent.progress, progressValue]);
 
   const getAgentColorClass = () => {
     switch (agent.type) {
