@@ -1,3 +1,4 @@
+
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { broadcastMessage } from "./messageBroker";
@@ -54,12 +55,11 @@ export const startAgentOrchestration = async (
         .single();
         
       if (projectData) {
-        // Start team collaboration automatically with a shorter delay
-        toast.info("Team collaboration will start automatically in a few seconds");
+        // Start team collaboration immediately
+        toast.info("Starting team collaboration...");
         
-        setTimeout(() => {
-          initiateTeamCollaboration(projectId, projectData);
-        }, 1500); // Reduced from 3000 to 1500ms for faster collaboration startup
+        // Immediate start of team collaboration for faster response
+        initiateTeamCollaboration(projectId, projectData);
       }
     }
     
@@ -115,14 +115,14 @@ const initiateTeamCollaboration = async (projectId: string, project: any) => {
     // Add a visible toast notification
     toast.success('Team collaboration initiated');
     
-    // Call the orchestrator in "team_mode" to start collaboration
+    // Call the orchestrator in "team_mode" to start collaboration with explicit autostart flag
     const { data, error: orchError } = await supabase.functions.invoke('crew-orchestrator', {
       body: {
         projectId,
         action: 'team_collaborate',
         agents: agents.map(a => ({ id: a.id, type: a.agent_type, name: a.name })),
         projectContext: project,
-        autostart: true // Add explicit flag to auto-start all agents
+        autostart: true // Explicit flag to auto-start all agents
       }
     });
     

@@ -1,3 +1,4 @@
+<lov-code>
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { supabase } from "../_shared/supabase-client.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
@@ -503,23 +504,33 @@ async function callOpenRouter(agentType, prompt, projectContext = {}, taskId = n
   const systemPrompts = {
     'architect': `You are the Architect Agent in a software development team. You analyze requirements and delegate tasks to specialized agents. 
     Respond in character as a seasoned software architect. Your expertise is in designing scalable, maintainable systems.
-    You work with other agents: Frontend Agent, Backend Agent, Testing Agent, and DevOps Agent.`,
+    You work with other agents: Frontend Agent, Backend Agent, Testing Agent, and DevOps Agent.
+    IMPORTANT: Always provide REAL, PRODUCTION-READY code. Never use placeholder comments or descriptive text about what code would do.
+    When you create code files, they will be DIRECTLY INTEGRATED into the project and must be fully functional.`,
     
     'frontend': `You are the Frontend Agent in a software development team.
     Respond in character as an expert frontend developer. Your expertise is in creating intuitive user interfaces and responsive designs.
-    You work with other agents, particularly looking to the Architect Agent for direction and collaborating with the Backend Agent for integration.`,
+    You work with other agents, particularly looking to the Architect Agent for direction and collaborating with the Backend Agent for integration.
+    IMPORTANT: Always provide REAL, PRODUCTION-READY code. Never use placeholder comments or descriptive text about what code would do.
+    When you create code files, they will be DIRECTLY INTEGRATED into the project and must be fully functional.`,
     
     'backend': `You are the Backend Agent in a software development team.
     Respond in character as a skilled backend developer. Your expertise is in creating robust APIs, database design, and server-side logic.
-    You work with other agents, implementing the architectural design from the Architect Agent and providing APIs for the Frontend Agent.`,
+    You work with other agents, implementing the architectural design from the Architect Agent and providing APIs for the Frontend Agent.
+    IMPORTANT: Always provide REAL, PRODUCTION-READY code. Never use placeholder comments or descriptive text about what code would do.
+    When you create code files, they will be DIRECTLY INTEGRATED into the project and must be fully functional.`,
     
     'testing': `You are the Testing Agent in a software development team.
     Respond in character as a meticulous QA engineer. Your expertise is in ensuring code quality, writing test cases, and finding potential issues.
-    You work with all other agents to verify their work meets requirements and is free of defects.`,
+    You work with all other agents to verify their work meets requirements and is free of defects.
+    IMPORTANT: Always provide REAL, PRODUCTION-READY code. Never use placeholder comments or descriptive text about what code would do.
+    When you create code files, they will be DIRECTLY INTEGRATED into the project and must be fully functional.`,
     
     'devops': `You are the DevOps Agent in a software development team.
     Respond in character as an experienced DevOps engineer. Your expertise is in deployment pipelines, infrastructure, and system reliability.
-    You work with all other agents to ensure the project can be deployed and scaled effectively.`
+    You work with all other agents to ensure the project can be deployed and scaled effectively.
+    IMPORTANT: Always provide REAL, PRODUCTION-READY code. Never use placeholder comments or descriptive text about what code would do.
+    When you create code files, they will be DIRECTLY INTEGRATED into the project and must be fully functional.`
   };
 
   let fullSystemPrompt = systemPrompts[agentType] || 'You are an AI assistant helping with software development.';
@@ -557,7 +568,52 @@ async function callOpenRouter(agentType, prompt, projectContext = {}, taskId = n
   }
 
   const data = await response.json();
-  return data.choices[0].message.content;
+  const content = data.choices[0].message.content;
+  
+  // Filter out descriptive content that isn't real code
+  const filteredContent = filterForProductionCode(content);
+  
+  return filteredContent;
+}
+
+/**
+ * Filter content to ensure it contains real code and not just descriptions
+ */
+function filterForProductionCode(content) {
+  // Check if content has code blocks
+  const hasCodeBlocks = content.includes('```');
+  
+  if (!hasCodeBlocks) {
+    console.log('Warning: Generated content doesn\'t contain any code blocks');
+    // We still return the content as it might be useful text
+    return content;
+  }
+  
+  // Check for descriptive statements that indicate non-implementation
+  const descriptivePatterns = [
+    /I would implement this|I would create|we would need to|we should implement|should be implemented/i,
+    /let\'s design|let\'s create|let\'s implement|let\'s style/i,
+    /First, we need to|Next, we would|This would require/i,
+    /I\'m going to use|We\'re going to use|I would use/i,
+    /This is just a mockup|This is a simplified/i
+  ];
+  
+  let hasDescriptiveWarnings = false;
+  
+  for (const pattern of descriptivePatterns) {
+    if (pattern.test(content)) {
+      console.log(`Warning: Generated content contains descriptive language that may indicate non-implementation: ${pattern}`);
+      hasDescriptiveWarnings = true;
+    }
+  }
+  
+  // Modify content to warn about potential non-implementation if needed
+  if (hasDescriptiveWarnings) {
+    // We'll still return the content, but log a warning
+    console.log('WARNING: Generated content may contain descriptive rather than implementational code');
+  }
+  
+  return content;
 }
 
 /**
@@ -694,12 +750,15 @@ async function processTask(projectId, agentId, agentData, task) {
     .update({ status: 'in_progress', updated_at: new Date().toISOString() })
     .eq('id', task.id);
     
-  // Generate a message about starting the task using AI
+  // Generate a message about starting the task using AI with stronger instructions for real code
   const startResponse = await callOpenRouter(
     agentData.agent_type,
     `Execute the following task: "${task.title}". ${task.description} 
-    Provide a detailed implementation with real code examples that could be used in the project.
-    Remember to use the filepath format for any code examples: \`\`\`filepath:/path/to/file\`\`\`
+    Provide REAL, PRODUCTION-READY implementation with functional code that will be directly added to the project.
+    Your code must be complete and ready to run - not pseudocode or explanations of what code would do.
+    
+    Use the filepath format for code: \`\`\`filepath:/path/to/file\`\`\`
+    
     If your task involves creating other tasks for team members, format them as:
     TASK: [Title]
     ASSIGNED TO: [Agent Type] Agent
@@ -733,6 +792,8 @@ async function processTask(projectId, agentId, agentData, task) {
             updated_at: new Date().toISOString()
           })
           .eq('id', existingFiles[0].id);
+          
+        console.log(`Updated existing file: ${snippet.filePath}`);
       } else {
         // Create new file
         await supabase
@@ -746,6 +807,8 @@ async function processTask(projectId, agentId, agentData, task) {
             created_by: agentData.name,
             last_modified_by: agentData.name
           }]);
+          
+        console.log(`Created new file: ${snippet.filePath}`);
       }
     }
     
@@ -755,6 +818,18 @@ async function processTask(projectId, agentId, agentData, task) {
       .insert([{
         project_id: projectId,
         content: `I've created/updated ${codeSnippets.length} code files as part of this task.`,
+        sender: agentData.name,
+        type: "text"
+      }]);
+  } else {
+    console.log('No valid code snippets found in the response - this may indicate a problem');
+    
+    // Alert about the issue
+    await supabase
+      .from('chat_messages')
+      .insert([{
+        project_id: projectId,
+        content: `Warning: I couldn't extract any valid code snippets from my work on task "${task.title}". This may indicate an issue with my implementation approach.`,
         sender: agentData.name,
         type: "text"
       }]);
@@ -830,485 +905,4 @@ async function processTask(projectId, agentId, agentData, task) {
   // Generate completion message using AI
   const completionResponse = await callOpenRouter(
     agentData.agent_type,
-    `You've completed task: "${task.title}". Provide a summary of what you've accomplished and any recommendations for next steps.
-    Consider how your work might affect other team members' tasks.`,
-    { projectId, taskId: task.id, taskTitle: task.title, taskDescription: task.description }
-  );
-  
-  await supabase
-    .from('chat_messages')
-    .insert([{
-      project_id: projectId,
-      content: completionResponse,
-      sender: agentData.name,
-      type: "text"
-    }]);
-    
-  // Update agent status to idle
-  await supabase
-    .from('agent_statuses')
-    .update({ status: 'idle', progress: 100 })
-    .eq('id', agentId);
-    
-  // Determine if a follow-up task is needed
-  const needsFollowUp = Math.random() > 0.3; // 70% chance of follow-up
-  
-  if (needsFollowUp) {
-    // Generate a follow-up task idea using AI
-    const followUpPrompt = `Based on the completed task "${task.title}" (${task.description}), suggest a logical follow-up task that would be appropriate for your role as the ${agentData.agent_type} agent. Format your response as:
-    TASK: [Title]
-    ASSIGNED TO: [Agent Type] Agent
-    DESCRIPTION: [Details]
-    PRIORITY: [High/Medium/Low]`;
-    
-    try {
-      const followUpResponse = await callOpenRouter(
-        agentData.agent_type,
-        followUpPrompt,
-        { projectId, taskId: task.id, taskTitle: task.title, taskDescription: task.description }
-      );
-      
-      // Extract task information
-      const tasksInfo = extractTasksInfo(followUpResponse);
-      
-      if (tasksInfo.length > 0) {
-        // Find the agent for the task
-        const taskInfo = tasksInfo[0]; // Take the first suggested task
-        const agentType = taskInfo.assignedTo.replace(' Agent', '').toLowerCase();
-        
-        const { data: agents } = await supabase
-          .from('agent_statuses')
-          .select('id')
-          .eq('project_id', projectId)
-          .eq('agent_type', agentType);
-          
-        const assignedToId = agents && agents.length > 0 ? agents[0].id : agentId;
-        
-        // Create the task
-        const { data: newTask, error } = await supabase
-          .from('tasks')
-          .insert([{
-            project_id: projectId,
-            title: taskInfo.title,
-            description: taskInfo.description,
-            assigned_to: assignedToId,
-            status: 'pending',
-            priority: taskInfo.priority.toLowerCase(),
-            parent_task_id: task.id
-          }])
-          .select()
-          .single();
-          
-        if (!error && newTask) {
-          // Announce the follow-up task creation
-          const announcement = await callOpenRouter(
-            agentData.agent_type,
-            `You've identified a follow-up task: "${taskInfo.title}". Briefly explain why this task is important and how it relates to the work you just completed.`,
-            { projectId, taskId: task.id, followUpTaskTitle: taskInfo.title }
-          );
-          
-          await supabase
-            .from('chat_messages')
-            .insert([{
-              project_id: projectId,
-              content: announcement,
-              sender: agentData.name,
-              type: "text"
-            }]);
-        }
-      }
-    } catch (error) {
-      console.error('Error creating follow-up task:', error);
-    }
-  }
-  
-  // Check for other pending tasks and work on them
-  const { data: pendingTasks } = await supabase
-    .from('tasks')
-    .select('*')
-    .eq('project_id', projectId)
-    .eq('assigned_to', agentId)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: true })
-    .limit(1);
-    
-  if (pendingTasks && pendingTasks.length > 0) {
-    console.log(`Agent ${agentData.name} has another pending task: ${pendingTasks[0].title}`);
-    
-    // Update agent status back to working
-    await supabase
-      .from('agent_statuses')
-      .update({ status: 'working', progress: 10 })
-      .eq('id', agentId);
-      
-    // Process the next task after a short delay
-    setTimeout(() => {
-      processTask(projectId, agentId, agentData, pendingTasks[0]).catch(error => {
-        console.error(`Error processing next task: ${error}`);
-      });
-    }, 5000);
-  }
-}
-
-/**
- * Process workflow for an entire project (multiple agents)
- */
-async function processProjectWorkflow(projectId, projectData) {
-  // Update project status
-  await supabase
-    .from('projects')
-    .update({ status: 'in_progress', progress: 10 })
-    .eq('id', projectId);
-    
-  // Fetch all agents for the project
-  const { data: agents, error } = await supabase
-    .from('agent_statuses')
-    .select('*')
-    .eq('project_id', projectId);
-    
-  if (error) {
-    console.error('Error fetching agents:', error);
-    throw new Error(`Failed to fetch agents: ${error.message}`);
-  }
-  
-  // Start with the architect agent for initial planning
-  const architectAgent = agents.find(a => a.agent_type === 'architect');
-  if (architectAgent) {
-    // Update architect to working status
-    await supabase
-      .from('agent_statuses')
-      .update({ status: 'working', progress: 20 })
-      .eq('id', architectAgent.id);
-      
-    // Generate project kickoff message using AI
-    const kickoffResponse = await callOpenRouter(
-      'architect',
-      `You're the architect for a new project named "${projectData.name}". ${projectData.description || ''} 
-      Introduce yourself to the team and outline your initial thoughts on the architecture.
-      Then, create a list of initial tasks that need to be assigned to different agents.
-      Format task assignments as:
-      1. [Task Title] - [Brief Description] - Assigned to: [Agent Type]`,
-      { projectId, projectName: projectData.name, projectDescription: projectData.description }
-    );
-    
-    await supabase
-      .from('chat_messages')
-      .insert([{
-        project_id: projectId,
-        content: kickoffResponse,
-        sender: architectAgent.name,
-        type: 'text'
-      }]);
-      
-    // Parse the architect's tasks and create them
-    try {
-      // Extract task assignments using regex
-      const taskRegex = /\d+\.\s+(.+?)\s+-\s+(.+?)\s+-\s+Assigned to:\s+(\w+)/g;
-      let match;
-      const taskAssignments = [];
-      
-      while ((match = taskRegex.exec(kickoffResponse)) !== null) {
-        taskAssignments.push({
-          title: match[1].trim(),
-          description: match[2].trim(),
-          assignedTo: match[3].toLowerCase()
-        });
-      }
-      
-      // If no tasks were successfully parsed, create default tasks
-      if (taskAssignments.length === 0) {
-        await createInitialTasks(projectId, agents);
-      } else {
-        // Create the parsed tasks
-        for (const taskAssignment of taskAssignments) {
-          // Find the agent with matching type
-          const agent = agents.find(a => 
-            a.agent_type.toLowerCase() === taskAssignment.assignedTo ||
-            a.agent_type.toLowerCase().includes(taskAssignment.assignedTo)
-          );
-          
-          if (agent) {
-            await supabase
-              .from('tasks')
-              .insert([{
-                project_id: projectId,
-                title: taskAssignment.title,
-                description: taskAssignment.description,
-                assigned_to: agent.id,
-                status: 'pending',
-                priority: 'high'
-              }]);
-              
-            console.log(`Created task: ${taskAssignment.title} for agent: ${agent.id}`);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error creating tasks from architect response:', error);
-      await createInitialTasks(projectId, agents);
-    }
-    
-    // Update project progress
-    await supabase
-      .from('projects')
-      .update({ progress: 30 })
-      .eq('id', projectId);
-      
-    // Have each agent acknowledge their tasks
-    for (const agent of agents) {
-      if (agent.id !== architectAgent.id) {
-        // Fetch tasks for this agent
-        const { data: agentTasks } = await supabase
-          .from('tasks')
-          .select('*')
-          .eq('project_id', projectId)
-          .eq('assigned_to', agent.id)
-          .eq('status', 'pending');
-          
-        if (agentTasks && agentTasks.length > 0) {
-          // Generate acknowledgment using AI
-          const acknowledgment = await callOpenRouter(
-            agent.agent_type,
-            `You've been assigned ${agentTasks.length} task(s) for project "${projectData.name}":
-            ${agentTasks.map((t, i) => `${i+1}. ${t.title}: ${t.description}`).join('\n')}
-            
-            Acknowledge these tasks and briefly mention how you plan to approach them.`,
-            { projectId, projectName: projectData.name, agentTasks }
-          );
-          
-          await supabase
-            .from('chat_messages')
-            .insert([{
-              project_id: projectId,
-              content: acknowledgment,
-              sender: agent.name,
-              type: 'text'
-            }]);
-        }
-      }
-    }
-  }
-  
-  // Update project progress
-  await supabase
-    .from('projects')
-    .update({ progress: 50 })
-    .eq('id', projectId);
-}
-
-/**
- * Create initial tasks for agents if the architect doesn't specify them
- */
-async function createInitialTasks(projectId, agentsData) {
-  const taskTypes = [
-    {
-      title: 'System Architecture Planning',
-      description: 'Define the overall system architecture and component structure',
-      agent_type: 'architect',
-      status: 'pending'
-    },
-    {
-      title: 'Frontend Component Design',
-      description: 'Create UI component hierarchy and design system',
-      agent_type: 'frontend',
-      status: 'pending'
-    },
-    {
-      title: 'Backend API Planning',
-      description: 'Plan API endpoints and database schema',
-      agent_type: 'backend',
-      status: 'pending'
-    },
-    {
-      title: 'Test Plan Development',
-      description: 'Create a comprehensive test plan for the application',
-      agent_type: 'testing',
-      status: 'pending'
-    },
-    {
-      title: 'CI/CD Pipeline Planning',
-      description: 'Design the continuous integration and deployment pipeline',
-      agent_type: 'devops',
-      status: 'pending'
-    }
-  ];
-  
-  for (const taskType of taskTypes) {
-    const agent = agentsData.find(a => a.agent_type === taskType.agent_type);
-    if (agent) {
-      await supabase
-        .from('tasks')
-        .insert([{
-          project_id: projectId,
-          title: taskType.title,
-          description: taskType.description,
-          assigned_to: agent.id,
-          status: taskType.status,
-          priority: 'high'
-        }]);
-      
-      console.log(`Created task: ${taskType.title} for agent: ${agent.id}`);
-    }
-  }
-  
-  // Send a message confirming task creation
-  await supabase
-    .from('chat_messages')
-    .insert([{
-      project_id: projectId,
-      content: "I've created initial tasks for our team based on project requirements. Each agent now has specific tasks assigned to their specialty area.",
-      sender: 'Architect Agent',
-      type: 'text'
-    }]);
-}
-
-// Utility functions for default task creation
-function getDefaultTaskTitle(agentType) {
-  switch (agentType) {
-    case 'architect':
-      return 'System Architecture Design';
-    case 'frontend':
-      return 'UI Component Implementation';
-    case 'backend':
-      return 'API Implementation';
-    case 'testing':
-      return 'Test Suite Creation';
-    case 'devops':
-      return 'CI/CD Pipeline Setup';
-    default:
-      return 'Project Task';
-  }
-}
-
-function getDefaultTaskDescription(agentType) {
-  switch (agentType) {
-    case 'architect':
-      return 'Design the overall system architecture including component structure and interactions.';
-    case 'frontend':
-      return 'Implement key UI components based on the design system.';
-    case 'backend':
-      return 'Develop core API endpoints and database models.';
-    case 'testing':
-      return 'Create a comprehensive testing strategy and implement test cases.';
-    case 'devops':
-      return 'Configure deployment pipelines and infrastructure setup.';
-    default:
-      return 'Complete assigned task for the project.';
-  }
-}
-
-// Function to extract code snippets from content
-function extractCodeSnippets(content) {
-  const snippets = [];
-  const regex = /```filepath:(.*?)\n([\s\S]*?)```/g;
-  let match;
-  
-  while ((match = regex.exec(content)) !== null) {
-    snippets.push({
-      filePath: match[1].trim(),
-      code: match[2].trim()
-    });
-  }
-  
-  return snippets;
-}
-
-// Function to extract task information from content - IMPROVED
-function extractTasksInfo(content) {
-  const tasks = [];
-  
-  // Match TASK: format (standard format)
-  const standardRegex = /TASK:\s*(.*?)\nASSIGNED TO:\s*(.*?)\nDESCRIPTION:\s*(.*?)\nPRIORITY:\s*(.*?)(?:\n\n|\n$|$)/gs;
-  let match;
-  
-  while ((match = standardRegex.exec(content)) !== null) {
-    tasks.push({
-      title: match[1].trim(),
-      assignedTo: match[2].trim(),
-      description: match[3].trim(),
-      priority: match[4].trim().toLowerCase()
-    });
-  }
-  
-  // If no tasks found in standard format, try alternative format (for compatibility)
-  if (tasks.length === 0) {
-    const altRegex = /Task:\s*(.*?)\nAssigned to:\s*(.*?)\nDescription:\s*(.*?)\nPriority:\s*(.*?)(?:\n\n|\n$|$)/gis;
-    while ((match = altRegex.exec(content)) !== null) {
-      tasks.push({
-        title: match[1].trim(),
-        assignedTo: match[2].trim(),
-        description: match[3].trim(),
-        priority: match[4].trim().toLowerCase()
-      });
-    }
-  }
-  
-  // Third fallback - look for tasks in a more flexible way
-  if (tasks.length === 0) {
-    // Look for any combination of "task", "assigned", "description", "priority" in flexible order
-    const flexRegex = /(?:task|todo|to-do|task name|title)[\s\:]+([^\n]+)(?:[\s\n]+(?:assigned|agent|assigned to|for)[\s\:]+([^\n]+))?(?:[\s\n]+(?:description|details|task description)[\s\:]+([^\n]+))?(?:[\s\n]+(?:priority|importance)[\s\:]+([^\n]+))?/gis;
-    while ((match = flexRegex.exec(content)) !== null) {
-      // Only add if we can extract at minimum a title
-      if (match[1] && match[1].trim().length > 0) {
-        tasks.push({
-          title: match[1].trim(),
-          assignedTo: (match[2] || 'Architect Agent').trim(),
-          description: (match[3] || match[1]).trim(), // Use title as description if missing
-          priority: (match[4] || 'medium').trim().toLowerCase()
-        });
-      }
-    }
-  }
-  
-  console.log(`Extracted ${tasks.length} tasks from agent response`);
-  return tasks;
-}
-
-// Function to determine the language of a file based on its extension
-function determineLanguage(filePath) {
-  const extension = filePath.split('.').pop()?.toLowerCase();
-  
-  switch (extension) {
-    case 'js':
-      return 'javascript';
-    case 'ts':
-      return 'typescript';
-    case 'jsx':
-      return 'jsx';
-    case 'tsx':
-      return 'tsx';
-    case 'html':
-      return 'html';
-    case 'css':
-      return 'css';
-    case 'json':
-      return 'json';
-    case 'md':
-      return 'markdown';
-    case 'py':
-      return 'python';
-    case 'rb':
-      return 'ruby';
-    case 'go':
-      return 'go';
-    case 'java':
-      return 'java';
-    case 'php':
-      return 'php';
-    case 'c':
-      return 'c';
-    case 'cpp':
-      return 'cpp';
-    case 'cs':
-      return 'csharp';
-    case 'yml':
-    case 'yaml':
-      return 'yaml';
-    case 'sh':
-      return 'bash';
-    case 'sql':
-      return 'sql';
-    default:
-      return 'plaintext';
-  }
-}
+    `You've completed task: "${task.title}". Provide a summary of what you've accomplished and any recommendations
