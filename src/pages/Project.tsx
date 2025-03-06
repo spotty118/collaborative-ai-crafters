@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, createAgents } from "@/lib/api";
+import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, createAgents, updateAgent } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -9,31 +9,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Dashboard from "@/components/layout/Dashboard";
 import { sendAgentPrompt } from "@/lib/openrouter";
+import { startAgentOrchestration, stopAgentOrchestration } from "@/lib/agent/orchestrator";
 import { CodeFile, Message, Project as ProjectType, Agent, Task } from "@/lib/types";
 import { useGitHubContext } from "@/contexts/GitHubContext";
 import { FileEditor } from "@/components/FileEditor";
 import { toast } from "sonner";
-
-interface DashboardProps {
-  project: {
-    name: string;
-    description: string;
-    mode: 'new' | 'existing';
-  };
-  agents: Agent[];
-  tasks: Task[];
-  messages: Message[];
-  activeChat: string | null;
-  onStartAgent: (agentId: string) => void;
-  onStopAgent: (agentId: string) => void;
-  onChatWithAgent: (agentId: string) => void;
-  onSendMessage: (message: string) => void;
-  isLoading: {
-    agents: boolean;
-    tasks: boolean;
-    messages: boolean;
-  };
-}
 
 const Project: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -78,6 +58,17 @@ const Project: React.FC = () => {
     }
   });
 
+  const updateAgentMutation = useMutation({
+    mutationFn: (updates: { id: string, updates: Partial<Agent> }) => 
+      updateAgent(updates.id, updates.updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agents', id] });
+    },
+    onError: (error) => {
+      toast.error(`Failed to update agent: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
   useEffect(() => {
     if (id && agents && agents.length === 0 && !loadingAgents && project) {
       createAgentsMutation.mutate(id);
@@ -90,7 +81,8 @@ const Project: React.FC = () => {
   } = useQuery<Task[]>({
     queryKey: ['tasks', id],
     queryFn: () => id ? getTasks(id) : Promise.resolve([]),
-    enabled: !!id
+    enabled: !!id,
+    refetchInterval: 5000 // Poll for new tasks every 5 seconds
   });
 
   const {
@@ -99,7 +91,8 @@ const Project: React.FC = () => {
   } = useQuery<Message[]>({
     queryKey: ['messages', id, activeChat],
     queryFn: () => id ? getMessages(id) : Promise.resolve([]),
-    enabled: !!id && !!activeChat
+    enabled: !!id && !!activeChat,
+    refetchInterval: activeChat ? 3000 : false // Poll for new messages when in a chat
   });
 
   const { 
@@ -115,92 +108,129 @@ const Project: React.FC = () => {
     mutationFn: (messageData: Message) => createMessage(messageData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', id] });
+    },
+    onError: (error) => {
+      toast.error(`Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });
 
-  useEffect(() => {
-    if (project?.sourceUrl && githubToken && !github.isConnected) {
-      try {
-        github.connect(project.sourceUrl, githubToken);
-      } catch (error) {
-        console.error('Failed to connect to GitHub:', error);
-        toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
-      }
-    }
-  }, [project?.sourceUrl, githubToken, github]);
-
-  useEffect(() => {
-    if (github.isConnected && githubToken) {
-      localStorage.setItem(`github-token-${id}`, githubToken);
-    }
-  }, [github.isConnected, githubToken, id]);
-
-  useEffect(() => {
-    if (id) {
-      const savedToken = localStorage.getItem(`github-token-${id}`);
-      if (savedToken) {
-        setGithubToken(savedToken);
-      }
-    }
-  }, [id]);
-
-  const handleFileClick = async (file: CodeFile) => {
-    if (!github.isConnected) {
-      toast.error('GitHub is not connected. Please configure GitHub access in project settings.');
-      setActiveTab('settings');
+  const handleStartAgent = async (agentId: string) => {
+    if (!id || !project) return;
+    
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent) {
+      toast.error("Agent not found");
       return;
     }
-
+    
     try {
-      const content = await github.getFileContent(file.path);
-      setSelectedFile({
-        ...file,
-        content
+      await updateAgentMutation.mutate({ 
+        id: agentId, 
+        updates: { status: "working", progress: 5 } 
       });
+      
+      const response = await startAgentOrchestration(id, agentId);
+      
+      await createMessageMutation.mutate({
+        project_id: id,
+        content: `I'm now starting work on assigned tasks. I'll update my progress as I complete steps.`,
+        sender: agent.name,
+        type: "text"
+      });
+      
+      toast.success(`${agent.name} started successfully`);
+      
+      queryClient.invalidateQueries({ queryKey: ['agents', id] });
+      queryClient.invalidateQueries({ queryKey: ['tasks', id] });
+      
+      return response;
     } catch (error) {
-      toast.error('Failed to load file content: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      console.error("Error starting agent:", error);
+      
+      await updateAgentMutation.mutate({ 
+        id: agentId, 
+        updates: { status: "idle", progress: 0 } 
+      });
+      
+      throw error;
     }
   };
 
-  const handlePushToGitHub = async () => {
-    if (!github.isConnected) {
-      toast.error('GitHub is not connected. Please configure GitHub access in project settings.');
-      setActiveTab('settings');
+  const handleStopAgent = async (agentId: string) => {
+    if (!id || !project) return;
+    
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent) {
+      toast.error("Agent not found");
       return;
     }
-
-    const loadingToastId = toast.loading('Pushing changes to GitHub...');
-
+    
     try {
-      for (const file of files) {
-        if (file.content) {
-          await github.createOrUpdateFile(file.path, file.content, `chore: sync ${file.path}`);
-        }
-      }
-      toast.dismiss(loadingToastId);
-      toast.success('Successfully pushed changes to GitHub');
+      await updateAgentMutation.mutate({ 
+        id: agentId, 
+        updates: { status: "idle" } 
+      });
+      
+      const response = await stopAgentOrchestration(id, agentId);
+      
+      await createMessageMutation.mutate({
+        project_id: id,
+        content: `I've paused my work. You can resume it anytime.`,
+        sender: agent.name,
+        type: "text"
+      });
+      
+      toast.success(`${agent.name} stopped successfully`);
+      
+      queryClient.invalidateQueries({ queryKey: ['agents', id] });
+      
+      return response;
     } catch (error) {
-      toast.dismiss(loadingToastId);
-      toast.error('Failed to push to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      console.error("Error stopping agent:", error);
+      
+      throw error;
     }
   };
 
-  const handleConnectGitHub = async () => {
-    if (!project?.sourceUrl) {
-      toast.error('No GitHub repository URL configured');
+  const handleRestartAgent = async (agentId: string) => {
+    if (!id || !project) return;
+    
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent) {
+      toast.error("Agent not found");
       return;
     }
-
-    if (!githubToken) {
-      toast.error('Please enter a GitHub token');
-      return;
-    }
-
+    
     try {
-      await github.connect(project.sourceUrl, githubToken);
-      toast.success('Successfully connected to GitHub');
+      await updateAgentMutation.mutate({ 
+        id: agentId, 
+        updates: { status: "working", progress: 5 } 
+      });
+      
+      await createMessageMutation.mutate({
+        project_id: id,
+        content: `I'm restarting my work on assigned tasks.`,
+        sender: agent.name,
+        type: "text"
+      });
+      
+      const response = await startAgentOrchestration(id, agentId);
+      
+      toast.success(`${agent.name} restarted successfully`);
+      
+      queryClient.invalidateQueries({ queryKey: ['agents', id] });
+      queryClient.invalidateQueries({ queryKey: ['tasks', id] });
+      
+      return response;
     } catch (error) {
-      toast.error('Failed to connect to GitHub: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      console.error("Error restarting agent:", error);
+      
+      await updateAgentMutation.mutate({ 
+        id: agentId, 
+        updates: { status: "idle", progress: 0 } 
+      });
+      
+      throw error;
     }
   };
 
@@ -252,6 +282,56 @@ const Project: React.FC = () => {
       
       toast.dismiss(loadingToastId);
       toast.error("Failed to get response from agent.");
+    }
+  };
+
+  const handleExecuteTask = async (taskId: string, agentId: string) => {
+    if (!id || !project) return;
+    
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent) {
+      toast.error("Agent not found");
+      return;
+    }
+    
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) {
+      toast.error("Task not found");
+      return;
+    }
+    
+    const loadingToastId = toast.loading(`Starting task execution...`);
+    
+    try {
+      await updateAgentMutation.mutate({ 
+        id: agentId, 
+        updates: { status: "working", progress: 10 } 
+      });
+      
+      await createMessageMutation.mutate({
+        project_id: id,
+        content: `I'm starting work on the task: ${task.title}`,
+        sender: agent.name,
+        type: "text"
+      });
+      
+      await startAgentOrchestration(id, agentId, taskId);
+      
+      toast.dismiss(loadingToastId);
+      toast.success(`Task execution started: ${task.title}`);
+      
+      queryClient.invalidateQueries({ queryKey: ['agents', id] });
+      queryClient.invalidateQueries({ queryKey: ['tasks', id] });
+    } catch (error) {
+      console.error("Error executing task:", error);
+      
+      toast.dismiss(loadingToastId);
+      toast.error(`Failed to execute task: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      await updateAgentMutation.mutate({ 
+        id: agentId, 
+        updates: { status: "idle", progress: 0 } 
+      });
     }
   };
 
@@ -312,10 +392,12 @@ const Project: React.FC = () => {
               tasks={tasks}
               messages={messages}
               activeChat={activeChat}
-              onStartAgent={() => {}}
-              onStopAgent={() => {}}
+              onStartAgent={handleStartAgent}
+              onStopAgent={handleStopAgent}
+              onRestartAgent={handleRestartAgent}
               onChatWithAgent={handleChatWithAgent}
               onSendMessage={handleSendMessage}
+              onExecuteTask={handleExecuteTask}
               project={{
                 name: project.name,
                 description: project.description,

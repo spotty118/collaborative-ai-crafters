@@ -6,6 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import AgentStatus from "./AgentStatus";
 import { Button } from "@/components/ui/button";
 import { MessageSquare, PlayCircle, PauseCircle, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 
 interface AgentCardProps {
   agent: Agent;
@@ -14,6 +15,7 @@ interface AgentCardProps {
   onStop: (agentId: string) => void;
   onRestart?: (agentId: string) => void;
   isActive?: boolean;
+  isProcessing?: boolean;
 }
 
 const AgentCard: React.FC<AgentCardProps> = ({ 
@@ -22,7 +24,8 @@ const AgentCard: React.FC<AgentCardProps> = ({
   onStart, 
   onStop, 
   onRestart,
-  isActive = false 
+  isActive = false,
+  isProcessing = false
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [progressValue, setProgressValue] = useState(agent.progress || 0);
@@ -41,7 +44,7 @@ const AgentCard: React.FC<AgentCardProps> = ({
         return () => clearTimeout(timer);
       }
     }
-  }, [agent.progress]);
+  }, [agent.progress, progressValue]);
 
   const getAgentColorClass = () => {
     switch (agent.type) {
@@ -57,6 +60,38 @@ const AgentCard: React.FC<AgentCardProps> = ({
         return "border-t-red-500";
       default:
         return "border-t-gray-500";
+    }
+  };
+
+  // Handle starting agent with error handling
+  const handleStartAgent = () => {
+    try {
+      onStart(agent.id);
+    } catch (error) {
+      console.error("Failed to start agent:", error);
+      toast.error(`Failed to start ${agent.name}: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+
+  // Handle stopping agent with error handling
+  const handleStopAgent = () => {
+    try {
+      onStop(agent.id);
+    } catch (error) {
+      console.error("Failed to stop agent:", error);
+      toast.error(`Failed to stop ${agent.name}: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+
+  // Handle restarting agent with error handling
+  const handleRestartAgent = () => {
+    if (onRestart) {
+      try {
+        onRestart(agent.id);
+      } catch (error) {
+        console.error("Failed to restart agent:", error);
+        toast.error(`Failed to restart ${agent.name}: ${error instanceof Error ? error.message : "Unknown error"}`);
+      }
     }
   };
 
@@ -97,6 +132,7 @@ const AgentCard: React.FC<AgentCardProps> = ({
           size="sm"
           className="flex-1 text-xs"
           onClick={() => onChat(agent.id)}
+          disabled={isProcessing}
         >
           <MessageSquare className="mr-1 h-3.5 w-3.5" />
           Chat
@@ -107,7 +143,8 @@ const AgentCard: React.FC<AgentCardProps> = ({
             variant="outline"
             size="sm"
             className="flex-1 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
-            onClick={() => onRestart(agent.id)}
+            onClick={handleRestartAgent}
+            disabled={isProcessing}
           >
             <RefreshCw className="mr-1 h-3.5 w-3.5" />
             Restart
@@ -117,21 +154,22 @@ const AgentCard: React.FC<AgentCardProps> = ({
             variant="outline"
             size="sm"
             className="flex-1 text-xs text-green-600 border-green-200 hover:bg-green-50"
-            onClick={() => onStart(agent.id)}
+            onClick={handleStartAgent}
+            disabled={isProcessing}
           >
             <PlayCircle className="mr-1 h-3.5 w-3.5" />
-            Start
+            {isProcessing ? "Starting..." : "Start"}
           </Button>
         ) : (
           <Button
             variant="outline"
             size="sm"
             className="flex-1 text-xs text-amber-600 border-amber-200 hover:bg-amber-50"
-            onClick={() => onStop(agent.id)}
-            disabled={agent.status === "completed"}
+            onClick={handleStopAgent}
+            disabled={agent.status === "completed" || isProcessing}
           >
             <PauseCircle className="mr-1 h-3.5 w-3.5" />
-            Pause
+            {isProcessing ? "Stopping..." : "Pause"}
           </Button>
         )}
       </CardFooter>

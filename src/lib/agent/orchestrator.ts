@@ -1,37 +1,78 @@
 
-import { Agent, Project, Task } from '@/lib/types';
+import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
 
-// Export everything from the specialized modules
-export {
-  initializeOrchestration 
-} from './orchestrationInitializer';
+/**
+ * Start agent orchestration
+ * 
+ * @param projectId - The project ID
+ * @param agentId - The agent ID to start
+ * @param taskId - Optional specific task ID to execute
+ * @returns Promise with the response
+ */
+export const startAgentOrchestration = async (
+  projectId: string,
+  agentId: string,
+  taskId?: string
+): Promise<any> => {
+  try {
+    console.log(`Starting agent orchestration: Project ${projectId}, Agent ${agentId}`);
+    
+    // Call the Supabase Function for crew orchestration
+    const { data, error } = await supabase.functions.invoke('crew-orchestrator', {
+      body: {
+        projectId,
+        agentId,
+        taskId,
+        action: 'start'
+      }
+    });
+    
+    if (error) {
+      console.error('Orchestration error:', error);
+      throw new Error(`Failed to start agent: ${error.message}`);
+    }
+    
+    console.log('Orchestration response:', data);
+    return data;
+  } catch (error) {
+    console.error('Error in startAgentOrchestration:', error);
+    throw error;
+  }
+};
 
-export {
-  handleTaskCompletion
-} from './taskManagement';
-
-export {
-  startAgentWithOrchestration,
-  restartAgentWithOrchestration,
-  stopAgentWithOrchestration
-} from './agentLifecycle';
-
-// Export CrewAI functions
-export {
-  initializeCrewAI,
-  updateCrewAIOrchestration,
-  handleCrewTaskCompletion,
-  createInitialCrewTasks
-} from './crewAI';
-
-// Export message broker functions
-export {
-  acquireToken,
-  releaseToken,
-  getTokenState,
-  broadcastMessage
-} from './messageBroker';
-
-// The orchestrator now serves as a facade for the agent orchestration system,
-// providing a unified API for the rest of the application while delegating
-// the actual implementation to more specialized modules.
+/**
+ * Stop agent orchestration
+ * 
+ * @param projectId - The project ID
+ * @param agentId - The agent ID to stop
+ * @returns Promise with the response
+ */
+export const stopAgentOrchestration = async (
+  projectId: string,
+  agentId: string
+): Promise<any> => {
+  try {
+    console.log(`Stopping agent orchestration: Project ${projectId}, Agent ${agentId}`);
+    
+    // Call the Supabase Function for crew orchestration
+    const { data, error } = await supabase.functions.invoke('crew-orchestrator', {
+      body: {
+        projectId,
+        agentId,
+        action: 'stop'
+      }
+    });
+    
+    if (error) {
+      console.error('Orchestration error:', error);
+      throw new Error(`Failed to stop agent: ${error.message}`);
+    }
+    
+    console.log('Orchestration response:', data);
+    return data;
+  } catch (error) {
+    console.error('Error in stopAgentOrchestration:', error);
+    throw error;
+  }
+};

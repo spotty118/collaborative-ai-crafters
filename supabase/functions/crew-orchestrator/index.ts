@@ -29,7 +29,7 @@ serve(async (req) => {
     console.log('Request body:', rawBody);
     
     // Parse body again after reading text
-    const { projectId, action = 'start' } = JSON.parse(rawBody);
+    const { projectId, agentId, taskId, action = 'start' } = JSON.parse(rawBody);
     
     if (!projectId) {
       return new Response(
@@ -38,7 +38,7 @@ serve(async (req) => {
       );
     }
     
-    console.log(`Processing ${action} request for project ${projectId}`);
+    console.log(`Processing ${action} request for project ${projectId}, agent ${agentId || 'all'}`);
     
     // Fetch project to send as context
     const { data: projectData, error: projectError } = await supabase
@@ -55,42 +55,93 @@ serve(async (req) => {
       );
     }
     
-    // Fetch agents
-    const { data: agentsData, error: agentsError } = await supabase
-      .from('agent_statuses')
-      .select('*')
-      .eq('project_id', projectId);
+    // Fetch agent if agentId is provided
+    let agentData = null;
+    if (agentId) {
+      const { data, error } = await supabase
+        .from('agent_statuses')
+        .select('*')
+        .eq('id', agentId)
+        .single();
+        
+      if (error) {
+        console.error('Error fetching agent:', error);
+        return new Response(
+          JSON.stringify({ error: `Failed to fetch agent: ${error.message}` }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
       
-    if (agentsError) {
-      console.error('Error fetching agents:', agentsError);
-      return new Response(
-        JSON.stringify({ error: `Failed to fetch agents: ${agentsError.message}` }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      agentData = data;
+    }
+    
+    // Fetch tasks for the agent if specified
+    let tasksData = [];
+    if (agentId) {
+      const query = supabase
+        .from('tasks')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('assigned_to', agentId);
+        
+      if (taskId) {
+        query.eq('id', taskId);
+      } else {
+        query.in('status', ['pending', 'in_progress']);
+      }
+      
+      const { data, error } = await query;
+        
+      if (error) {
+        console.error('Error fetching tasks:', error);
+        return new Response(
+          JSON.stringify({ error: `Failed to fetch tasks: ${error.message}` }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      tasksData = data || [];
     }
     
     // Create initialization message
-    await supabase
-      .from('chat_messages')
-      .insert([{
-        project_id: projectId,
-        content: `CrewAI orchestration ${action === 'start' ? 'started' : 'updated'} for project: ${projectData.name}`,
-        sender: 'System',
-        type: 'text'
-      }]);
+    if (action === 'start') {
+      await supabase
+        .from('chat_messages')
+        .insert([{
+          project_id: projectId,
+          content: agentId 
+            ? `Starting ${agentData?.name || 'Agent'} for project: ${projectData.name}`
+            : `CrewAI orchestration started for project: ${projectData.name}`,
+          sender: agentId ? agentData?.name : 'System',
+          type: 'text'
+        }]);
+    } else if (action === 'stop') {
+      await supabase
+        .from('chat_messages')
+        .insert([{
+          project_id: projectId,
+          content: agentId 
+            ? `Stopping ${agentData?.name || 'Agent'} for project: ${projectData.name}`
+            : `CrewAI orchestration stopped for project: ${projectData.name}`,
+          sender: agentId ? agentData?.name : 'System',
+          type: 'text'
+        }]);
+    }
     
     // Generate immediate response to client
     const response = new Response(
       JSON.stringify({ 
         success: true, 
-        message: `CrewAI orchestration ${action} initiated for project ${projectId}`,
-        project: projectData?.name || 'Unknown Project'
+        message: `CrewAI orchestration ${action} initiated for ${agentId ? 'agent' : 'project'} ${agentId || projectId}`,
+        project: projectData?.name || 'Unknown Project',
+        agent: agentData?.name || null,
+        tasks: tasksData?.length || 0
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
     
     // Process orchestration asynchronously (don't await this)
-    processOrchestration(projectId, projectData, agentsData, action).catch(error => {
+    processOrchestration(projectId, projectData, agentId, agentData, tasksData, action).catch(error => {
       console.error('Error in asynchronous orchestration processing:', error);
     });
     
@@ -114,46 +165,27 @@ serve(async (req) => {
 /**
  * Process the orchestration asynchronously
  */
-async function processOrchestration(projectId, projectData, agentsData, action) {
+async function processOrchestration(projectId, projectData, agentId, agentData, tasksData, action) {
   console.log(`Starting asynchronous orchestration processing for project ${projectId}`);
   
   try {
-    // Update project status
-    await supabase
-      .from('projects')
-      .update({ status: 'in_progress', progress: 10 })
-      .eq('id', projectId);
-      
-    // Update agents to 'working' status
-    for (const agent of agentsData) {
-      await supabase
-        .from('agent_statuses')
-        .update({ status: 'working' })
-        .eq('id', agent.id);
-      
-      console.log(`Updated agent ${agent.id} (${agent.name}) to working status`);
+    if (action === 'start') {
+      if (agentId) {
+        // Single agent workflow
+        await processAgentWorkflow(projectId, agentId, agentData, tasksData);
+      } else {
+        // Full project workflow
+        await processProjectWorkflow(projectId, projectData);
+      }
+    } else if (action === 'stop') {
+      if (agentId) {
+        // Stop single agent
+        await stopAgent(projectId, agentId);
+      } else {
+        // Stop all agents in the project
+        await stopProject(projectId);
+      }
     }
-    
-    // Send a message that orchestration is initializing
-    await supabase
-      .from('chat_messages')
-      .insert([{
-        project_id: projectId,
-        content: "Initializing AI agent team with CrewAI framework. Agents will work through tasks in sequence and communicate their progress.",
-        sender: 'Architect Agent',
-        type: 'text'
-      }]);
-    
-    console.log('CrewAI orchestration initialized successfully');
-    
-    // Create initial tasks
-    await createInitialTasks(projectId, agentsData);
-    
-    // Begin agent progress simulation
-    simulateAgentProgress(projectId, agentsData).catch(error => {
-      console.error('Error in agent progress simulation:', error);
-    });
-    
   } catch (error) {
     console.error('Error in asynchronous orchestration processing:', error);
     
@@ -161,77 +193,345 @@ async function processOrchestration(projectId, projectData, agentsData, action) 
       .from('chat_messages')
       .insert([{
         project_id: projectId,
-        content: `Error initializing orchestration: ${error.message}`,
+        content: `Error in orchestration: ${error.message}`,
         sender: 'System',
         type: 'text'
       }]);
       
-    // Reset project and agent status on error
-    await supabase
-      .from('projects')
-      .update({ status: 'idle', progress: 0 })
-      .eq('id', projectId);
-      
-    for (const agent of agentsData) {
+    // Reset agent status on error if agentId provided
+    if (agentId) {
       await supabase
         .from('agent_statuses')
-        .update({ status: 'idle' })
-        .eq('id', agent.id);
+        .update({ status: 'idle', progress: 0 })
+        .eq('id', agentId);
     }
   }
 }
 
 /**
- * Create the initial tasks for agents
+ * Stop all agents in a project
+ */
+async function stopProject(projectId) {
+  // Update project status
+  await supabase
+    .from('projects')
+    .update({ status: 'idle' })
+    .eq('id', projectId);
+    
+  // Update all agents in the project to idle status
+  await supabase
+    .from('agent_statuses')
+    .update({ status: 'idle' })
+    .eq('project_id', projectId);
+    
+  console.log(`Stopped all agents for project ${projectId}`);
+}
+
+/**
+ * Stop a specific agent
+ */
+async function stopAgent(projectId, agentId) {
+  // Update the agent to idle status
+  await supabase
+    .from('agent_statuses')
+    .update({ status: 'idle' })
+    .eq('id', agentId);
+    
+  // Update any in-progress tasks for this agent to pending
+  await supabase
+    .from('tasks')
+    .update({ status: 'pending' })
+    .eq('assigned_to', agentId)
+    .eq('status', 'in_progress');
+    
+  console.log(`Stopped agent ${agentId} for project ${projectId}`);
+}
+
+/**
+ * Process workflow for a single agent
+ */
+async function processAgentWorkflow(projectId, agentId, agentData, tasksData) {
+  console.log(`Processing workflow for agent ${agentId} with ${tasksData.length} tasks`);
+  
+  // If no tasks, create a default task for the agent
+  if (tasksData.length === 0) {
+    // Create a default task based on agent type
+    const taskTitle = getDefaultTaskTitle(agentData.agent_type);
+    const taskDesc = getDefaultTaskDescription(agentData.agent_type);
+    
+    const { data: newTask, error } = await supabase
+      .from('tasks')
+      .insert([{
+        project_id: projectId,
+        title: taskTitle,
+        description: taskDesc,
+        assigned_to: agentId,
+        status: 'pending',
+        priority: 'high'
+      }])
+      .select()
+      .single();
+      
+    if (error) {
+      console.error('Error creating default task:', error);
+      throw new Error(`Failed to create default task: ${error.message}`);
+    }
+    
+    tasksData = [newTask];
+    
+    await supabase
+      .from('chat_messages')
+      .insert([{
+        project_id: projectId,
+        content: `I've created a new task: ${taskTitle}`,
+        sender: agentData.name,
+        type: 'text'
+      }]);
+  }
+  
+  // Update agent status to working
+  await supabase
+    .from('agent_statuses')
+    .update({ status: 'working', progress: 10 })
+    .eq('id', agentId);
+    
+  // Process each task in sequence
+  for (const task of tasksData) {
+    await processTask(projectId, agentId, agentData, task);
+  }
+  
+  // Final update to agent
+  await supabase
+    .from('agent_statuses')
+    .update({ status: 'completed', progress: 100 })
+    .eq('id', agentId);
+    
+  // Add completion message
+  await supabase
+    .from('chat_messages')
+    .insert([{
+      project_id: projectId,
+      content: `I've completed all assigned tasks for this project.`,
+      sender: agentData.name,
+      type: 'text'
+    }]);
+}
+
+/**
+ * Process a specific task
+ */
+async function processTask(projectId, agentId, agentData, task) {
+  console.log(`Processing task ${task.id}: ${task.title}`);
+  
+  // Update task status to in_progress
+  await supabase
+    .from('tasks')
+    .update({ status: 'in_progress', updated_at: new Date().toISOString() })
+    .eq('id', task.id);
+    
+  // Send a message about starting the task
+  await supabase
+    .from('chat_messages')
+    .insert([{
+      project_id: projectId,
+      content: `I'm working on task: ${task.title}. ${task.description}`,
+      sender: agentData.name,
+      type: 'text'
+    }]);
+    
+  // Update agent progress to show we're working on the task
+  await supabase
+    .from('agent_statuses')
+    .update({ progress: 30 })
+    .eq('id', agentId);
+    
+  // Simulate work with a delay
+  await new Promise(resolve => setTimeout(resolve, 3000));
+  
+  // Mid-progress update
+  await supabase
+    .from('agent_statuses')
+    .update({ progress: 60 })
+    .eq('id', agentId);
+    
+  // Add a progress message
+  await supabase
+    .from('chat_messages')
+    .insert([{
+      project_id: projectId,
+      content: getProgressMessage(agentData.agent_type, task.title),
+      sender: agentData.name,
+      type: 'text'
+    }]);
+    
+  // Simulate more work with a delay
+  await new Promise(resolve => setTimeout(resolve, 3000));
+  
+  // Complete the task
+  await supabase
+    .from('tasks')
+    .update({ 
+      status: 'completed', 
+      updated_at: new Date().toISOString(),
+      completed_at: new Date().toISOString()
+    })
+    .eq('id', task.id);
+    
+  // Send a message about completing the task
+  await supabase
+    .from('chat_messages')
+    .insert([{
+      project_id: projectId,
+      content: getCompletionMessage(agentData.agent_type, task.title),
+      sender: agentData.name,
+      type: 'text'
+    }]);
+    
+  // Create a follow-up task if appropriate (for a real workflow)
+  const followUpTask = getFollowUpTask(projectId, task, agentData.agent_type);
+  if (followUpTask) {
+    const { data: newTask, error } = await supabase
+      .from('tasks')
+      .insert([followUpTask])
+      .select()
+      .single();
+      
+    if (!error && newTask) {
+      await supabase
+        .from('chat_messages')
+        .insert([{
+          project_id: projectId,
+          content: `I've created a follow-up task: ${followUpTask.title}`,
+          sender: agentData.name,
+          type: 'text'
+        }]);
+    }
+  }
+}
+
+/**
+ * Process workflow for an entire project (multiple agents)
+ */
+async function processProjectWorkflow(projectId, projectData) {
+  // Update project status
+  await supabase
+    .from('projects')
+    .update({ status: 'in_progress', progress: 10 })
+    .eq('id', projectId);
+    
+  // Fetch all agents for the project
+  const { data: agents, error } = await supabase
+    .from('agent_statuses')
+    .select('*')
+    .eq('project_id', projectId);
+    
+  if (error) {
+    console.error('Error fetching agents:', error);
+    throw new Error(`Failed to fetch agents: ${error.message}`);
+  }
+  
+  // Start with the architect agent
+  const architectAgent = agents.find(a => a.agent_type === 'architect');
+  if (architectAgent) {
+    // Update architect to working status
+    await supabase
+      .from('agent_statuses')
+      .update({ status: 'working', progress: 20 })
+      .eq('id', architectAgent.id);
+      
+    // Fetch or create tasks for the architect agent
+    const { data: architectTasks, error: tasksError } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('project_id', projectId)
+      .eq('assigned_to', architectAgent.id);
+      
+    if (tasksError) {
+      console.error('Error fetching architect tasks:', tasksError);
+      throw new Error(`Failed to fetch architect tasks: ${tasksError.message}`);
+    }
+    
+    let tasks = architectTasks || [];
+    
+    // If no tasks, create default ones
+    if (tasks.length === 0) {
+      await createInitialTasks(projectId, agents);
+      
+      // Fetch tasks again
+      const { data: newTasks } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('assigned_to', architectAgent.id);
+        
+      tasks = newTasks || [];
+    }
+    
+    // Process architect tasks
+    for (const task of tasks) {
+      await processTask(projectId, architectAgent.id, architectAgent, task);
+    }
+  }
+  
+  // Update project progress
+  await supabase
+    .from('projects')
+    .update({ progress: 50 })
+    .eq('id', projectId);
+}
+
+/**
+ * Create initial tasks for agents
  */
 async function createInitialTasks(projectId, agentsData) {
   const taskTypes = [
     {
       title: 'System Architecture Planning',
       description: 'Define the overall system architecture and component structure',
-      assigned_to: agentsData.find(a => a.agent_type === 'architect')?.id,
+      agent_type: 'architect',
       status: 'pending'
     },
     {
       title: 'Frontend Component Design',
       description: 'Create UI component hierarchy and design system',
-      assigned_to: agentsData.find(a => a.agent_type === 'frontend')?.id,
+      agent_type: 'frontend',
       status: 'pending'
     },
     {
       title: 'Backend API Planning',
       description: 'Plan API endpoints and database schema',
-      assigned_to: agentsData.find(a => a.agent_type === 'backend')?.id,
+      agent_type: 'backend',
       status: 'pending'
     },
     {
       title: 'Test Plan Development',
       description: 'Create a comprehensive test plan for the application',
-      assigned_to: agentsData.find(a => a.agent_type === 'testing')?.id,
+      agent_type: 'testing',
       status: 'pending'
     },
     {
       title: 'CI/CD Pipeline Planning',
       description: 'Design the continuous integration and deployment pipeline',
-      assigned_to: agentsData.find(a => a.agent_type === 'devops')?.id,
+      agent_type: 'devops',
       status: 'pending'
     }
   ];
   
-  for (const task of taskTypes) {
-    if (task.assigned_to) {
+  for (const taskType of taskTypes) {
+    const agent = agentsData.find(a => a.agent_type === taskType.agent_type);
+    if (agent) {
       await supabase
         .from('tasks')
         .insert([{
           project_id: projectId,
-          title: task.title,
-          description: task.description,
-          assigned_to: task.assigned_to,
-          status: task.status,
+          title: taskType.title,
+          description: taskType.description,
+          assigned_to: agent.id,
+          status: taskType.status,
           priority: 'high'
         }]);
       
-      console.log(`Created task: ${task.title} for agent: ${task.assigned_to}`);
+      console.log(`Created task: ${taskType.title} for agent: ${agent.id}`);
     }
   }
   
@@ -240,145 +540,106 @@ async function createInitialTasks(projectId, agentsData) {
     .from('chat_messages')
     .insert([{
       project_id: projectId,
-      content: "I've created initial tasks for our team based on project requirements. Each agent now has specific tasks assigned to their specialty area. Let's begin working on these systematically.",
+      content: "I've created initial tasks for our team based on project requirements. Each agent now has specific tasks assigned to their specialty area.",
       sender: 'Architect Agent',
       type: 'text'
     }]);
 }
 
-/**
- * Simulate agent progress over time
- */
-async function simulateAgentProgress(projectId, agentsData) {
-  console.log(`Starting agent progress simulation for project ${projectId}`);
-  
-  try {
-    // Add a delay to simulate initial work
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    
-    // Update architect agent first
-    const architectAgent = agentsData.find(a => a.agent_type === 'architect');
-    if (architectAgent) {
-      // Get architect's tasks
-      const { data: architectTasks } = await supabase
-        .from('tasks')
-        .select('*')
-        .eq('assigned_to', architectAgent.id)
-        .eq('status', 'pending');
-        
-      if (architectTasks && architectTasks.length > 0) {
-        // Update the first task to in_progress
-        await supabase
-          .from('tasks')
-          .update({ status: 'in_progress' })
-          .eq('id', architectTasks[0].id);
-          
-        // Send a message about starting the task
-        await supabase
-          .from('chat_messages')
-          .insert([{
-            project_id: projectId,
-            content: `I'm starting work on the ${architectTasks[0].title}. I'll first analyze the project requirements and determine the best architecture approach for this project.`,
-            sender: 'Architect Agent',
-            type: 'text'
-          }]);
-          
-        // Wait a bit to simulate work
-        await new Promise(resolve => setTimeout(resolve, 8000));
-        
-        // Update architect's task to completed
-        await supabase
-          .from('tasks')
-          .update({ 
-            status: 'completed',
-            updated_at: new Date().toISOString(),
-            completed_at: new Date().toISOString()
-          })
-          .eq('id', architectTasks[0].id);
-          
-        // Send a message about completing the task
-        await supabase
-          .from('chat_messages')
-          .insert([{
-            project_id: projectId,
-            content: `I've completed the system architecture planning. Based on the project requirements, I recommend a modular architecture with clear separation of concerns. The frontend will use component-based design, while the backend will implement a RESTful API structure.`,
-            sender: 'Architect Agent',
-            type: 'text'
-          }]);
-          
-        // Update architect's progress
-        await supabase
-          .from('agent_statuses')
-          .update({ progress: 30 })
-          .eq('id', architectAgent.id);
-      }
-    }
-    
-    // Start frontend agent work next
-    const frontendAgent = agentsData.find(a => a.agent_type === 'frontend');
-    if (frontendAgent) {
-      // Get frontend tasks
-      const { data: frontendTasks } = await supabase
-        .from('tasks')
-        .select('*')
-        .eq('assigned_to', frontendAgent.id)
-        .eq('status', 'pending');
-        
-      if (frontendTasks && frontendTasks.length > 0) {
-        // Update the first task to in_progress
-        await supabase
-          .from('tasks')
-          .update({ status: 'in_progress' })
-          .eq('id', frontendTasks[0].id);
-          
-        // Send a message about starting the task
-        await supabase
-          .from('chat_messages')
-          .insert([{
-            project_id: projectId,
-            content: `I'll begin working on the frontend component design based on the architecture that the Architect Agent has proposed.`,
-            sender: 'Frontend Agent',
-            type: 'text'
-          }]);
-          
-        // Wait a bit to simulate work
-        await new Promise(resolve => setTimeout(resolve, 6000));
-        
-        // Update project progress
-        await supabase
-          .from('projects')
-          .update({ progress: 25 })
-          .eq('id', projectId);
-      }
-    }
-    
-    // Update backend agent status
-    const backendAgent = agentsData.find(a => a.agent_type === 'backend');
-    if (backendAgent) {
-      await supabase
-        .from('agent_statuses')
-        .update({ progress: 15 })
-        .eq('id', backendAgent.id);
-        
-      await supabase
-        .from('chat_messages')
-        .insert([{
-          project_id: projectId,
-          content: `I'm analyzing the database requirements for this project. I'll be working on the API design next.`,
-          sender: 'Backend Agent',
-          type: 'text'
-        }]);
-    }
-  } catch (error) {
-    console.error('Error in agent progress simulation:', error);
-    
-    await supabase
-      .from('chat_messages')
-      .insert([{
-        project_id: projectId,
-        content: `Error in agent simulation: ${error.message}`,
-        sender: 'System',
-        type: 'text'
-      }]);
+// Utility functions
+
+function getDefaultTaskTitle(agentType) {
+  switch (agentType) {
+    case 'architect':
+      return 'System Architecture Design';
+    case 'frontend':
+      return 'UI Component Implementation';
+    case 'backend':
+      return 'API Implementation';
+    case 'testing':
+      return 'Test Suite Creation';
+    case 'devops':
+      return 'CI/CD Pipeline Setup';
+    default:
+      return 'Project Task';
   }
+}
+
+function getDefaultTaskDescription(agentType) {
+  switch (agentType) {
+    case 'architect':
+      return 'Design the overall system architecture including component structure and interactions.';
+    case 'frontend':
+      return 'Implement key UI components based on the design system.';
+    case 'backend':
+      return 'Develop core API endpoints and database models.';
+    case 'testing':
+      return 'Create a comprehensive testing strategy and implement test cases.';
+    case 'devops':
+      return 'Configure deployment pipelines and infrastructure setup.';
+    default:
+      return 'Complete assigned task for the project.';
+  }
+}
+
+function getProgressMessage(agentType, taskTitle) {
+  switch (agentType) {
+    case 'architect':
+      return `I'm making good progress on the architecture design. I've defined the core components and their interactions.`;
+    case 'frontend':
+      return `The UI implementation is progressing well. I've completed the basic component structure and working on the interactivity.`;
+    case 'backend':
+      return `I've defined the data models and started implementing the core API endpoints.`;
+    case 'testing':
+      return `The test plan is taking shape. I've outlined the key test scenarios and started writing test cases.`;
+    case 'devops':
+      return `I'm configuring the deployment pipeline and setting up the required infrastructure.`;
+    default:
+      return `Making good progress on ${taskTitle}. Continuing with the implementation.`;
+  }
+}
+
+function getCompletionMessage(agentType, taskTitle) {
+  switch (agentType) {
+    case 'architect':
+      return `I've completed the architecture design. The system will use a microservices approach with clear separations of concerns between frontend and backend components.`;
+    case 'frontend':
+      return `I've completed the UI implementation. The components are responsive and follow the design system guidelines.`;
+    case 'backend':
+      return `The API implementation is complete. All endpoints are working as expected and properly documented.`;
+    case 'testing':
+      return `The test suite is ready. It includes unit tests, integration tests, and end-to-end tests to ensure code quality.`;
+    case 'devops':
+      return `The CI/CD pipeline is set up and ready for use. It includes automated testing, building, and deployment steps.`;
+    default:
+      return `I've completed the task: ${taskTitle}. All requirements have been met and the deliverables are ready.`;
+  }
+}
+
+function getFollowUpTask(projectId, completedTask, agentType) {
+  // Only create follow-up tasks for certain agent types or completed tasks
+  if (agentType === 'architect' && completedTask.title.includes('Architecture')) {
+    return {
+      project_id: projectId,
+      title: 'Component Interaction Design',
+      description: 'Design how components will interact and communicate with each other in the system',
+      assigned_to: completedTask.assigned_to,
+      status: 'pending',
+      priority: 'high'
+    };
+  }
+  
+  if (agentType === 'frontend' && completedTask.title.includes('Component Design')) {
+    return {
+      project_id: projectId,
+      title: 'Frontend Component Implementation',
+      description: 'Implement the designed UI components using the project frontend framework',
+      assigned_to: completedTask.assigned_to,
+      status: 'pending',
+      priority: 'high'
+    };
+  }
+  
+  // For other cases, don't create follow-up tasks
+  return null;
 }

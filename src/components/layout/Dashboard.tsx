@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import AgentCard from "@/components/agents/AgentCard";
 import TaskList from "@/components/ui/TaskList";
@@ -11,6 +10,7 @@ import { SendHorizontal, Menu, LayoutPanelLeft, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { toast } from "sonner";
 
 interface DashboardProps {
   agents: Agent[];
@@ -51,6 +51,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 }) => {
   const [chatMessage, setChatMessage] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [processingAgents, setProcessingAgents] = useState<Record<string, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<string>("chat");
@@ -59,6 +60,47 @@ const Dashboard: React.FC<DashboardProps> = ({
     if (chatMessage.trim() && activeChat) {
       onSendMessage(chatMessage);
       setChatMessage("");
+    }
+  };
+
+  const handleStartAgent = async (agentId: string) => {
+    try {
+      setProcessingAgents(prev => ({ ...prev, [agentId]: true }));
+      await onStartAgent(agentId);
+      toast.success(`Agent started successfully`);
+    } catch (error) {
+      console.error("Error starting agent:", error);
+      toast.error(`Failed to start agent: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally {
+      setProcessingAgents(prev => ({ ...prev, [agentId]: false }));
+    }
+  };
+
+  const handleStopAgent = async (agentId: string) => {
+    try {
+      setProcessingAgents(prev => ({ ...prev, [agentId]: true }));
+      await onStopAgent(agentId);
+      toast.success(`Agent stopped successfully`);
+    } catch (error) {
+      console.error("Error stopping agent:", error);
+      toast.error(`Failed to stop agent: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally {
+      setProcessingAgents(prev => ({ ...prev, [agentId]: false }));
+    }
+  };
+
+  const handleRestartAgent = async (agentId: string) => {
+    if (onRestartAgent) {
+      try {
+        setProcessingAgents(prev => ({ ...prev, [agentId]: true }));
+        await onRestartAgent(agentId);
+        toast.success(`Agent restarted successfully`);
+      } catch (error) {
+        console.error("Error restarting agent:", error);
+        toast.error(`Failed to restart agent: ${error instanceof Error ? error.message : "Unknown error"}`);
+      } finally {
+        setProcessingAgents(prev => ({ ...prev, [agentId]: false }));
+      }
     }
   };
 
@@ -165,10 +207,11 @@ const Dashboard: React.FC<DashboardProps> = ({
                   key={agent.id}
                   agent={agent}
                   onChat={onChatWithAgent}
-                  onStart={onStartAgent}
-                  onStop={onStopAgent}
-                  onRestart={onRestartAgent}
+                  onStart={handleStartAgent}
+                  onStop={handleStopAgent}
+                  onRestart={onRestartAgent ? handleRestartAgent : undefined}
                   isActive={activeChat === agent.id}
+                  isProcessing={!!processingAgents[agent.id]}
                 />
               ))}
             </div>
