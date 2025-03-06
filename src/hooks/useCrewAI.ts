@@ -25,7 +25,8 @@ export function useCrewAI(options?: UseCrewAIOptions) {
     
     setIsInitializing(true);
     try {
-      const result = await initializeCrewAI(project);
+      // Pass project.id instead of the whole project object
+      const result = await initializeCrewAI(project.id);
       if (result) {
         toast.success('CrewAI orchestration initialized successfully');
         options?.onSuccess?.();
@@ -43,7 +44,7 @@ export function useCrewAI(options?: UseCrewAIOptions) {
     }
   }, [options]);
   
-  const updateCrew = useCallback(async (project: Project) => {
+  const updateCrew = useCallback(async (project: Project, updates: any) => {
     if (!project.id) {
       toast.error('Cannot update CrewAI without a valid project');
       return false;
@@ -51,7 +52,8 @@ export function useCrewAI(options?: UseCrewAIOptions) {
     
     setIsUpdating(true);
     try {
-      const result = await updateCrewAIOrchestration(project);
+      // Pass project.id and updates as separate parameters
+      const result = await updateCrewAIOrchestration(project.id, updates);
       if (result) {
         toast.success('CrewAI orchestration updated successfully');
         options?.onSuccess?.();
@@ -76,7 +78,9 @@ export function useCrewAI(options?: UseCrewAIOptions) {
     }
     
     try {
-      await handleCrewTaskCompletion(agent, taskId, project);
+      // Pass project.id, taskId, and any result object instead of agent, taskId, project
+      const result = { agentId: agent.id, agentName: agent.name };
+      await handleCrewTaskCompletion(project.id, taskId, result);
       toast.success(`Task completed by ${agent.name}`);
       return true;
     } catch (error) {

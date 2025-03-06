@@ -147,7 +147,8 @@ const Project: React.FC = () => {
     }
 
     try {
-      await github.connect(githubToken);
+      const repoUrl = project?.sourceUrl || '';
+      await github.connect(repoUrl, githubToken);
       setGithubToken("");
       toast.success("GitHub connected successfully");
     } catch (error) {
