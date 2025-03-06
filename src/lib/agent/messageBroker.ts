@@ -8,6 +8,10 @@ import { toast } from 'sonner';
 let communicationToken: string | null = null;
 let tokenHolderAgent: string | null = null;
 
+// Track recent broadcasts to prevent duplicates
+const recentBroadcasts = new Map<string, number>();
+const BROADCAST_COOLDOWN_MS = 30000; // 30 seconds cooldown between identical broadcasts
+
 /**
  * Acquire the communication token for an agent to begin/continue communication
  */
@@ -48,6 +52,28 @@ export const broadcastMessage = async (
   priority: number = 2
 ): Promise<void> => {
   try {
+    // Create a unique key for this broadcast to prevent duplicates
+    const broadcastKey = `${sourceAgent.id}-${message}`;
+    const now = Date.now();
+    
+    // Check if this is a duplicate broadcast within the cooldown period
+    const lastBroadcastTime = recentBroadcasts.get(broadcastKey);
+    if (lastBroadcastTime && (now - lastBroadcastTime) < BROADCAST_COOLDOWN_MS) {
+      console.log(`Skipping duplicate broadcast from ${sourceAgent.name}: "${message.substring(0, 30)}..."`);
+      return;
+    }
+    
+    // Record this broadcast to prevent duplicates
+    recentBroadcasts.set(broadcastKey, now);
+    
+    // Clean up old broadcast records (older than 5 minutes)
+    const CLEANUP_THRESHOLD = 5 * 60 * 1000; // 5 minutes
+    for (const [key, timestamp] of recentBroadcasts.entries()) {
+      if (now - timestamp > CLEANUP_THRESHOLD) {
+        recentBroadcasts.delete(key);
+      }
+    }
+    
     // Get all agents
     const allAgents = project.agents || await getAgents(project.id);
     
