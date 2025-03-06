@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import { Task, Agent } from "@/lib/types";
 import { CheckCircle2, Circle, Clock, AlertCircle, RotateCw, Play } from "lucide-react";
@@ -13,54 +12,86 @@ interface TaskListProps {
 }
 
 const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, className }) => {
-  // State to track which tasks have already been displayed
-  const [displayedTaskIds, setDisplayedTaskIds] = useState<Set<string>>(new Set());
+  const [displayedTaskMap, setDisplayedTaskMap] = useState<Map<string, Set<string>>>(new Map());
   
-  // Filter out duplicate tasks based on title
   const uniqueTasks = tasks.reduce((acc: Task[], task) => {
-    // Skip tasks we've already displayed
-    if (displayedTaskIds.has(task.id)) {
-      return acc;
-    }
+    const normalizedTitle = task.title.toLowerCase().replace(/[^\w\s]/g, '').trim();
     
-    // Check if we already have a task with the same title
-    const existingTask = acc.find(t => t.title === task.title);
-    if (existingTask) {
-      // If the existing task is older, replace it with the newer one
-      if (new Date(existingTask.created_at) < new Date(task.created_at)) {
-        // Remove the older task
-        const taskIndex = acc.findIndex(t => t.id === existingTask.id);
-        if (taskIndex !== -1) {
-          acc.splice(taskIndex, 1);
+    if (displayedTaskMap.has(normalizedTitle)) {
+      const taskIds = displayedTaskMap.get(normalizedTitle);
+      if (taskIds && taskIds.has(task.id)) {
+        return acc;
+      }
+      
+      const existingTaskIndex = acc.findIndex(t => 
+        t.title.toLowerCase().replace(/[^\w\s]/g, '').trim() === normalizedTitle
+      );
+      
+      if (existingTaskIndex !== -1) {
+        const existingTask = acc[existingTaskIndex];
+        if (new Date(existingTask.created_at) < new Date(task.created_at)) {
+          acc.splice(existingTaskIndex, 1);
+          const updatedTaskIds = new Set(displayedTaskMap.get(normalizedTitle) || []);
+          updatedTaskIds.add(task.id);
+          setDisplayedTaskMap(prev => {
+            const newMap = new Map(prev);
+            newMap.set(normalizedTitle, updatedTaskIds);
+            return newMap;
+          });
+          acc.push(task);
+        } else {
+          const updatedTaskIds = new Set(displayedTaskMap.get(normalizedTitle) || []);
+          updatedTaskIds.add(task.id);
+          setDisplayedTaskMap(prev => {
+            const newMap = new Map(prev);
+            newMap.set(normalizedTitle, updatedTaskIds);
+            return newMap;
+          });
         }
-        // Add this task and its ID to displayed tasks
-        acc.push(task);
-        setDisplayedTaskIds(prev => {
-          const newSet = new Set(prev);
-          newSet.add(task.id);
-          return newSet;
-        });
       } else {
-        // Add the ID to displayed tasks
-        setDisplayedTaskIds(prev => {
-          const newSet = new Set(prev);
-          newSet.add(task.id);
-          return newSet;
+        const updatedTaskIds = new Set(displayedTaskMap.get(normalizedTitle) || []);
+        updatedTaskIds.add(task.id);
+        setDisplayedTaskMap(prev => {
+          const newMap = new Map(prev);
+          newMap.set(normalizedTitle, updatedTaskIds);
+          return newMap;
         });
+        acc.push(task);
       }
     } else {
-      // This is a unique task title, add it
-      acc.push(task);
-      setDisplayedTaskIds(prev => {
-        const newSet = new Set(prev);
-        newSet.add(task.id);
-        return newSet;
+      setDisplayedTaskMap(prev => {
+        const newMap = new Map(prev);
+        newMap.set(normalizedTitle, new Set([task.id]));
+        return newMap;
       });
+      acc.push(task);
     }
     
     return acc;
   }, []);
   
+  const finalFilteredTasks = uniqueTasks.filter((task, index, self) => {
+    const isDuplicate = self.some((otherTask, otherIndex) => {
+      if (index === otherIndex) return false;
+      
+      if (task.assigned_to === otherTask.assigned_to && 
+          task.status === otherTask.status &&
+          areSimilarDescriptions(task.description, otherTask.description)) {
+        return new Date(task.created_at) < new Date(otherTask.created_at);
+      }
+      return false;
+    });
+    
+    return !isDuplicate;
+  });
+
+  function areSimilarDescriptions(desc1: string, desc2: string): boolean {
+    const start1 = desc1.substring(0, 50).toLowerCase();
+    const start2 = desc2.substring(0, 50).toLowerCase();
+    
+    return start1 === start2;
+  }
+
   const getTaskStatusIcon = (status: Task["status"]) => {
     switch (status) {
       case "pending":
@@ -115,12 +146,12 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, 
 
   return (
     <div className={cn("space-y-4", className)}>
-      <h3 className="text-lg font-semibold">Tasks ({uniqueTasks.length})</h3>
+      <h3 className="text-lg font-semibold">Tasks ({finalFilteredTasks.length})</h3>
       <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
-        {uniqueTasks.length === 0 ? (
+        {finalFilteredTasks.length === 0 ? (
           <div className="text-center py-8 text-gray-500">No tasks yet</div>
         ) : (
-          uniqueTasks.map((task) => (
+          finalFilteredTasks.map((task) => (
             <div
               key={task.id}
               className="p-3 border rounded-md bg-white hover:bg-gray-50 transition-colors"

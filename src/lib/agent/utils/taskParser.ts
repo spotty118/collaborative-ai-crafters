@@ -11,26 +11,45 @@ type ParsedTask = {
 
 // Track previously created tasks to avoid duplication within a session
 const taskTitleCache = new Set<string>();
+// Store normalized task titles (lowercase, no punctuation) for better duplicate detection
+const normalizedTitleCache = new Map<string, string>();
 
 /**
  * Clear the task title cache when starting a new analysis session
  */
 export function clearTaskTitleCache(): void {
   taskTitleCache.clear();
+  normalizedTitleCache.clear();
 }
 
 /**
- * Check if a task title has been seen before
+ * Normalize a task title for better duplicate detection
+ */
+function normalizeTitle(title: string): string {
+  return title.toLowerCase().replace(/[^\w\s]/g, '').trim();
+}
+
+/**
+ * Check if a task title has been seen before (with normalization)
  */
 export function isTaskTitleDuplicate(title: string): boolean {
-  return taskTitleCache.has(title);
+  // Check exact matches
+  if (taskTitleCache.has(title)) {
+    return true;
+  }
+  
+  // Check normalized matches
+  const normalized = normalizeTitle(title);
+  return normalizedTitleCache.has(normalized);
 }
 
 /**
  * Record a task title as having been created
  */
 export function recordTaskTitle(title: string): void {
+  // Record both the exact title and normalized version
   taskTitleCache.add(title);
+  normalizedTitleCache.set(normalizeTitle(title), title);
 }
 
 /**
@@ -121,12 +140,23 @@ export function parseTasksFromArchitectResponse(
     description: concise ? `Task assigned to ${task.agentType || 'unspecified'} agent.` : task.description.trim()
   }));
   
-  // Filter out duplicate tasks by title
+  // Filter out duplicate tasks by title with improved normalization
   const uniqueTasks = parsedTasks.filter(task => {
-    if (isTaskTitleDuplicate(task.title)) {
+    const normalizedTitle = normalizeTitle(task.title);
+    
+    // Check for exact or normalized duplicates
+    const isDuplicate = isTaskTitleDuplicate(task.title) || 
+                        normalizedTitleCache.has(normalizedTitle);
+    
+    if (isDuplicate) {
       console.log(`Skipping duplicate parsed task: "${task.title}"`);
       return false;
     }
+    
+    // Record this task to avoid future duplicates
+    taskTitleCache.add(task.title);
+    normalizedTitleCache.set(normalizedTitle, task.title);
+    
     return true;
   });
   
