@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
+    "@langchain/community": "^0.3.34",
+    "@langchain/openai": "^0.4.4",
     "@octokit/rest": "^21.1.1",
     "@radix-ui/react-accordion": "^1.2.0",
     "@radix-ui/react-alert-dialog": "^1.1.1",
@@ -46,6 +48,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
+    "crewai": "^1.0.1",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.3.0",
     "input-otp": "^1.2.4",

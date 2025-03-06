@@ -1,10 +1,10 @@
-
 import { Agent, Project } from '@/lib/types';
 import { createMessage, getAgents, createAgents, updateAgent } from '@/lib/api';
 import { broadcastMessage } from './messageBroker';
 import { toast } from 'sonner';
 import { startAgentWithOrchestration } from './agentLifecycle';
 import { sendAgentPrompt } from '@/lib/openrouter';
+import { initializeCrewAI } from './crewAI';
 
 /**
  * Initialize agent orchestration for a project
@@ -18,6 +18,9 @@ export const initializeOrchestration = async (project: Project): Promise<void> =
   
   try {
     console.log('Initializing agent orchestration for project:', project);
+    
+    // Initialize using the CrewAI system instead
+    await initializeCrewAI(project);
     
     // Get all available agents for this project
     let agents = project.agents;
