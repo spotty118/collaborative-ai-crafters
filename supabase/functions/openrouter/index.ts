@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
@@ -46,7 +45,9 @@ Assigned to: [Frontend/Backend/Testing/DevOps] Agent
 Task 2: [Brief description]
 Assigned to: [Frontend/Backend/Testing/DevOps] Agent
 
-[Continue for each task...]`,
+[Continue for each task...]
+
+IMPORTANT: Do not return complex objects in error messages. Always convert errors to simple string messages.`,
       'frontend': 'You are the Frontend Agent. Keep responses concise and focused on specific frontend tasks. Avoid lengthy explanations unless explicitly asked.',
       'backend': 'You are the Backend Agent. Keep responses concise and focused on specific backend tasks. Avoid lengthy explanations unless explicitly asked.',
       'testing': 'You are the Testing Agent. Keep responses concise and focused on specific testing tasks. Avoid lengthy explanations unless explicitly asked.',
@@ -156,4 +157,3 @@ function calculateProgress(projectContext: any): number {
   
   return baseProgress;
 }
-

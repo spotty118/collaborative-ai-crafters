@@ -1,4 +1,3 @@
-
 import React from "react";
 import { Task, Agent } from "@/lib/types";
 import { CheckCircle2, Circle, Clock, AlertCircle, RotateCw, Play } from "lucide-react";
@@ -58,6 +57,13 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, 
     return agent ? agent.name : "Unassigned";
   };
 
+  const formatTaskDescription = (description: string) => {
+    if (description.includes('Error:')) {
+      return description.replace(/Error: \[object Object\]/g, 'Error occurred - check logs for details');
+    }
+    return description;
+  };
+
   return (
     <div className={cn("space-y-4", className)}>
       <h3 className="text-lg font-semibold">Tasks</h3>
@@ -80,7 +86,7 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, 
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mt-1 line-clamp-2">
-                    {task.description}
+                    {formatTaskDescription(task.description)}
                   </p>
                   
                   {task.assigned_to && (

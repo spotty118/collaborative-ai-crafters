@@ -14,7 +14,7 @@ type ParsedTask = {
  */
 export function parseTasksFromArchitectResponse(
   response: string,
-  concise: boolean = true // Add parameter to control concise output
+  concise: boolean = true
 ): Array<ParsedTask> {
   const tasks: Array<ParsedTask> = [];
   
@@ -96,4 +96,26 @@ export function parseTasksFromArchitectResponse(
     ...task,
     description: concise ? `Task assigned to ${task.agentType || 'unspecified'} agent.` : task.description.trim()
   }));
+}
+
+/**
+ * Format error object to string for task descriptions
+ */
+export function formatErrorForTaskDescription(error: unknown): string {
+  if (!error) return "Unknown error";
+  
+  if (error instanceof Error) {
+    return error.message || "Error occurred";
+  }
+  
+  if (typeof error === 'object') {
+    try {
+      // Try to stringify the object for better display
+      return JSON.stringify(error) || "Error object";
+    } catch (e) {
+      return "Error object cannot be displayed";
+    }
+  }
+  
+  return String(error);
 }

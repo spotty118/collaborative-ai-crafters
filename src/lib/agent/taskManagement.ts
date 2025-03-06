@@ -1,8 +1,7 @@
-
 import { Agent, Project, Task } from '@/lib/types';
 import { createMessage, createTask, getAgents } from '@/lib/api';
 import { sendAgentPrompt } from '@/lib/openrouter';
-import { parseTasksFromArchitectResponse } from './utils/taskParser';
+import { parseTasksFromArchitectResponse, formatErrorForTaskDescription } from './utils/taskParser';
 import { acquireToken, releaseToken, broadcastMessage } from './messageBroker';
 import { initiateConversation } from './agentCommunication';
 
