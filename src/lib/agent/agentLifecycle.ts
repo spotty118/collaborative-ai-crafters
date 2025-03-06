@@ -1,9 +1,10 @@
 
 import { Agent, Project } from '@/lib/types';
-import { createMessage, getAgents } from '@/lib/api';
+import { createMessage, getAgents, updateAgent } from '@/lib/api';
 import { acquireToken, releaseToken, broadcastMessage } from './messageBroker';
 import { initiateConversation } from './agentCommunication';
 import { initializeOrchestration } from './orchestrationInitializer';
+import { handleTaskCompletion } from './taskManagement';
 
 /**
  * Start agent work with proper orchestration
@@ -17,45 +18,61 @@ export const startAgentWithOrchestration = async (
   try {
     console.log(`Starting agent ${agent.name} with orchestration`);
     
-    // If this is the first agent to start, initialize the orchestration
+    // If agent was idle, first update status to working
+    if (agent.status === 'idle') {
+      agent.status = 'working';
+      await updateAgent(agent.id, { status: 'working' });
+    }
+    
+    // Get up-to-date list of all agents
     const agents = project.agents || await getAgents(project.id);
     const activeAgents = agents.filter(a => a.status === 'working');
     
-    if (activeAgents.length <= 1) {
-      // This is the first or only active agent
+    // If this is the architect (first or restarting)
+    if (agent.type === 'architect') {
       await createMessage({
         project_id: project.id,
-        content: `I'm the first agent online for project "${project.name}". Initializing my work.`,
+        content: `I'm the lead architect for project "${project.name}". I'll be coordinating our team's efforts.`,
         sender: agent.name,
         type: "text"
       });
       
-      // If this is the architect, they should lead the orchestration
-      if (agent.type === 'architect') {
+      // Initialize orchestration with a short delay to ensure message is saved
+      setTimeout(() => {
         initializeOrchestration(project);
-      }
-    } else {
-      // Join existing team
-      const teamMessage = `I'm joining the team to work on project "${project.name}" as the ${agent.type} specialist.`;
+      }, 1000);
       
-      await createMessage({
-        project_id: project.id,
-        content: teamMessage,
-        sender: agent.name,
-        type: "text"
-      });
-      
-      // If architect is active, report to them
-      const architectAgent = agents.find(a => a.type === 'architect' && a.status === 'working' && a.id !== agent.id);
-      
-      if (architectAgent) {
-        initiateConversation(
-          agent,
-          architectAgent,
-          `I've come online and am ready to assist with ${agent.type} tasks. What should I focus on first?`,
-          project,
-          2
-        );
+      return;
+    }
+    
+    // For non-architect agents
+    await createMessage({
+      project_id: project.id,
+      content: `I'm online and ready to assist with ${agent.type} tasks for project "${project.name}".`,
+      sender: agent.name,
+      type: "text"
+    });
+    
+    // If architect is active, report to them
+    const architectAgent = agents.find(a => a.type === 'architect' && a.status === 'working');
+    
+    if (architectAgent) {
+      // Acquire token before communicating
+      if (acquireToken(agent.id)) {
+        try {
+          setTimeout(() => {
+            initiateConversation(
+              agent,
+              architectAgent,
+              `I've come online as the ${agent.type} specialist. What should I focus on first?`,
+              project,
+              2
+            );
+          }, 2000);
+        } finally {
+          // Release token after a delay to allow conversation to start
+          setTimeout(() => releaseToken(agent.id), 3000);
+        }
       }
     }
   } catch (error) {
@@ -75,6 +92,10 @@ export const restartAgentWithOrchestration = async (
   try {
     console.log(`Restarting agent ${agent.name} with orchestration`);
     
+    // Update agent status
+    agent.status = 'working';
+    await updateAgent(agent.id, { status: 'working' });
+    
     await createMessage({
       project_id: project.id,
       content: `I'm resuming my work on project "${project.name}" after restart.`,
@@ -87,18 +108,28 @@ export const restartAgentWithOrchestration = async (
     const architectAgent = agents.find(a => a.type === 'architect' && a.status === 'working' && a.id !== agent.id);
     
     if (architectAgent) {
-      initiateConversation(
-        agent,
-        architectAgent,
-        `I've been restarted and am ready to continue my work as the ${agent.type} specialist. What's the current project status?`,
-        project,
-        2
-      );
+      // Acquire token before communicating
+      if (acquireToken(agent.id)) {
+        try {
+          setTimeout(() => {
+            initiateConversation(
+              agent,
+              architectAgent,
+              `I've been restarted and am ready to continue my work as the ${agent.type} specialist. What's the current project status?`,
+              project,
+              2
+            );
+          }, 2000);
+        } finally {
+          // Release token after a delay
+          setTimeout(() => releaseToken(agent.id), 3000);
+        }
+      }
     } else if (agent.type === 'architect') {
       // If this is the architect restarting, they should re-establish leadership
       setTimeout(() => {
         initializeOrchestration(project);
-      }, 3000);
+      }, 2000);
     }
   } catch (error) {
     console.error('Error restarting agent with orchestration:', error);
@@ -116,6 +147,10 @@ export const stopAgentWithOrchestration = async (
   
   try {
     console.log(`Stopping agent ${agent.name} with orchestration`);
+    
+    // Update agent status
+    agent.status = 'idle';
+    await updateAgent(agent.id, { status: 'idle' });
     
     // Inform the team that this agent is going offline
     await createMessage({
@@ -150,17 +185,48 @@ export const stopAgentWithOrchestration = async (
           });
           
           setTimeout(() => {
-            broadcastMessage(
-              tempLead,
-              `The Architect has designated me as temporary coordinator. Let's continue our current tasks while maintaining project coherence.`,
-              project,
-              2
-            );
+            if (acquireToken(tempLead.id)) {
+              try {
+                broadcastMessage(
+                  tempLead,
+                  `The Architect has designated me as temporary coordinator. Let's continue our current tasks while maintaining project coherence.`,
+                  project,
+                  30
+                );
+              } finally {
+                setTimeout(() => releaseToken(tempLead.id), 2000);
+              }
+            }
           }, 3000);
         }
       }
     }
   } catch (error) {
     console.error('Error stopping agent with orchestration:', error);
+  }
+};
+
+/**
+ * Continue agent work on completion of a task
+ */
+export const continueAgentWork = async (
+  agent: Agent, 
+  project: Project, 
+  completedTaskId?: string
+): Promise<void> => {
+  if (!project.id) return;
+  
+  try {
+    console.log(`Continuing work for ${agent.name} after task completion`);
+    
+    // Use the task management system to handle task completion
+    if (completedTaskId) {
+      handleTaskCompletion(agent, completedTaskId, project);
+    } else {
+      // If no specific task was completed, just continue general work
+      startAgentWithOrchestration(agent, project);
+    }
+  } catch (error) {
+    console.error('Error in continuing agent work:', error);
   }
 };

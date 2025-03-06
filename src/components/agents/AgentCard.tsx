@@ -25,25 +25,19 @@ const AgentCard: React.FC<AgentCardProps> = ({
   isActive = false 
 }) => {
   const [isHovered, setIsHovered] = useState(false);
-  const [progressValue, setProgressValue] = useState(agent.progress || 0);
+  const [progressValue, setProgressValue] = useState(0);
   const [animating, setAnimating] = useState(false);
   
-  // Smoothly animate progress changes - with proper dependency array to prevent infinite updates
+  // Initialize progress value and update it when agent progress changes
   useEffect(() => {
-    // Only update if agent progress has changed
-    if (agent.progress !== progressValue) {
-      // Start animation if significant progress change
-      if (agent.progress > progressValue + 5) {
-        setAnimating(true);
-      }
-      
-      // Animate to target value
-      const timeout = setTimeout(() => {
-        setProgressValue(agent.progress || 0);
-        setTimeout(() => setAnimating(false), 700); // Animation time
-      }, 100);
-      
-      return () => clearTimeout(timeout);
+    setProgressValue(agent.progress || 0);
+  }, [agent.progress]);
+  
+  // Animate progress changes when they occur
+  useEffect(() => {
+    if (agent.progress && Math.abs(agent.progress - progressValue) > 5) {
+      setAnimating(true);
+      setTimeout(() => setAnimating(false), 700); // Animation time
     }
   }, [agent.progress, progressValue]);
 

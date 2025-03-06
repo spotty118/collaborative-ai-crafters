@@ -1,8 +1,9 @@
 
 import { Agent, Project } from '@/lib/types';
-import { createMessage, getAgents } from '@/lib/api';
+import { createMessage, getAgents, updateAgent } from '@/lib/api';
 import { broadcastMessage } from './messageBroker';
 import { toast } from 'sonner';
+import { startAgentWithOrchestration } from './agentLifecycle';
 
 /**
  * Initialize agent orchestration for a project
@@ -39,12 +40,30 @@ export const initializeOrchestration = async (project: Project): Promise<void> =
     
     // Broadcast initial message from architect to all agents
     const initialMessage = `
-I'm taking the role of lead coordinator for our project "${project.name}". 
+I'm taking the role of lead coordinator for project "${project.name}". 
 Each of you will focus on your specialized areas while I ensure our components integrate properly.
 Let's establish our initial goals and constraints.
     `;
     
-    broadcastMessage(architectAgent, initialMessage, project, 3);
+    // Broadcast with a cooldown to prevent duplicates
+    broadcastMessage(architectAgent, initialMessage, project, 30);
+    
+    // Start each non-architect agent with a delay to prevent rate limiting
+    const nonArchitectAgents = agents.filter(a => a.type !== 'architect' && a.status === 'idle');
+    
+    for (let i = 0; i < nonArchitectAgents.length; i++) {
+      const agent = nonArchitectAgents[i];
+      
+      // Update agent status to working
+      await updateAgent(agent.id, { status: 'working' });
+      
+      // Start the agent with a 5-second delay between each
+      setTimeout(() => {
+        startAgentWithOrchestration(agent, project);
+      }, (i + 1) * 5000);
+      
+      console.log(`Queued start for ${agent.name} with ${(i + 1) * 5}s delay`);
+    }
     
   } catch (error) {
     console.error('Error initializing orchestration:', error);
