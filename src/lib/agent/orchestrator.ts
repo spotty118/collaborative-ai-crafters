@@ -20,7 +20,8 @@ export {
 export {
   initializeCrewAI,
   updateCrewAIOrchestration,
-  handleCrewTaskCompletion
+  handleCrewTaskCompletion,
+  createInitialCrewTasks
 } from './crewAI';
 
 // The orchestrator now serves as a facade for the agent orchestration system,

@@ -108,16 +108,13 @@ serve(async (req) => {
         
         console.log('CrewAI orchestration initialized successfully');
         
-        // In a full implementation, the actual CrewAI execution would happen here
-        // For now, we'll simulate the process with messages and status updates
-        
         // Create initial tasks
         const taskTypes = [
           {
             title: 'System Architecture Planning',
             description: 'Define the overall system architecture and component structure',
             assigned_to: agentsData.find(a => a.agent_type === 'architect')?.id,
-            status: 'in_progress'
+            status: 'pending'
           },
           {
             title: 'Frontend Component Design',
@@ -129,6 +126,18 @@ serve(async (req) => {
             title: 'Backend API Planning',
             description: 'Plan API endpoints and database schema',
             assigned_to: agentsData.find(a => a.agent_type === 'backend')?.id,
+            status: 'pending'
+          },
+          {
+            title: 'Test Plan Development',
+            description: 'Create a comprehensive test plan for the application',
+            assigned_to: agentsData.find(a => a.agent_type === 'testing')?.id,
+            status: 'pending'
+          },
+          {
+            title: 'CI/CD Pipeline Planning',
+            description: 'Design the continuous integration and deployment pipeline',
+            assigned_to: agentsData.find(a => a.agent_type === 'devops')?.id,
             status: 'pending'
           }
         ];
@@ -145,8 +154,20 @@ serve(async (req) => {
                 status: task.status,
                 priority: 'high'
               }]);
+            
+            console.log(`Created task: ${task.title} for agent: ${task.assigned_to}`);
           }
         }
+        
+        // Send a message confirming task creation
+        await supabase
+          .from('chat_messages')
+          .insert([{
+            project_id: projectId,
+            content: "I've created initial tasks for our team based on project requirements. Each agent now has specific tasks assigned to their specialty area. Let's begin working on these systematically.",
+            sender: 'Architect Agent',
+            type: 'text'
+          }]);
         
       } catch (asyncError) {
         console.error('Error in asynchronous CrewAI processing:', asyncError);

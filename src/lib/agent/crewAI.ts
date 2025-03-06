@@ -1,152 +1,207 @@
 
-import { supabase } from '@/lib/supabase';
-import { Agent, Project, Task, AgentType, AgentStatus, TaskStatus } from '@/lib/types';
-import { getProject, getAgents, getTasks, getCodeFiles, updateProject, updateAgent, createTask, createMessage, createCodeFile, updateCodeFile } from '@/lib/api';
+import { Agent, Project, Task } from '@/lib/types';
+import { createMessage, createTask, getAgents, updateAgent, updateProject } from '@/lib/api';
+import { sendAgentPrompt } from '@/lib/openrouter';
 import { toast } from 'sonner';
+import { broadcastMessage } from './messageBroker';
 
 /**
  * Initialize CrewAI orchestration for a project
  */
-export const initializeCrewAI = async (project: Project): Promise<void> => {
-  if (!project.id) {
-    console.error("Cannot initialize CrewAI orchestration without a project ID");
-    toast.error("Cannot initialize project: missing project ID");
-    return;
-  }
+export const initializeCrewAI = async (project: Project): Promise<boolean> => {
+  if (!project.id) return false;
   
   try {
-    console.log('Initializing CrewAI orchestration for project:', project);
+    console.log(`Initializing CrewAI orchestration for project: ${project.name}`);
     
-    // Get all available agents for this project
-    let agents = project.agents;
+    // Call Supabase Edge Function to start CrewAI process
+    const response = await fetch('/api/crew-orchestrator', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        projectId: project.id,
+        action: 'start'
+      })
+    });
     
-    // If agents aren't provided with the project, fetch them
-    if (!agents || agents.length === 0) {
-      console.log('No agents provided with project, attempting to fetch agents...');
-      try {
-        agents = await getAgents(project.id);
-        console.log('Fetched agents:', agents);
-      } catch (error) {
-        console.error('Error fetching agents:', error);
-      }
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('CrewAI initialization failed:', errorText);
+      return false;
     }
     
-    // If still no agents, try to create default agents
-    if (!agents || agents.length === 0) {
-      console.log('No agents available, attempting to create default agents...');
-      try {
-        agents = await createAgents(project.id);
-        console.log('Created default agents:', agents);
-      } catch (error) {
-        console.error('Error creating default agents:', error);
-        toast.error("Failed to create agents. Please refresh the page and try again.");
-        return;
-      }
-    }
+    const result = await response.json();
+    console.log('CrewAI initialization result:', result);
     
-    if (!agents || agents.length === 0) {
-      console.warn('No agents available for orchestration even after creation attempt');
-      toast.error("Failed to initialize agents. Please refresh the page.");
-      return;
-    }
+    // Create initial tasks for the project if none exist yet
+    await createInitialCrewTasks(project);
     
-    // Find the architect agent as the lead orchestrator
+    return true;
+  } catch (error) {
+    console.error('Error initializing CrewAI:', error);
+    return false;
+  }
+};
+
+/**
+ * Create initial tasks for the project using CrewAI
+ */
+export const createInitialCrewTasks = async (project: Project): Promise<boolean> => {
+  if (!project.id) return false;
+  
+  try {
+    console.log(`Creating initial tasks for project with CrewAI: ${project.name}`);
+    
+    // Get project agents
+    const agents = project.agents || await getAgents(project.id);
+    
+    // Find the architect agent to lead task creation
     const architectAgent = agents.find(a => a.type === 'architect');
     
     if (!architectAgent) {
-      console.warn('Architect agent not available');
-      toast.error("Architect agent not found. Please refresh the page.");
-      return;
+      console.error('No architect agent found to create initial tasks');
+      return false;
     }
     
-    // Update architect's status to working if it's not already
-    if (architectAgent.status !== 'working') {
-      try {
-        console.log('Updating architect agent status to working...');
-        await updateAgent(architectAgent.id, { status: 'working' });
-        architectAgent.status = 'working'; // Update local object too
-        console.log(`Updated architect agent status to working`);
-      } catch (error) {
-        console.error('Error updating architect agent status:', error);
-        toast.error("Failed to update architect status. Continuing anyway...");
-      }
-    }
-    
-    // Inform the team that orchestration is starting
-    try {
-      console.log('Creating initial message from architect...');
-      await createMessage({
-        project_id: project.id,
-        content: "CrewAI orchestration initialized. I'll be coordinating our team using advanced AI techniques to complete this project efficiently.",
-        sender: architectAgent.name,
-        type: "text"
-      });
-      console.log('Initial message created successfully');
-    } catch (error) {
-      console.error('Error creating initial message:', error);
-      toast.error("Communication error. Continuing anyway...");
-    }
-    
-    // Call the CrewAI edge function
-    try {
-      console.log('Calling CrewAI orchestrator edge function...');
-      const { data, error } = await supabase.functions.invoke('crew-orchestrator', {
-        body: {
-          projectId: project.id,
-          action: 'start'
+    // Basic task templates for each agent type
+    const taskTemplates = {
+      architect: [
+        {
+          title: "System Architecture Planning",
+          description: "Define the overall architecture for the application including component structure, data flow, and technology choices."
+        },
+        {
+          title: "Technical Requirements Analysis",
+          description: "Analyze project requirements and translate them into technical specifications and acceptance criteria."
         }
-      });
+      ],
+      frontend: [
+        {
+          title: "UI Component Design",
+          description: "Design and implement the core UI components following best practices for reusability and accessibility."
+        },
+        {
+          title: "State Management Setup",
+          description: "Establish the application's state management approach and implement core state logic."
+        }
+      ],
+      backend: [
+        {
+          title: "API Endpoint Design",
+          description: "Design RESTful API endpoints that align with frontend requirements and follow REST best practices."
+        },
+        {
+          title: "Database Schema Creation",
+          description: "Design and implement the database schema with proper relationships and constraints."
+        }
+      ],
+      testing: [
+        {
+          title: "Test Plan Development",
+          description: "Create a comprehensive test plan covering unit, integration, and end-to-end testing approaches."
+        },
+        {
+          title: "Test Environment Setup",
+          description: "Set up testing infrastructure and tools for automated testing of the application."
+        }
+      ],
+      devops: [
+        {
+          title: "CI/CD Pipeline Setup",
+          description: "Create continuous integration and deployment pipelines for automated building, testing, and deployment."
+        },
+        {
+          title: "Infrastructure Configuration",
+          description: "Configure cloud resources and infrastructure required for the application deployment."
+        }
+      ]
+    };
+    
+    // Create tasks for each agent type
+    for (const agent of agents) {
+      if (!agent.type || !taskTemplates[agent.type]) continue;
       
-      if (error) {
-        console.error('Error calling CrewAI orchestrator:', error);
-        toast.error("Failed to start CrewAI orchestration. Check console for details.");
-        return;
+      const templates = taskTemplates[agent.type];
+      
+      for (const template of templates) {
+        try {
+          console.log(`Creating task: ${template.title} for ${agent.name}`);
+          
+          await createTask({
+            title: template.title,
+            description: template.description,
+            status: "pending",
+            priority: "high",
+            assigned_to: agent.id,
+            project_id: project.id
+          });
+        } catch (error) {
+          console.error(`Error creating task ${template.title}:`, error);
+        }
       }
       
-      console.log('CrewAI orchestrator response:', data);
-      toast.success("CrewAI orchestration initiated successfully");
-    } catch (error) {
-      console.error('Exception calling CrewAI orchestrator:', error);
-      toast.error("Failed to start CrewAI orchestration. Check console for details.");
+      // Update agent status to working
+      await updateAgent(agent.id, { status: 'working' });
     }
     
-  } catch (error) {
-    console.error('Error initializing CrewAI orchestration:', error);
-    toast.error('Error starting agent orchestration. Please try again.');
-  }
-};
-
-/**
- * Update CrewAI orchestration with new information
- */
-export const updateCrewAIOrchestration = async (project: Project, message?: string): Promise<void> => {
-  if (!project.id) return;
-  
-  try {
-    console.log('Updating CrewAI orchestration for project:', project);
-    
-    // Call the CrewAI edge function
-    const { data, error } = await supabase.functions.invoke('crew-orchestrator', {
-      body: {
-        projectId: project.id,
-        action: 'update',
-        message
-      }
+    // Update project status
+    await updateProject(project.id, { 
+      status: 'in_progress',
+      progress: 10
     });
     
-    if (error) {
-      console.error('Error updating CrewAI orchestration:', error);
-      return;
-    }
+    // Have the architect announce task creation
+    broadcastMessage(
+      architectAgent,
+      "I've created initial tasks for our team. Each agent now has specific tasks assigned based on their specialties. Let's begin working on these tasks systematically.",
+      project
+    );
     
-    console.log('CrewAI orchestration update response:', data);
+    return true;
   } catch (error) {
-    console.error('Error updating CrewAI orchestration:', error);
+    console.error('Error creating initial tasks with CrewAI:', error);
+    return false;
   }
 };
 
 /**
- * Handle task completion in CrewAI context
+ * Update CrewAI orchestration for a project
+ */
+export const updateCrewAIOrchestration = async (project: Project): Promise<boolean> => {
+  if (!project.id) return false;
+  
+  try {
+    console.log(`Updating CrewAI orchestration for project: ${project.name}`);
+    
+    // Call Supabase Edge Function to update CrewAI process
+    const response = await fetch('/api/crew-orchestrator', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        projectId: project.id,
+        action: 'update'
+      })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('CrewAI update failed:', errorText);
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error updating CrewAI orchestration:', error);
+    return false;
+  }
+};
+
+/**
+ * Handle task completion for CrewAI
  */
 export const handleCrewTaskCompletion = async (
   agent: Agent,
@@ -156,38 +211,120 @@ export const handleCrewTaskCompletion = async (
   if (!project.id) return;
   
   try {
-    console.log(`Agent ${agent.name} completed task ${taskId}`);
+    console.log(`CrewAI: Agent ${agent.name} completed task ${taskId}`);
     
-    // Update task status
-    await updateTask(taskId, { status: 'completed' as TaskStatus });
+    // Generate next steps using the agent
+    const nextStepsPrompt = `
+You've just completed task ${taskId} for project "${project.name}". 
+Based on your expertise as a ${agent.type} specialist, what should be the next step or task to focus on?
+Please be specific and actionable in your response.
+    `;
     
-    // Notify the crew orchestration
-    await updateCrewAIOrchestration(project, 
-      `Agent ${agent.name} completed task ${taskId}. Moving to next task in sequence.`
-    );
+    const response = await sendAgentPrompt(agent, nextStepsPrompt, project);
+    
+    // Create a message with the agent's thoughts
+    await createMessage({
+      project_id: project.id,
+      content: `I've completed task ${taskId}. ${response}`,
+      sender: agent.name,
+      type: "text"
+    });
+    
+    // If this agent is the architect, create follow-up tasks
+    if (agent.type === 'architect') {
+      const taskCreationPrompt = `
+Based on completing task ${taskId} for project "${project.name}", 
+create 2 new specific tasks that should be prioritized next.
+For each task, specify which specialist agent (frontend, backend, testing, or devops) should handle it and why.
+Format your response clearly with numbered tasks and assigned agent for each.
+      `;
+      
+      const taskResponse = await sendAgentPrompt(agent, taskCreationPrompt, project);
+      
+      // Have the system notify about new tasks being created
+      await createMessage({
+        project_id: project.id,
+        content: "Creating follow-up tasks based on architect's recommendations...",
+        sender: "System",
+        type: "text"
+      });
+      
+      // Use the existing task parsing function from taskManagement.ts
+      // We'll manually create some tasks here for demonstration
+      
+      const taskLines = taskResponse.split('\n');
+      const agents = project.agents || await getAgents(project.id);
+      let tasksCreated = 0;
+      
+      // A very simple task parser for demonstration
+      for (const line of taskLines) {
+        // Look for lines with task indicators
+        if (/^(Task \d+:|[*-]\s+|\d+\.\s+)/i.test(line) && line.length > 15) {
+          const taskTitle = line.replace(/^(Task \d+:|[*-]\s+|\d+\.\s+)/i, '').trim();
+          
+          // Skip if empty
+          if (!taskTitle) continue;
+          
+          // Try to determine target agent from the text
+          let targetAgentType = 'architect';
+          
+          const lowerLine = line.toLowerCase();
+          if (lowerLine.includes('frontend') || lowerLine.includes('ui')) {
+            targetAgentType = 'frontend';
+          } else if (lowerLine.includes('backend') || lowerLine.includes('api')) {
+            targetAgentType = 'backend';
+          } else if (lowerLine.includes('test')) {
+            targetAgentType = 'testing';
+          } else if (lowerLine.includes('devops') || lowerLine.includes('deploy')) {
+            targetAgentType = 'devops';
+          }
+          
+          // Find the target agent
+          const targetAgent = agents.find(a => a.type === targetAgentType);
+          if (!targetAgent) continue;
+          
+          try {
+            await createTask({
+              title: taskTitle,
+              description: `Follow-up task created by architect: ${taskTitle}`,
+              status: "pending",
+              priority: "medium",
+              assigned_to: targetAgent.id,
+              project_id: project.id
+            });
+            
+            tasksCreated++;
+          } catch (error) {
+            console.error(`Error creating follow-up task:`, error);
+          }
+        }
+      }
+      
+      // If we couldn't parse any tasks, create at least one generic task
+      if (tasksCreated === 0) {
+        const frontendAgent = agents.find(a => a.type === 'frontend');
+        if (frontendAgent) {
+          await createTask({
+            title: "Implement UI improvements based on latest requirements",
+            description: "Review the latest project requirements and update UI components to match specifications.",
+            status: "pending",
+            priority: "medium",
+            assigned_to: frontendAgent.id,
+            project_id: project.id
+          });
+          tasksCreated = 1;
+        }
+      }
+      
+      // Notify about task creation
+      await createMessage({
+        project_id: project.id,
+        content: `Created ${tasksCreated} new task(s) based on completed work.`,
+        sender: "System",
+        type: "text"
+      });
+    }
   } catch (error) {
-    console.error('Error handling task completion in CrewAI:', error);
-  }
-};
-
-/**
- * Create default agents for CrewAI
- */
-const createAgents = async (projectId: string): Promise<Agent[]> => {
-  // This function is imported from api.ts
-  // Just here for type completion
-  return getAgents(projectId);
-};
-
-/**
- * Update a task
- */
-const updateTask = async (taskId: string, updates: Partial<Task>): Promise<void> => {
-  try {
-    // This function should be imported from api.ts
-    // Just a stub for type completion
-  } catch (error) {
-    console.error('Error updating task:', error);
-    throw error;
+    console.error('Error handling CrewAI task completion:', error);
   }
 };
