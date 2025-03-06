@@ -4,6 +4,16 @@ import { createTask, createCodeFile, createMessage, getAgents } from './api';
 import { parseCodeBlocks, inferFilePath } from './codeParser';
 import { getGitHubService } from './services/GitHubService';
 import { toast } from 'sonner';
+import { 
+  initiateConversation, 
+  broadcastMessage 
+} from './agent/messageBroker';
+import {
+  startAgentWithOrchestration,
+  stopAgentWithOrchestration,
+  restartAgentWithOrchestration,
+  handleTaskCompletion
+} from './agent/orchestrator';
 
 export interface OpenRouterResponse {
   id: string;
@@ -164,6 +174,7 @@ export const sendAgentPrompt = async (
 
 /**
  * Simulate inter-agent communication by creating messages between agents
+ * Using the new orchestrated communication system
  */
 export const simulateAgentCommunication = async (
   sourceAgent: Agent,
@@ -176,121 +187,11 @@ export const simulateAgentCommunication = async (
   try {
     console.log(`${sourceAgent.name} is communicating with ${targetAgent.name}`);
     
-    // Create a message from source agent to target agent
-    await createMessage({
-      project_id: project.id,
-      content: message,
-      sender: sourceAgent.name,
-      type: "text"
-    });
-    
-    // Add special handling if Architect is the target agent
-    let responsePrompt = `Your colleague ${sourceAgent.name} says: "${message}". Please respond with your thoughts, considering your role as the ${targetAgent.type} agent.`;
-    
-    if (targetAgent.type === 'architect') {
-      responsePrompt = `Your colleague ${sourceAgent.name} is consulting you as the lead Architect. They say: "${message}". Please provide architectural guidance and coordinate next steps as the team lead.`;
-    } else if (sourceAgent.type === 'architect') {
-      responsePrompt = `The Architect (lead agent) is providing direction: "${message}". As the ${targetAgent.type} agent, respond with how you'll implement this direction within your specialization.`;
-    }
-    
-    // Get response from target agent
-    let response;
-    try {
-      response = await sendAgentPrompt(
-        targetAgent,
-        responsePrompt,
-        project
-      );
-    } catch (error) {
-      console.warn(`Error getting response from ${targetAgent.name}:`, error);
-      // Fallback response to avoid breaking the flow
-      response = `I'm currently busy processing other tasks. I'll review your message and get back to you shortly. [Communication throttled due to API rate limits]`;
-    }
-    
-    // Create a message from target agent back to source agent
-    await createMessage({
-      project_id: project.id,
-      content: response,
-      sender: targetAgent.name,
-      type: "text"
-    });
-    
-    console.log(`${targetAgent.name} responded to ${sourceAgent.name}`);
-    
-    // Important: Ensure ongoing conversation by having a higher chance of continuation
-    // This is the key change to prevent conversations from stopping
-    setTimeout(() => {
-      // Ensure project.agents exists before using it
-      const continueConversation = async () => {
-        const agents = project.agents || await getAgents(project.id);
-        
-        // 70% chance to continue conversation between the same agents (higher than before)
-        if (Math.random() < 0.7) {
-          // For round-trip conversations, flip the source and target
-          try {
-            // Generate a continuation message based on the agent types
-            let continuationMessage = "";
-            if (targetAgent.type === 'architect') {
-              // Architect gives more direct, task-oriented responses
-              continuationMessage = `Based on your message, I need more details about ${sourceAgent.type === 'frontend' ? 'the UI components' : 
-                sourceAgent.type === 'backend' ? 'the API structure' : 
-                sourceAgent.type === 'testing' ? 'the test coverage' : 'the deployment process'} you're working on. Let's continue our collaboration.`;
-            } else {
-              // Non-architect agents ask for more guidance
-              continuationMessage = `Thank you for the information. I have more questions about implementing this. Can you provide more specific guidance on ${
-                targetAgent.type === 'frontend' ? 'UI component structure' : 
-                targetAgent.type === 'backend' ? 'API endpoints' : 
-                targetAgent.type === 'testing' ? 'test strategy' : 'deployment configuration'
-              }?`;
-            }
-            
-            // Continue conversation with the same agents but flipped roles
-            await simulateAgentCommunication(
-              targetAgent, // Now the original target becomes the source
-              sourceAgent, // The original source becomes the target
-              continuationMessage,
-              { ...project, agents } // Make sure agents is available in project
-            );
-          } catch (error) {
-            console.warn('Error continuing conversation:', error);
-            // Even if this conversation fails, the overall system continues
-          }
-        } else if (sourceAgent.type === 'architect' || targetAgent.type === 'architect') {
-          // If architect was involved, have them initiate conversation with another agent
-          const architectAgent = sourceAgent.type === 'architect' ? sourceAgent : targetAgent;
-          const otherAgentTypes = ['frontend', 'backend', 'testing', 'devops'].filter(
-            type => type !== (sourceAgent.type === 'architect' ? targetAgent.type : sourceAgent.type)
-          );
-          
-          if (otherAgentTypes.length > 0) {
-            const randomType = otherAgentTypes[Math.floor(Math.random() * otherAgentTypes.length)];
-            const foundAgent = agents.find(a => a.type === randomType);
-            
-            if (foundAgent) {
-              try {
-                await simulateAgentCommunication(
-                  architectAgent,
-                  foundAgent,
-                  `Let's coordinate our efforts. Based on my conversation with ${sourceAgent.type === 'architect' ? targetAgent.name : sourceAgent.name}, I need you to focus on ${randomType === 'frontend' ? 'UI component implementation' : 
-                    randomType === 'backend' ? 'API endpoint development' : 
-                    randomType === 'testing' ? 'test suite expansion' : 'CI/CD pipeline enhancement'}.`,
-                  { ...project, agents } // Make sure agents is available in project
-                );
-              } catch (error) {
-                console.warn('Error in architect delegation:', error);
-              }
-            }
-          }
-        }
-      };
-      
-      continueConversation().catch(error => {
-        console.error("Error in continuing conversation flow:", error);
-      });
-    }, 7000); // Slightly longer delay to avoid rate limits
+    // Use the new message broker system for coordinated communication
+    initiateConversation(sourceAgent, targetAgent, message, project);
   } catch (error) {
     console.error('Error in agent communication:', error);
-    // Adding error handling to avoid complete breakdown in agent communication
+    // Error handling
     try {
       await createMessage({
         project_id: project.id,
@@ -386,23 +287,18 @@ export const analyzeGitHubAndCreateTasks = async (
     
     console.log(`Agent ${analysisAgent.name} created ${tasks.length} tasks from GitHub analysis`);
     
-    // If architect performed the analysis, have them delegate tasks to other agents
+    // If architect performed the analysis, have them delegate tasks to other agents using the new orchestration
     if (analysisAgent.type === 'architect') {
       setTimeout(async () => {
         const agents = project.agents || await getAgents(project.id);
         
         if (agents && agents.length > 0) {
-          const otherAgents = agents.filter(a => a.type !== 'architect');
-          if (otherAgents.length > 0) {
-            // Randomly select an agent to communicate with
-            const randomAgent = otherAgents[Math.floor(Math.random() * otherAgents.length)];
-            simulateAgentCommunication(
-              analysisAgent,
-              randomAgent,
-              `I've analyzed the repository and created tasks. I'd like you to focus on the ${randomAgent.type}-related tasks.`,
-              {...project, agents} // Make sure agents is available in project
-            );
-          }
+          broadcastMessage(
+            analysisAgent,
+            `I've analyzed the repository and created tasks. Let's collaborate on implementing them efficiently.`,
+            project,
+            3
+          );
         }
       }, 5000);
     }
@@ -476,6 +372,7 @@ function parseTasksFromAIResponse(
 
 /**
  * Continue agent work on completion of a task
+ * Now using the orchestrated approach
  */
 export const continueAgentWork = async (
   agent: Agent, 
@@ -487,90 +384,12 @@ export const continueAgentWork = async (
   try {
     console.log(`Continuing work for ${agent.name} after task completion`);
     
-    // First, create a message indicating the agent is continuing work
-    const statusMessage = completedTaskId 
-      ? `I've completed the assigned task and am now looking for the next steps to improve the project.`
-      : `I'm continuing my analysis of the project to identify improvements.`;
-    
-    await createMessage({
-      project_id: project.id,
-      content: statusMessage,
-      sender: agent.name,
-      type: "text"
-    });
-    
-    // If agent is architect, they should be more proactive
-    let nextStepsPrompt = "";
-    if (agent.type === 'architect') {
-      nextStepsPrompt = `As the lead Architect for the project "${project.name}", what is the next critical improvement the team should focus on? Please provide specific, actionable direction that you can delegate to appropriate team members based on their specialties.`;
+    // Use the orchestration system to handle task completion
+    if (completedTaskId) {
+      handleTaskCompletion(agent, completedTaskId, project);
     } else {
-      nextStepsPrompt = `Based on your role as the ${agent.type} agent for the project "${project.name}", what would be the next improvement you would recommend? Please provide a specific, actionable suggestion that could be implemented right away.`;
-    }
-    
-    const response = await sendAgentPrompt(agent, nextStepsPrompt, project);
-    
-    await createMessage({
-      project_id: project.id,
-      content: response,
-      sender: agent.name,
-      type: "text"
-    });
-    
-    // If architect agent, always communicate with another agent
-    if (agent.type === 'architect') {
-      setTimeout(async () => {
-        // Safely get agents either from project or API
-        const agents = project.agents || await getAgents(project.id);
-        
-        const otherAgents = agents.filter(a => a.type !== 'architect' && a.status === 'working');
-        if (otherAgents && otherAgents.length > 0) {
-          // Randomly select an agent to communicate with
-          const randomAgent = otherAgents[Math.floor(Math.random() * otherAgents.length)];
-          simulateAgentCommunication(
-            agent,
-            randomAgent,
-            `Based on my analysis, I need you to focus on the following ${randomAgent.type}-specific tasks: ${response.split('\n')[0]}`,
-            {...project, agents} // Make sure agents is available
-          );
-        }
-      }, 5000);
-    } else {
-      // For non-architect agents, randomly decide if we should communicate with architect
-      setTimeout(async () => {
-        // Safely get agents either from project or API
-        const agents = project.agents || await getAgents(project.id);
-        
-        const architectAgent = agents.find(a => a.type === 'architect' && a.status === 'working');
-        
-        if (architectAgent && Math.random() > 0.3) { // 70% chance
-          simulateAgentCommunication(
-            agent,
-            architectAgent,
-            `I've been working on the project and identified: ${response.split('\n')[0]}. What direction should I take next?`,
-            {...project, agents} // Make sure agents is available
-          );
-        } else {
-          // If no architect communication, maybe talk to another agent
-          const otherAgentTypes = ['frontend', 'backend', 'testing', 'devops'].filter(
-            type => type !== agent.type
-          );
-          
-          // 50% chance of communication with another non-architect agent
-          if (Math.random() > 0.5 && otherAgentTypes.length > 0) {
-            const randomType = otherAgentTypes[Math.floor(Math.random() * otherAgentTypes.length)];
-            const randomAgent = agents.find(a => a.type === randomType && a.status === 'working');
-            
-            if (randomAgent) {
-              simulateAgentCommunication(
-                agent,
-                randomAgent,
-                `I've been working on ${agent.type} tasks and would like to collaborate with you on ${randomType} integration.`,
-                {...project, agents} // Make sure agents is available
-              );
-            }
-          }
-        }
-      }, 5000);
+      // If no specific task was completed, just continue general work
+      startAgentWithOrchestration(agent, project);
     }
   } catch (error) {
     console.error('Error in continuing agent work:', error);
@@ -582,7 +401,7 @@ export const updateOpenRouterForArchitectLeadership = async (project: Project): 
   if (!project.id) return;
   
   try {
-    // Safely get the architect agent
+    // Get the architect agent
     const agents = project.agents || await getAgents(project.id);
     const architectAgent = agents.find(a => a.type === 'architect');
     
@@ -591,29 +410,8 @@ export const updateOpenRouterForArchitectLeadership = async (project: Project): 
       return;
     }
     
-    // Inform the team that the architect is taking the lead
-    await createMessage({
-      project_id: project.id,
-      content: "I'm taking charge as the Architect Agent. I'll be coordinating our team's efforts to ensure we build a coherent, well-structured solution.",
-      sender: architectAgent.name,
-      type: "text"
-    });
-    
-    // Communicate with other active agents
-    const otherAgents = agents.filter(a => a.type !== 'architect' && a.status === 'working');
-    if (otherAgents && otherAgents.length > 0) {
-      // Communicate with each active agent
-      for (const agent of otherAgents) {
-        setTimeout(() => {
-          simulateAgentCommunication(
-            architectAgent,
-            agent,
-            `As the project architect, I'm establishing our technical direction. I'd like you to focus on ${agent.type}-specific implementations while I handle overall structure and integration. What are your initial thoughts on the ${agent.type} requirements?`,
-            {...project, agents} // Make sure agents is available
-          );
-        }, 3000 + Math.random() * 5000); // Stagger communications
-      }
-    }
+    // Initialize the orchestration with the architect as leader
+    startAgentWithOrchestration(architectAgent, project);
   } catch (error) {
     console.error('Error establishing architect leadership:', error);
   }
@@ -636,17 +434,17 @@ export const handleRateLimiting = async (
       type: "text"
     });
     
-    // Get architect agent
+    // Get architect agent to manage the rate-limited situation
     const agents = project.agents || await getAgents(project.id);
     const architectAgent = agents.find(a => a.type === 'architect');
     
     if (architectAgent) {
-      await createMessage({
-        project_id: project.id,
-        content: "Due to API rate limits, I'll be coordinating our team's communication more efficiently. We'll focus on high-priority tasks while respecting system constraints.",
-        sender: architectAgent.name,
-        type: "text"
-      });
+      broadcastMessage(
+        architectAgent,
+        "Due to API rate limits, I'll be coordinating our communications more efficiently. We'll prioritize critical tasks and space out our interactions.",
+        project,
+        3
+      );
     }
   } catch (error) {
     console.error('Error handling rate limiting:', error);
