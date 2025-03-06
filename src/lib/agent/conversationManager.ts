@@ -1,3 +1,4 @@
+
 import { Project } from '@/lib/types';
 import { createMessage, getAgents } from '@/lib/api';
 import { sendAgentPrompt } from '@/lib/openrouter';
@@ -43,6 +44,25 @@ export const getAllConversationStates = (): Record<string, ConversationState> =>
 };
 
 /**
+ * Validate conversation state to prevent invalid state errors
+ */
+export const isValidConversationState = (state: ConversationState | null): boolean => {
+  if (!state) return false;
+  
+  // Check that all required properties exist and have valid values
+  return (
+    !!state.conversationId &&
+    Array.isArray(state.participants) &&
+    state.participants.length >= 2 &&
+    typeof state.lastMessage === 'string' &&
+    typeof state.turnCount === 'number' &&
+    ['active', 'completed', 'error'].includes(state.status) &&
+    typeof state.priority === 'number' &&
+    state.initiatedAt instanceof Date
+  );
+};
+
+/**
  * Get an agent by ID from the project's agents
  */
 const getAgentById = async (agentId: string, project?: Project) => {
@@ -78,14 +98,18 @@ export const continueConversation = async (
   // Get conversation state
   const state = getConversationState(conversationId);
   
-  if (!state) {
-    console.error(`Cannot continue conversation ${conversationId}: Invalid state`);
+  // Validate conversation state first
+  if (!isValidConversationState(state)) {
+    console.error(`Cannot continue conversation ${conversationId}: Invalid state`, state);
     return;
   }
   
+  // Since we know state is valid now, we can safely use it without null checks
+  const validState = state as ConversationState;
+  
   // Get the next agent to respond (alternating between participants)
-  const currentAgentIndex = state.turnCount % state.participants.length;
-  const nextAgentId = state.participants[currentAgentIndex];
+  const currentAgentIndex = validState.turnCount % validState.participants.length;
+  const nextAgentId = validState.participants[currentAgentIndex];
   
   try {
     // Use the local getAgentById function
@@ -94,16 +118,17 @@ export const continueConversation = async (
     if (!agent) {
       console.error(`Agent ${nextAgentId} not found for conversation ${conversationId}`);
       setConversationState(conversationId, {
-        ...state,
+        ...validState,
         status: 'error'
       });
+      releaseToken(nextAgentId);
       return;
     }
     
     console.log(`Getting response from ${agent.name} to continue conversation`);
     
     // Get AI response
-    const response = await sendAgentPrompt(agent, state.lastMessage, project);
+    const response = await sendAgentPrompt(agent, validState.lastMessage, project);
     
     // Create message
     await createMessage({
@@ -115,9 +140,9 @@ export const continueConversation = async (
     
     // Update conversation state
     const updatedState = {
-      ...state,
+      ...validState,
       lastMessage: response,
-      turnCount: state.turnCount + 1
+      turnCount: validState.turnCount + 1
     };
     
     // Check if conversation should end (limit to reasonable number of turns)
@@ -158,10 +183,12 @@ export const continueConversation = async (
     console.error(`Error in conversation ${conversationId}:`, error);
     
     // Update state to error
-    setConversationState(conversationId, {
-      ...state,
-      status: 'error'
-    });
+    if (state) {
+      setConversationState(conversationId, {
+        ...state,
+        status: 'error'
+      });
+    }
     
     // Release token for current agent
     releaseToken(nextAgentId);

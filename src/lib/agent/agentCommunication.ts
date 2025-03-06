@@ -1,7 +1,8 @@
+
 import { Agent, Project } from '@/lib/types';
 import { createMessage, getAgents } from '@/lib/api';
 import { acquireToken } from './messageBroker';
-import { setConversationState, getConversationState, ConversationState, getAllConversationStates } from './conversationManager';
+import { setConversationState, getConversationState, ConversationState, getAllConversationStates, isValidConversationState } from './conversationManager';
 
 /**
  * Initiate a new conversation between agents
@@ -35,8 +36,8 @@ export const initiateConversation = (
     }
   }
   
-  // Create conversation state
-  const conversationState = {
+  // Create conversation state with proper Date object
+  const conversationState: ConversationState = {
     conversationId,
     participants: [sourceAgent.id, targetAgent.id],
     lastMessage: initialMessage,
@@ -45,6 +46,12 @@ export const initiateConversation = (
     priority,
     initiatedAt: new Date()
   };
+  
+  // Validate the state before storing
+  if (!isValidConversationState(conversationState)) {
+    console.error('Failed to create valid conversation state:', conversationState);
+    return '';
+  }
   
   // Store the conversation state directly using the imported function
   setConversationState(conversationId, conversationState);
@@ -83,7 +90,19 @@ function checkForExistingConversation(sourceAgentId: string, targetAgentId: stri
     // Ensure proper type casting for the state object
     const typedState = state as ConversationState;
     const participants = typedState.participants || [];
-    const isRecent = typedState.initiatedAt && new Date(typedState.initiatedAt) > threeMinutesAgo;
+    
+    // Make sure initiatedAt is a proper Date object
+    let initiatedDate: Date;
+    if (typedState.initiatedAt instanceof Date) {
+      initiatedDate = typedState.initiatedAt;
+    } else if (typeof typedState.initiatedAt === 'string') {
+      initiatedDate = new Date(typedState.initiatedAt);
+    } else {
+      // Skip invalid records
+      continue;
+    }
+    
+    const isRecent = initiatedDate > threeMinutesAgo;
     
     // Check if both agents are participants
     if (
