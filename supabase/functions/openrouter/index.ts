@@ -97,6 +97,8 @@ IMPORTANT: Do not return complex objects in error messages. Always convert error
     
     console.log('Sending request to OpenRouter API with model: anthropic/claude-3.7-sonnet:thinking');
     
+    // For Claude with thinking enabled, we need to configure appropriate token limits
+    // The 'thinking' feature requires max_tokens to be greater than thinking.budget_tokens
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -112,7 +114,11 @@ IMPORTANT: Do not return complex objects in error messages. Always convert error
           { role: 'user', content: prompt }
         ],
         temperature: 0.7,
-        max_tokens: 1024,
+        max_tokens: 4096,  // Increased from 1024 to accommodate thinking.budget_tokens requirement
+        thinking: {
+          enabled: true,
+          budget_tokens: 2048  // Allocate tokens for thinking, which must be less than max_tokens
+        }
       }),
     });
 
