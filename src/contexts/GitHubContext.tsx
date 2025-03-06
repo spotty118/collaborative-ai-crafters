@@ -15,6 +15,7 @@ interface GitHubContextType {
   getFileContent: (path: string, ref?: string) => Promise<string>;
   deleteFile: (path: string, message: string) => Promise<void>;
   listFiles: (path?: string) => Promise<{name: string, path: string, type: string}[]>;
+  currentBranch: string;
 }
 
 const GitHubContext = createContext<GitHubContextType | null>(null);
@@ -37,6 +38,7 @@ export const GitHubProvider = ({ children }: { children: ReactNode }) => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [service, setService] = useState<GitHubService | null>(null);
+  const [currentBranch, setCurrentBranch] = useState<string>('main');
 
   // Load GitHub configuration from local storage on component mount
   useEffect(() => {
@@ -69,7 +71,7 @@ export const GitHubProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   // Connect to GitHub
-  const connect = async (url: string, token: string, branch?: string): Promise<boolean> => {
+  const connect = async (url: string, token: string, branch: string = 'main'): Promise<boolean> => {
     setIsConnecting(true);
     setConnectError(null);
     
@@ -86,8 +88,10 @@ export const GitHubProvider = ({ children }: { children: ReactNode }) => {
         setService(newService);
         setGithubConfig(config);
         setIsConnected(true);
+        setCurrentBranch(branch);
         // Save to local storage
         localStorage.setItem('githubConfig', JSON.stringify(config));
+        localStorage.setItem('githubBranch', branch);
         toast.success('Connected to GitHub successfully');
         return true;
       } else {
@@ -199,6 +203,14 @@ export const GitHubProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // Effect to load saved branch from localStorage
+  useEffect(() => {
+    const savedBranch = localStorage.getItem('githubBranch');
+    if (savedBranch) {
+      setCurrentBranch(savedBranch);
+    }
+  }, []);
+
   return (
     <GitHubContext.Provider
       value={{
@@ -212,7 +224,8 @@ export const GitHubProvider = ({ children }: { children: ReactNode }) => {
         createOrUpdateFile,
         getFileContent,
         deleteFile,
-        listFiles
+        listFiles,
+        currentBranch
       }}
     >
       {children}

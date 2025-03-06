@@ -46,7 +46,7 @@ const Project: React.FC = () => {
   const [githubToken, setGithubToken] = useState<string>("");
   const [chatMessage, setChatMessage] = useState<string>("");
 
-  const github = useGitHub();
+  const github = useGitHubContext();
   const queryClient = useQueryClient();
 
   const { 
