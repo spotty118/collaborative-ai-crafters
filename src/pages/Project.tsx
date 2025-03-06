@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -202,10 +201,8 @@ const Project: React.FC = () => {
     const agent = agents.find(a => a.id === activeChat);
     if (!agent) return;
     
-    // Clear input
     setChatMessage("");
     
-    // Add user message to chat
     createMessageMutation.mutate({
       project_id: id,
       content: message,
