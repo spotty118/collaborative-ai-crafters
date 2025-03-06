@@ -1,4 +1,5 @@
-<lov-code>
+
+// Import necessary dependencies
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { supabase } from "../_shared/supabase-client.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
@@ -257,7 +258,7 @@ async function processTeamCollaboration(projectId, projectData, agents, projectC
       for (const taskInfo of tasksInfo) {
         const agentType = taskInfo.assignedTo.replace(' Agent', '').toLowerCase();
         const assignedAgent = agents.find(a => a.type.toLowerCase() === agentType || 
-                                               a.type.toLowerCase().includes(agentType));
+                                              a.type.toLowerCase().includes(agentType));
         
         if (assignedAgent) {
           await supabase
@@ -379,6 +380,60 @@ async function processTeamCollaboration(projectId, projectData, agents, projectC
 }
 
 /**
+ * Create initial default tasks for agents if architect doesn't provide them
+ */
+async function createInitialTasks(projectId, agents) {
+  console.log(`Creating default tasks for project ${projectId}`);
+  
+  const defaultTasks = {
+    'frontend': {
+      title: 'Create initial UI components',
+      description: 'Design and implement the core UI components for the project interface.',
+      priority: 'high'
+    },
+    'backend': {
+      title: 'Set up API endpoints',
+      description: 'Create the necessary API endpoints for the frontend to interact with.',
+      priority: 'high'
+    },
+    'devops': {
+      title: 'Configure deployment pipeline',
+      description: 'Set up the CI/CD pipeline for automated testing and deployment.',
+      priority: 'medium'
+    },
+    'testing': {
+      title: 'Develop test strategy',
+      description: 'Create a comprehensive testing strategy for the project.',
+      priority: 'medium'
+    }
+  };
+  
+  for (const agent of agents) {
+    if (agent.type !== 'architect') {
+      const agentType = agent.type.toLowerCase();
+      const taskConfig = defaultTasks[agentType] || {
+        title: `Initial ${agentType} task`,
+        description: `Start work on ${agentType} implementation for the project.`,
+        priority: 'medium'
+      };
+      
+      await supabase
+        .from('tasks')
+        .insert([{
+          project_id: projectId,
+          title: taskConfig.title,
+          description: taskConfig.description,
+          assigned_to: agent.id,
+          status: 'pending',
+          priority: taskConfig.priority
+        }]);
+        
+      console.log(`Created default task for ${agent.name}`);
+    }
+  }
+}
+
+/**
  * Periodically check for pending tasks and assign them to agents
  */
 async function checkAndAssignPendingTasks(projectId, agents) {
@@ -489,6 +544,25 @@ async function processOrchestration(projectId, projectData, agentId, agentData, 
         .eq('id', agentId);
     }
   }
+}
+
+/**
+ * Process workflow for a project (multi-agent)
+ */
+async function processProjectWorkflow(projectId, projectData) {
+  console.log(`Processing workflow for project ${projectId}`);
+  
+  // Full project implementation would go here
+  // This is a placeholder for now as we're focusing on single agent workflows
+  
+  await supabase
+    .from('chat_messages')
+    .insert([{
+      project_id: projectId,
+      content: `Project workflow for ${projectData.name} is starting. Individual agents will be initialized and assigned tasks.`,
+      sender: "System",
+      type: "text"
+    }]);
 }
 
 /**
@@ -614,6 +688,147 @@ function filterForProductionCode(content) {
   }
   
   return content;
+}
+
+/**
+ * Extract tasks from agent response
+ */
+function extractTasksInfo(content) {
+  const taskPattern = /TASK:(.+?)(?:ASSIGNED TO|ASSIGNEE):(.+?)(?:DESCRIPTION|DESC):(.+?)(?:PRIORITY):(.+?)(?=\n\s*TASK:|\n\s*$|$)/gsi;
+  const tasks = [];
+  let match;
+  
+  while ((match = taskPattern.exec(content)) !== null) {
+    tasks.push({
+      title: match[1].trim(),
+      assignedTo: match[2].trim(),
+      description: match[3].trim(),
+      priority: match[4].trim()
+    });
+  }
+  
+  return tasks;
+}
+
+/**
+ * Extract code snippets from agent response
+ */
+function extractCodeSnippets(content) {
+  const codeSnippets = [];
+  
+  // Match code blocks with filepath format: ```filepath:/path/to/file
+  const filepathPattern = /```(?:filepath:|\s*)([\w\/\.-]+)\s*\n([\s\S]*?)\n```/g;
+  let match;
+  
+  while ((match = filepathPattern.exec(content)) !== null) {
+    const filePath = match[1].trim();
+    const code = match[2].trim();
+    
+    if (filePath && code) {
+      codeSnippets.push({ filePath, code });
+    }
+  }
+  
+  // If no filepath-specific code blocks found, look for language-specific blocks
+  if (codeSnippets.length === 0) {
+    const languagePattern = /```(?:([\w\+]+)\n)?([\s\S]*?)\n```/g;
+    
+    while ((match = languagePattern.exec(content)) !== null) {
+      const language = match[1] ? match[1].trim().toLowerCase() : '';
+      const code = match[2].trim();
+      
+      if (code) {
+        // Use default filenames based on language
+        let filePath = '';
+        
+        if (language === 'javascript' || language === 'js') {
+          filePath = 'script.js';
+        } else if (language === 'typescript' || language === 'ts') {
+          filePath = 'script.ts';
+        } else if (language === 'html') {
+          filePath = 'index.html';
+        } else if (language === 'css') {
+          filePath = 'styles.css';
+        } else if (language === 'python' || language === 'py') {
+          filePath = 'script.py';
+        } else if (language === 'json') {
+          filePath = 'data.json';
+        } else if (language === 'jsx' || language === 'tsx') {
+          filePath = `component.${language}`;
+        } else {
+          // Skip non-code blocks like markdown
+          if (['markdown', 'md', ''].includes(language)) continue;
+          filePath = `file.${language || 'txt'}`;
+        }
+        
+        codeSnippets.push({ filePath, code });
+      }
+    }
+  }
+  
+  return codeSnippets;
+}
+
+/**
+ * Determine language from file path
+ */
+function determineLanguage(filePath) {
+  const extension = filePath.split('.').pop().toLowerCase();
+  
+  switch (extension) {
+    case 'js': return 'javascript';
+    case 'ts': return 'typescript';
+    case 'jsx': return 'jsx';
+    case 'tsx': return 'tsx';
+    case 'html': return 'html';
+    case 'css': return 'css';
+    case 'py': return 'python';
+    case 'json': return 'json';
+    case 'md': return 'markdown';
+    default: return extension;
+  }
+}
+
+/**
+ * Get a default task title based on agent type
+ */
+function getDefaultTaskTitle(agentType) {
+  const typeNormalized = agentType.toLowerCase();
+  
+  if (typeNormalized.includes('front')) {
+    return 'Implement initial user interface components';
+  } else if (typeNormalized.includes('back')) {
+    return 'Create core API endpoints and database models';
+  } else if (typeNormalized.includes('devops')) {
+    return 'Set up CI/CD pipeline and deployment configuration';
+  } else if (typeNormalized.includes('test')) {
+    return 'Develop test strategy and initial test cases';
+  } else if (typeNormalized.includes('architect')) {
+    return 'Design system architecture and component breakdown';
+  } else {
+    return 'Complete initial development tasks';
+  }
+}
+
+/**
+ * Get a default task description based on agent type
+ */
+function getDefaultTaskDescription(agentType) {
+  const typeNormalized = agentType.toLowerCase();
+  
+  if (typeNormalized.includes('front')) {
+    return 'Create the core UI components needed for the application. Focus on responsive design, accessibility, and a clean user experience. Implement key screens and navigation flow.';
+  } else if (typeNormalized.includes('back')) {
+    return 'Develop the essential API endpoints and database models required for the application. Ensure proper data validation, error handling, and security measures are implemented.';
+  } else if (typeNormalized.includes('devops')) {
+    return 'Configure the CI/CD pipeline for automated testing and deployment. Set up infrastructure as code, monitoring, and alerting systems to ensure reliable operations.';
+  } else if (typeNormalized.includes('test')) {
+    return 'Create a comprehensive testing strategy including unit, integration, and end-to-end tests. Implement initial test cases for critical application features.';
+  } else if (typeNormalized.includes('architect')) {
+    return 'Design the overall system architecture, component breakdown, and technical specifications. Define technology stack, integration points, and data flow throughout the application.';
+  } else {
+    return 'Complete initial development tasks required for the project. Follow best practices for code quality, documentation, and collaboration with the team.';
+  }
 }
 
 /**
@@ -905,4 +1120,40 @@ async function processTask(projectId, agentId, agentData, task) {
   // Generate completion message using AI
   const completionResponse = await callOpenRouter(
     agentData.agent_type,
-    `You've completed task: "${task.title}". Provide a summary of what you've accomplished and any recommendations
+    `You've completed task: "${task.title}". Provide a summary of what you've accomplished and any recommendations for future improvements.`,
+    { projectId, taskId: task.id }
+  );
+  
+  await supabase
+    .from('chat_messages')
+    .insert([{
+      project_id: projectId,
+      content: completionResponse,
+      sender: agentData.name,
+      type: "text"
+    }]);
+    
+  // Update agent progress
+  await supabase
+    .from('agent_statuses')
+    .update({ progress: 90 })
+    .eq('id', agentId);
+    
+  console.log(`Completed task ${task.id}`);
+  
+  // Check for additional pending tasks for this agent
+  const { data: pendingTasks } = await supabase
+    .from('tasks')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('assigned_to', agentId)
+    .eq('status', 'pending')
+    .limit(1);
+    
+  if (pendingTasks && pendingTasks.length > 0) {
+    console.log(`Agent ${agentId} has more pending tasks. Processing next task: ${pendingTasks[0].id}`);
+    await processTask(projectId, agentId, agentData, pendingTasks[0]);
+  } else {
+    console.log(`Agent ${agentId} has completed all tasks`);
+  }
+}
