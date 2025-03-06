@@ -1,8 +1,7 @@
-
 import { Agent, Project } from '@/lib/types';
 import { createMessage, getAgents } from '@/lib/api';
 import { acquireToken } from './messageBroker';
-import { setConversationState, getConversationState, ConversationState } from './conversationManager';
+import { setConversationState, getConversationState, ConversationState, getAllConversationStates } from './conversationManager';
 
 /**
  * Initiate a new conversation between agents
@@ -74,8 +73,7 @@ export const initiateConversation = (
  * to prevent duplicate conversations
  */
 function checkForExistingConversation(sourceAgentId: string, targetAgentId: string): string | null {
-  // Import needed to avoid circular dependencies
-  const { getAllConversationStates } = require('./conversationManager');
+  // Use the imported getAllConversationStates instead of require
   const conversations = getAllConversationStates();
   
   // Look for a recent active conversation between the same agents
