@@ -1,4 +1,3 @@
-
 import { Agent, Project, Task } from '@/lib/types';
 import { sendAgentPrompt } from '@/lib/openrouter';
 import { createMessage, getAgents, createTask } from '@/lib/api';
@@ -168,36 +167,39 @@ function parseTasksFromArchitectResponse(
 ): Array<{title: string, description: string, agentType?: string}> {
   const tasks: Array<{title: string, description: string, agentType?: string}> = [];
   
-  // Look for common task formats in the response
+  // Split the response into lines for processing
   const lines = response.split(/\n+/);
   
   let currentTask: {title: string, description: string, agentType?: string} | null = null;
+  let parsingAssignment = false;
   
   for (const line of lines) {
-    // Check for task headers or list items
+    // Check for task headers like "Task 1:" or numbered/bulleted list items
     const taskMatch = line.match(/^(Task \d+:|[*-]\s+|^\d+\.\s+)(.+)$/i);
     
     if (taskMatch) {
-      // If we have a current task, add it to the list
+      // If we have a current task, add it to the list before starting a new one
       if (currentTask) {
         tasks.push(currentTask);
       }
       
-      // Start a new task
+      // Start a new task with the title from the match
       currentTask = {
         title: taskMatch[2].trim(),
         description: ''
       };
-    } else if (currentTask) {
-      // Add lines to current task description and look for agent assignment
-      currentTask.description += line.trim() + '\n';
+      parsingAssignment = false;
+    } 
+    // Look for "Assigned to:" lines
+    else if (currentTask && line.toLowerCase().includes('assigned to:')) {
+      parsingAssignment = true;
       
-      // Check for agent type mentions
-      const agentTypeMatch = line.match(/assigned to:?\s+(\w+)|(\w+)\s+agent|specialist/i);
+      // Extract the agent type from this line
+      const agentTypeMatch = line.match(/assigned to:?\s+(\w+)/i);
       if (agentTypeMatch) {
-        const agentType = (agentTypeMatch[1] || agentTypeMatch[2]).toLowerCase();
+        const agentType = agentTypeMatch[1].toLowerCase();
         
-        // Map common agent references to our types
+        // Map common agent references to our specific agent types
         if (agentType.includes('front')) {
           currentTask.agentType = 'frontend';
         } else if (agentType.includes('back') || agentType.includes('api')) {
@@ -211,6 +213,23 @@ function parseTasksFromArchitectResponse(
         }
       }
     }
+    // Look for "Expected outcome:" lines to end the assignment section
+    else if (currentTask && line.toLowerCase().includes('expected outcome:')) {
+      parsingAssignment = false;
+      currentTask.description += line.trim() + '\n';
+    }
+    // Add content to description, checking for agent type if we're in the assignment section
+    else if (currentTask) {
+      currentTask.description += line.trim() + '\n';
+      
+      // If we're parsing the assignment section, keep looking for agent type
+      if (parsingAssignment && !currentTask.agentType) {
+        const agentMention = line.match(/(frontend|backend|testing|devops|architect)\s+agent/i);
+        if (agentMention) {
+          currentTask.agentType = agentMention[1].toLowerCase();
+        }
+      }
+    }
   }
   
   // Add the last task if we have one
@@ -218,7 +237,11 @@ function parseTasksFromArchitectResponse(
     tasks.push(currentTask);
   }
   
-  return tasks;
+  // Cleanup task descriptions by trimming whitespace
+  return tasks.map(task => ({
+    ...task,
+    description: task.description.trim()
+  }));
 }
 
 /**

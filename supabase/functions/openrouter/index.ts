@@ -52,13 +52,13 @@ WORKFLOW STAGES:
    - DO NOT assign everything to yourself (Architect)
    - Delegate tasks based on agent specialties
 
-OUTPUT FORMAT:
+OUTPUT FORMAT - YOU MUST USE THIS EXACT FORMAT FOR EACH TASK:
 Task 1: [Brief description]
-Assigned to: [Agent type] because [reason]
+Assigned to: [Frontend/Backend/Testing/DevOps] Agent
 Expected outcome: [Specific deliverable]
 
 Task 2: [Brief description]
-Assigned to: [Agent type] because [reason]
+Assigned to: [Frontend/Backend/Testing/DevOps] Agent
 Expected outcome: [Specific deliverable]
 
 [Continue for each task...]
