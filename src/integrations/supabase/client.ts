@@ -8,8 +8,8 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 
 // Make these available globally for other modules to use directly
 if (typeof window !== 'undefined') {
-  window.SUPABASE_URL = SUPABASE_URL;
-  window.SUPABASE_KEY = SUPABASE_PUBLISHABLE_KEY;
+  (window as any).SUPABASE_URL = SUPABASE_URL;
+  (window as any).SUPABASE_KEY = SUPABASE_PUBLISHABLE_KEY;
 }
 
 // Create supabase client once to avoid multiple instances
@@ -26,4 +26,3 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     }
   }
 });
-
