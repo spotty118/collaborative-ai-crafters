@@ -1,14 +1,11 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project, CodeFileDB } from '@/lib/types';
 import { createTask, createCodeFile, createMessage, getAgents } from './api';
 import { parseCodeBlocks, inferFilePath } from './codeParser';
 import { getGitHubService } from './services/GitHubService';
 import { toast } from 'sonner';
-import { 
-  initiateConversation, 
-  broadcastMessage 
-} from './agent/messageBroker';
+import { broadcastMessage } from './agent/messageBroker';
+import { initiateConversation } from './agent/agentCommunication';
 import {
   startAgentWithOrchestration,
   stopAgentWithOrchestration,
@@ -158,7 +155,7 @@ export const sendAgentPrompt = async (
         } catch (error) {
           console.error('Error saving code files:', error);
           toast.error('Error saving code files: ' + 
-            (error instanceof Error ? error.message : 'Unknown error')
+            (error instanceof Error ? error.message : 'Unknown error occurred')
           );
         }
       }

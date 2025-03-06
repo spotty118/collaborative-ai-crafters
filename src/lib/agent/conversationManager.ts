@@ -1,4 +1,3 @@
-
 import { Agent, Project } from '@/lib/types';
 import { createMessage, getAgents } from '@/lib/api';
 import { sendAgentPrompt } from '@/lib/openrouter';
@@ -154,7 +153,7 @@ Reply in a way that moves the project forward. If appropriate, suggest specific 
   } catch (error) {
     console.error(`Error in conversation ${conversationId}:`, error);
     
-    // Add error handling to avoid breakdown in agent communication
+    // Handle the error case
     try {
       await createMessage({
         project_id: project.id,
@@ -167,7 +166,7 @@ Reply in a way that moves the project forward. If appropriate, suggest specific 
     }
     
     // Release the token so other conversations can happen
-    releaseToken(currentSpeaker);
+    releaseToken(currentSpeaker.id);
   }
 };
 
