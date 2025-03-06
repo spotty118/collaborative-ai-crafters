@@ -114,6 +114,48 @@ const Project: React.FC = () => {
     }
   });
 
+  const handleFileClick = (file: CodeFile) => {
+    setSelectedFile(file);
+  };
+
+  const handlePushToGitHub = async () => {
+    if (!github.isConnected) {
+      toast.error("GitHub is not connected. Please connect GitHub first.");
+      setActiveTab("settings");
+      return;
+    }
+
+    if (!id) return;
+
+    try {
+      const response = await github.pushToRepository(id);
+      if (response.success) {
+        toast.success("Successfully pushed to GitHub repository");
+      } else {
+        toast.error(`Failed to push to GitHub: ${response.error}`);
+      }
+    } catch (error) {
+      console.error("Error pushing to GitHub:", error);
+      toast.error(`Error pushing to GitHub: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleConnectGitHub = async () => {
+    if (!githubToken.trim()) {
+      toast.error("Please enter a GitHub token");
+      return;
+    }
+
+    try {
+      await github.connect(githubToken);
+      setGithubToken("");
+      toast.success("GitHub connected successfully");
+    } catch (error) {
+      console.error("Error connecting to GitHub:", error);
+      toast.error(`Failed to connect GitHub: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
   const handleStartAgent = async (agentId: string) => {
     if (!id || !project) return;
     
