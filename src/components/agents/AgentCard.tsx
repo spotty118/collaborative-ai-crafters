@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { Agent } from "@/lib/types";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -33,9 +32,9 @@ const AgentCard: React.FC<AgentCardProps> = ({
     // Start with current value
     setProgressValue(prev => {
       // If the difference is large, start at a minimum value to show animation
-      if (agent.progress > prev + 20) {
+      if (agent.progress > prev + 10) {
         setAnimating(true);
-        return prev > 0 ? prev : 5;
+        return prev > 0 ? prev : 15;
       }
       return prev;
     });
@@ -55,19 +54,18 @@ const AgentCard: React.FC<AgentCardProps> = ({
       setProgressValue(100);
     } else if (agent.status === "idle" && progressValue > 0) {
       // When paused, keep the current progress
-    } else if (agent.status === "working" && (agent.progress === undefined || agent.progress < 10)) {
-      // Ensure we show some progress when working
-      setProgressValue(10);
-      
-      // For working agents, add subtle progress animation
-      if (agent.progress === undefined || agent.progress < 20) {
+    } else if (agent.status === "working") {
+      // For working agents, ensure we show at least 15% progress with subtle animation
+      if (agent.progress === undefined || agent.progress < 15) {
+        setProgressValue(prev => prev < 15 ? 15 : prev);
+        
+        // Add subtle progress animation for working agents
         const interval = setInterval(() => {
           setProgressValue(prev => {
-            // Subtle animation between 10-20% for working agents with undefined progress
-            const newVal = prev + 0.5;
-            return newVal > 20 ? 10 : newVal;
+            // Subtle animation between 15-25% for working agents with undefined progress
+            return prev < 15 ? 15 : prev + (Math.random() * 0.5);
           });
-        }, 5000);
+        }, 3000);
         
         return () => clearInterval(interval);
       }
@@ -114,7 +112,7 @@ const AgentCard: React.FC<AgentCardProps> = ({
         <div className="mt-3">
           <div className="flex justify-between mb-1 text-xs">
             <span>Progress</span>
-            <span>{agent.progress || 0}%</span>
+            <span>{Math.round(progressValue)}%</span>
           </div>
           <Progress 
             value={progressValue} 

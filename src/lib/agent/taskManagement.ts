@@ -40,15 +40,19 @@ For each task, specify which specialist agent (frontend, backend, testing, or de
           
           const response = await sendAgentPrompt(agent, nextStepsPrompt, project);
           
+          // Create a condensed, human-readable summary of the architect's response
+          const summaryResponse = response.split('\n\n')[0] + 
+            "\n\nI've created new tasks based on our project needs and assigned them to appropriate team members.";
+          
           await createMessage({
             project_id: project.id,
-            content: response,
+            content: summaryResponse,
             sender: agent.name,
             type: "text"
           });
           
-          // Parse and create new tasks from the architect's response
-          const newTasks = parseTasksFromArchitectResponse(response);
+          // Parse and create new tasks from the architect's response (using concise mode)
+          const newTasks = parseTasksFromArchitectResponse(response, true);
           
           // Get all agents for assignment
           const agents = project.agents || await getAgents(project.id);
@@ -96,7 +100,7 @@ For each task, specify which specialist agent (frontend, backend, testing, or de
         initiateConversation(
           agent,
           architectAgent,
-          `I've completed task ${taskId}. Here's a summary of what I did: [Task completion]. What should I focus on next?`,
+          `I've completed task ${taskId}. What should I focus on next?`,
           project,
           2
         );

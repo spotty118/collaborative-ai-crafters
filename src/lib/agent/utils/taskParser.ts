@@ -1,3 +1,4 @@
+
 /**
  * Utility for parsing tasks from architect's response
  */
@@ -12,7 +13,8 @@ type ParsedTask = {
  * Parse tasks from architect's response
  */
 export function parseTasksFromArchitectResponse(
-  response: string
+  response: string,
+  concise: boolean = true // Add parameter to control concise output
 ): Array<ParsedTask> {
   const tasks: Array<ParsedTask> = [];
   
@@ -35,7 +37,7 @@ export function parseTasksFromArchitectResponse(
       // Start a new task with the title from the match
       currentTask = {
         title: taskMatch[2].trim(),
-        description: ''
+        description: concise ? '' : '' // If concise, start with empty description
       };
       parsingAssignment = false;
     } 
@@ -65,10 +67,13 @@ export function parseTasksFromArchitectResponse(
     // Look for "Expected outcome:" lines to end the assignment section
     else if (currentTask && line.toLowerCase().includes('expected outcome:')) {
       parsingAssignment = false;
-      currentTask.description += line.trim() + '\n';
+      // Only add to description if not in concise mode
+      if (!concise) {
+        currentTask.description += line.trim() + '\n';
+      }
     }
     // Add content to description, checking for agent type if we're in the assignment section
-    else if (currentTask) {
+    else if (currentTask && !concise) {
       currentTask.description += line.trim() + '\n';
       
       // If we're parsing the assignment section, keep looking for agent type
@@ -89,6 +94,6 @@ export function parseTasksFromArchitectResponse(
   // Cleanup task descriptions by trimming whitespace
   return tasks.map(task => ({
     ...task,
-    description: task.description.trim()
+    description: concise ? `Task assigned to ${task.agentType || 'unspecified'} agent.` : task.description.trim()
   }));
 }
