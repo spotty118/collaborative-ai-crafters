@@ -1,3 +1,4 @@
+
 import { Agent, Project, Task } from '@/lib/types';
 import { createMessage, createTask, getAgents } from '@/lib/api';
 import { sendAgentPrompt } from '@/lib/openrouter';
@@ -17,6 +18,33 @@ export const handleTaskCompletion = async (
   
   try {
     console.log(`Agent ${agent.name} completed task ${taskId}`);
+    
+    // Update agent progress when completing a task
+    // Different progress increases based on agent type
+    let progressIncrease;
+    switch (agent.type) {
+      case 'architect':
+        progressIncrease = 15 + Math.floor(Math.random() * 10);
+        break;
+      case 'frontend':
+        progressIncrease = 20 + Math.floor(Math.random() * 15);
+        break;
+      case 'backend':
+        progressIncrease = 18 + Math.floor(Math.random() * 12);
+        break;
+      case 'testing':
+        progressIncrease = 25 + Math.floor(Math.random() * 10);
+        break;
+      case 'devops':
+        progressIncrease = 22 + Math.floor(Math.random() * 13);
+        break;
+      default:
+        progressIncrease = 20 + Math.floor(Math.random() * 10);
+    }
+    
+    // Update agent's progress (can't exceed 100%)
+    const currentProgress = agent.progress || 0;
+    agent.progress = Math.min(100, currentProgress + progressIncrease);
     
     // Create a completion message
     await createMessage({

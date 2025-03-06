@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
@@ -30,7 +31,7 @@ serve(async (req) => {
     
     // Track task progress for updating agent status later
     const isTaskExecution = prompt.includes('Execute the following task:') || !!taskId;
-    const progressUpdate = isTaskExecution ? { progress: calculateProgress(projectContext) } : {};
+    const progressUpdate = isTaskExecution ? { progress: calculateProgress(projectContext, agentType) } : {};
     
     // Different system prompts based on agent type with focus on task creation without summaries
     const systemPrompts = {
@@ -138,21 +139,56 @@ IMPORTANT: Do not return complex objects in error messages. Always convert error
   }
 });
 
-// Function to calculate progress based on tasks completed
-function calculateProgress(projectContext: any): number {
-  if (!projectContext) return 15; // Default starting progress
+// Function to calculate progress based on tasks completed and agent type
+function calculateProgress(projectContext: any, agentType: string): number {
+  if (!projectContext) {
+    // Default starting progress varies by agent type
+    switch (agentType) {
+      case 'architect':
+        return 20 + Math.floor(Math.random() * 10);
+      case 'frontend':
+        return 15 + Math.floor(Math.random() * 12);
+      case 'backend':
+        return 18 + Math.floor(Math.random() * 8);
+      case 'testing':
+        return 12 + Math.floor(Math.random() * 10);
+      case 'devops':
+        return 16 + Math.floor(Math.random() * 9);
+      default:
+        return 15 + Math.floor(Math.random() * 5);
+    }
+  }
   
-  // If we have completed a task, bump progress to at least 50%
-  const baseProgress = 50;
+  // Base progress values differ by agent type
+  let baseProgress;
+  switch (agentType) {
+    case 'architect':
+      baseProgress = 50 + Math.floor(Math.random() * 10);
+      break;
+    case 'frontend':
+      baseProgress = 45 + Math.floor(Math.random() * 15);
+      break;
+    case 'backend':
+      baseProgress = 48 + Math.floor(Math.random() * 12);
+      break;
+    case 'testing':
+      baseProgress = 40 + Math.floor(Math.random() * 20);
+      break;
+    case 'devops':
+      baseProgress = 42 + Math.floor(Math.random() * 16);
+      break;
+    default:
+      baseProgress = 45 + Math.floor(Math.random() * 10);
+  }
   
   // If we have analysis completed, add more progress
   if (projectContext.requirements) {
-    return baseProgress + 20;
+    return baseProgress + (10 + Math.floor(Math.random() * 15));
   }
   
   // If we have source code being analyzed, progress further
   if (projectContext.sourceUrl) {
-    return baseProgress + 30;
+    return baseProgress + (15 + Math.floor(Math.random() * 20));
   }
   
   return baseProgress;

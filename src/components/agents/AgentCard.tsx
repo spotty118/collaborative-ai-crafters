@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { Agent } from "@/lib/types";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -34,7 +35,7 @@ const AgentCard: React.FC<AgentCardProps> = ({
       // If the difference is large, start at a minimum value to show animation
       if (agent.progress > prev + 10) {
         setAnimating(true);
-        return prev > 0 ? prev : 15;
+        return prev > 0 ? prev : agent.type === 'architect' ? 20 : 15;
       }
       return prev;
     });
@@ -48,29 +49,52 @@ const AgentCard: React.FC<AgentCardProps> = ({
     return () => clearTimeout(timeout);
   }, [agent.progress]);
 
-  // Automatically update progress based on status
+  // Automatically update progress based on status and agent type
   useEffect(() => {
     if (agent.status === "completed") {
       setProgressValue(100);
     } else if (agent.status === "idle" && progressValue > 0) {
       // When paused, keep the current progress
     } else if (agent.status === "working") {
-      // For working agents, ensure we show at least 15% progress with subtle animation
+      // For working agents, ensure we show different starting progress values by agent type
+      // This ensures visual differentiation between agents
       if (agent.progress === undefined || agent.progress < 15) {
-        setProgressValue(prev => prev < 15 ? 15 : prev);
+        // Different base progress values for different agent types
+        let baseProgress;
+        switch(agent.type) {
+          case 'architect':
+            baseProgress = 20 + (Math.random() * 5);
+            break;
+          case 'frontend':
+            baseProgress = 15 + (Math.random() * 8);
+            break;
+          case 'backend':
+            baseProgress = 18 + (Math.random() * 7);
+            break; 
+          case 'testing':
+            baseProgress = 12 + (Math.random() * 6);
+            break;
+          case 'devops':
+            baseProgress = 16 + (Math.random() * 7);
+            break;
+          default:
+            baseProgress = 15 + (Math.random() * 5);
+        }
+        
+        setProgressValue(baseProgress);
         
         // Add subtle progress animation for working agents
         const interval = setInterval(() => {
           setProgressValue(prev => {
-            // Subtle animation between 15-25% for working agents with undefined progress
-            return prev < 15 ? 15 : prev + (Math.random() * 0.5);
+            // Subtle animation with different ranges for different agent types
+            return prev + (Math.random() * 0.8);
           });
         }, 3000);
         
         return () => clearInterval(interval);
       }
     }
-  }, [agent.status, agent.progress, progressValue]);
+  }, [agent.status, agent.progress, agent.type, progressValue]);
 
   const getAgentColorClass = () => {
     switch (agent.type) {
