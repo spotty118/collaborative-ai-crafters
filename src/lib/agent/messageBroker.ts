@@ -1,239 +1,46 @@
+// Import necessary modules
 
-import { Agent, Project, Message } from '@/lib/types';
-import { createMessage, getAgents } from '@/lib/api';
-import { sendAgentPrompt } from '@/lib/openrouter';
-import { toast } from 'sonner';
+// Track tokens for each agent
+const tokens: Record<string, boolean> = {};
 
-// Token system to prevent communication conflicts
-let communicationToken: string | null = null;
-let tokenHolderAgent: string | null = null;
-
-// Track recent broadcasts to prevent duplicates
-const recentBroadcasts = new Map<string, number>();
-const BROADCAST_COOLDOWN_MS = 30000; // 30 seconds cooldown between identical broadcasts
-
-// Track agent message rates to prevent flooding
-const agentMessageRates = new Map<string, { lastMessage: number, messageCount: number }>();
-const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
-const MAX_MESSAGES_PER_WINDOW = 5; // Max 5 messages per minute
+// Track last message sent time for each agent to implement rate limiting
+const lastMessageTime: Record<string, number> = {};
+const MIN_MESSAGE_INTERVAL = 2000; // 2 seconds between messages
 
 /**
- * Check if an agent is rate limited
- */
-const isRateLimited = (agentId: string): boolean => {
-  const now = Date.now();
-  const rateData = agentMessageRates.get(agentId) || { lastMessage: 0, messageCount: 0 };
-  
-  // Reset counter if outside window
-  if (now - rateData.lastMessage > RATE_LIMIT_WINDOW_MS) {
-    agentMessageRates.set(agentId, { lastMessage: now, messageCount: 1 });
-    return false;
-  }
-  
-  // Check if over rate limit
-  if (rateData.messageCount >= MAX_MESSAGES_PER_WINDOW) {
-    return true;
-  }
-  
-  // Update counter
-  agentMessageRates.set(agentId, {
-    lastMessage: now,
-    messageCount: rateData.messageCount + 1
-  });
-  
-  return false;
-};
-
-/**
- * Acquire the communication token for an agent to begin/continue communication
+ * Acquire a token for an agent to communicate
  */
 export const acquireToken = (agentId: string): boolean => {
-  // Rate limit check
-  if (isRateLimited(agentId)) {
-    console.log(`Agent ${agentId} is rate limited, denying token`);
+  // Check if the agent is rate limited
+  const now = Date.now();
+  const lastTime = lastMessageTime[agentId] || 0;
+  const timeSinceLastMessage = now - lastTime;
+  
+  if (timeSinceLastMessage < MIN_MESSAGE_INTERVAL) {
+    console.log(`Agent ${agentId} is rate limited. Time since last message: ${timeSinceLastMessage}ms`);
     return false;
   }
   
-  // If no one has the token or this agent already has it, grant it
-  if (!communicationToken || tokenHolderAgent === agentId) {
-    communicationToken = `token-${Date.now()}`;
-    tokenHolderAgent = agentId;
+  // If the agent doesn't have a token, give it one
+  if (!tokens[agentId]) {
+    tokens[agentId] = true;
+    lastMessageTime[agentId] = now;
     console.log(`Agent ${agentId} acquired communication token`);
     return true;
   }
   
-  console.log(`Agent ${agentId} failed to acquire token, currently held by ${tokenHolderAgent}`);
+  console.log(`Agent ${agentId} already has a token, cannot acquire another`);
   return false;
 };
 
 /**
- * Release the communication token so other agents can communicate
+ * Release the token for an agent
  */
-export const releaseToken = (agentId: string): boolean => {
-  // Only the token holder can release it
-  if (tokenHolderAgent === agentId) {
-    communicationToken = null;
-    tokenHolderAgent = null;
+export const releaseToken = (agentId: string): void => {
+  if (tokens[agentId]) {
+    delete tokens[agentId];
     console.log(`Agent ${agentId} released communication token`);
-    return true;
-  }
-  return false;
-};
-
-/**
- * Check if an agent currently holds the token
- */
-export const getTokenState = (agentId: string): boolean => {
-  return tokenHolderAgent === agentId;
-};
-
-/**
- * Create a broadcast message from one agent to all other agents
- */
-export const broadcastMessage = async (
-  sourceAgent: Agent,
-  message: string,
-  project: Project,
-  cooldownSeconds: number = 30
-): Promise<void> => {
-  try {
-    // Create a unique key for this broadcast to prevent duplicates
-    const broadcastKey = `${sourceAgent.id}-${message}`;
-    const now = Date.now();
-    const cooldownMs = cooldownSeconds * 1000;
-    
-    // Check if this is a duplicate broadcast within the cooldown period
-    const lastBroadcastTime = recentBroadcasts.get(broadcastKey);
-    if (lastBroadcastTime && (now - lastBroadcastTime) < cooldownMs) {
-      console.log(`Skipping duplicate broadcast from ${sourceAgent.name}: "${message.substring(0, 30)}..."`);
-      return;
-    }
-    
-    // Record this broadcast to prevent duplicates
-    recentBroadcasts.set(broadcastKey, now);
-    
-    // Clean up old broadcast records (older than 5 minutes)
-    const CLEANUP_THRESHOLD = 5 * 60 * 1000; // 5 minutes
-    for (const [key, timestamp] of recentBroadcasts.entries()) {
-      if (now - timestamp > CLEANUP_THRESHOLD) {
-        recentBroadcasts.delete(key);
-      }
-    }
-    
-    // Get all agents
-    const allAgents = project.agents || await getAgents(project.id);
-    
-    // Create the broadcast message
-    await createMessage({
-      project_id: project.id,
-      content: `[BROADCAST] ${message}`,
-      sender: sourceAgent.name,
-      type: "text"
-    });
-    
-    console.log(`${sourceAgent.name} broadcast a message to all agents`);
-    
-    // Filter out the source agent and get other active agents
-    const otherAgents = allAgents.filter(a => 
-      a.id !== sourceAgent.id && 
-      a.status === 'working'
-    );
-    
-    // If there are other agents, initiate conversations with them
-    if (otherAgents.length > 0) {
-      // Architect gets higher priority for their broadcasts
-      const actualPriority = sourceAgent.type === 'architect' ? cooldownSeconds + 1 : cooldownSeconds;
-      
-      // Import and use the initiateConversation function to avoid circular dependencies
-      const { initiateConversation } = await import('./agentCommunication');
-      
-      // Start conversations with each agent with a delay to avoid rate limiting
-      for (let i = 0; i < otherAgents.length; i++) {
-        const agent = otherAgents[i];
-        
-        // Create a closure to preserve the agent variable
-        setTimeout(() => {
-          initiateConversation(sourceAgent, agent, message, project, actualPriority);
-        }, i * 8000); // 8-second spacing between conversation starts
-      }
-    }
-  } catch (error) {
-    console.error('Error broadcasting message:', error);
-    toast.error('Error broadcasting message');
+  } else {
+    console.log(`Agent ${agentId} does not have a token to release`);
   }
 };
-
-/**
- * Handle conflicts between agents by initiating an architect-led resolution
- */
-export const resolveConflict = async (
-  agent1: Agent,
-  agent2: Agent,
-  conflictDescription: string,
-  project: Project
-): Promise<void> => {
-  try {
-    // Get the architect agent to resolve conflicts
-    const allAgents = project.agents || await getAgents(project.id);
-    const architectAgent = allAgents.find(a => a.type === 'architect' && a.status === 'working');
-    
-    if (!architectAgent) {
-      console.warn('No architect agent available to resolve conflict');
-      return;
-    }
-    
-    // Log the conflict
-    await createMessage({
-      project_id: project.id,
-      content: `[CONFLICT DETECTED] Conflict between ${agent1.name} and ${agent2.name}: ${conflictDescription}`,
-      sender: 'System',
-      type: "text"
-    });
-    
-    // Create a resolution request to the architect
-    const resolutionPrompt = `
-As the project Architect, you need to resolve a conflict between:
-- ${agent1.name} (${agent1.type})
-- ${agent2.name} (${agent2.type})
-
-The conflict is regarding: ${conflictDescription}
-
-Please analyze both perspectives and provide a resolution that aligns with the project's architectural goals.
-`;
-    
-    const resolution = await sendAgentPrompt(
-      architectAgent,
-      resolutionPrompt,
-      project
-    );
-    
-    // Record the architect's resolution
-    await createMessage({
-      project_id: project.id,
-      content: `[CONFLICT RESOLUTION] ${resolution}`,
-      sender: architectAgent.name,
-      type: "text"
-    });
-    
-    // Import the initiateConversation function to avoid circular dependencies
-    const { initiateConversation } = await import('./agentCommunication');
-    
-    // Inform both agents of the resolution
-    const notificationPrompt = `The Architect has resolved your conflict: ${resolution}`;
-    
-    // Start new conversations with both agents to communicate the resolution
-    initiateConversation(architectAgent, agent1, notificationPrompt, project, 3);
-    
-    // Slight delay for the second conversation to avoid rate limiting
-    setTimeout(() => {
-      initiateConversation(architectAgent, agent2, notificationPrompt, project, 3);
-    }, 8000);
-    
-  } catch (error) {
-    console.error('Error resolving conflict:', error);
-    toast.error('Error in conflict resolution process');
-  }
-};
-
-// Export tokenHolderAgent for modules that need to check it
-export { tokenHolderAgent };

@@ -1,4 +1,3 @@
-
 import { Project } from '@/lib/types';
 import { createMessage, getAgents } from '@/lib/api';
 import { sendAgentPrompt } from '@/lib/openrouter';
@@ -9,10 +8,10 @@ const conversationStates: Record<string, ConversationState> = {};
 
 export interface ConversationState {
   conversationId: string;
-  participants: string[]; // Array of agent IDs
+  participants: string[]; // Agent IDs
   lastMessage: string;
   turnCount: number;
-  status: 'active' | 'completed' | 'error';
+  status: 'active' | 'completed' | 'failed';
   priority: number;
   initiatedAt: Date;
 }
@@ -65,48 +64,31 @@ export const getAllConversationStates = (): Record<string, ConversationState> =>
 /**
  * Validate conversation state to prevent invalid state errors
  */
-export const isValidConversationState = (state: ConversationState | null): boolean => {
-  if (!state) return false;
-  
-  try {
-    // Check that all required properties exist and have valid values
-    const hasValidId = typeof state.conversationId === 'string' && state.conversationId.length > 0;
-    const hasValidParticipants = Array.isArray(state.participants) && state.participants.length >= 2;
-    const hasValidMessage = typeof state.lastMessage === 'string';
-    const hasValidTurnCount = typeof state.turnCount === 'number' && !isNaN(state.turnCount);
-    const hasValidStatus = ['active', 'completed', 'error'].includes(state.status);
-    const hasValidPriority = typeof state.priority === 'number' && !isNaN(state.priority);
-    
-    // Make sure initiatedAt is a valid Date
-    let hasValidDate = false;
-    if (state.initiatedAt) {
-      if (state.initiatedAt instanceof Date) {
-        hasValidDate = !isNaN(state.initiatedAt.getTime());
-      } else if (typeof state.initiatedAt === 'string') {
-        // Try to convert string to Date
-        const dateObj = new Date(state.initiatedAt);
-        hasValidDate = !isNaN(dateObj.getTime());
-        // Update the state with the Date object if valid
-        if (hasValidDate) {
-          state.initiatedAt = dateObj;
-        }
-      }
+export function isValidConversationState(state: any): state is ConversationState {
+  if (!state || typeof state !== 'object') return false;
+
+  // Check required properties existence and types
+  if (typeof state.conversationId !== 'string' || !state.conversationId) return false;
+  if (!Array.isArray(state.participants) || state.participants.length < 2) return false;
+  if (typeof state.lastMessage !== 'string') return false;
+  if (typeof state.turnCount !== 'number') return false;
+  if (!['active', 'completed', 'failed'].includes(state.status)) return false;
+  if (typeof state.priority !== 'number') return false;
+
+  // Ensure initiatedAt is a valid Date
+  if (!state.initiatedAt) return false;
+
+  // Convert string dates to Date objects if needed
+  if (typeof state.initiatedAt === 'string') {
+    try {
+      state.initiatedAt = new Date(state.initiatedAt);
+    } catch (e) {
+      return false;
     }
-    
-    return (
-      hasValidId &&
-      hasValidParticipants &&
-      hasValidMessage &&
-      hasValidTurnCount &&
-      hasValidStatus &&
-      hasValidPriority &&
-      hasValidDate
-    );
-  } catch (error) {
-    console.error('Error validating conversation state:', error);
-    return false;
   }
-};
+
+  return true;
+}
 
 /**
  * Get an agent by ID from the project's agents
@@ -165,7 +147,7 @@ export const continueConversation = async (
       console.error(`Agent ${nextAgentId} not found for conversation ${conversationId}`);
       setConversationState(conversationId, {
         ...validState,
-        status: 'error'
+        status: 'failed'
       });
       releaseToken(nextAgentId);
       return;
@@ -232,7 +214,7 @@ export const continueConversation = async (
     if (state) {
       setConversationState(conversationId, {
         ...state,
-        status: 'error'
+        status: 'failed'
       });
     }
     

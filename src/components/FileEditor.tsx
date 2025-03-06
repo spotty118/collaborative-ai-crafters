@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { useGitHub } from '@/contexts/GitHubContext';
+import { useGitHubContext } from '@/contexts/GitHubContext';
 import { toast } from 'sonner';
 import { Loader2, Save, X, Edit, Check, AlertTriangle } from 'lucide-react';
 
@@ -26,7 +25,7 @@ export const FileEditor: React.FC<FileEditorProps> = ({ file, onClose, onSave })
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const github = useGitHub();
+  const github = useGitHubContext();
 
   useEffect(() => {
     setContent(file.content || '');

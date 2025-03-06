@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -10,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import Dashboard from "@/components/layout/Dashboard";
 import { sendAgentPrompt } from "@/lib/openrouter";
 import { CodeFile, Message, Project as ProjectType, Agent, Task } from "@/lib/types";
-import { useGitHubContext as useGitHub } from "@/contexts/GitHubContext";
+import { useGitHubContext } from "@/contexts/GitHubContext";
 import { FileEditor } from "@/components/FileEditor";
 import { toast } from "sonner";
 

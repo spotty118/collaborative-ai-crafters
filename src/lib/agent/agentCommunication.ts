@@ -49,6 +49,13 @@ export const initiateConversation = (
     };
     
     // Validate and store the conversation state
+    if (!isValidConversationState(conversationState)) {
+      console.error('Created invalid conversation state', conversationState);
+      toast.error('Communication error between agents');
+      return '';
+    }
+    
+    // Store the conversation state
     if (!setConversationState(conversationId, conversationState)) {
       console.error('Failed to create valid conversation state');
       toast.error('Communication error between agents');
@@ -94,7 +101,7 @@ export const initiateConversation = (
  */
 function checkForExistingConversation(sourceAgentId: string, targetAgentId: string): string | null {
   try {
-    // Use the imported getAllConversationStates instead of require
+    // Get all conversation states
     const conversations = getAllConversationStates();
     
     // Look for a recent active conversation between the same agents
@@ -102,7 +109,7 @@ function checkForExistingConversation(sourceAgentId: string, targetAgentId: stri
     
     for (const [id, state] of Object.entries(conversations)) {
       // Ensure proper type casting for the state object
-      if (!isValidConversationState(state as ConversationState)) {
+      if (!isValidConversationState(state as any)) {
         continue;
       }
       

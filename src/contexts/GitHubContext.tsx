@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { GitHubConfig } from '@/lib/types';
-import { connectGitHub, testGitHubConnection } from '@/lib/github';
+import { GitHubService } from '@/lib/github';
 import { toast } from 'sonner';
 
 interface GitHubContextType {
@@ -9,9 +9,13 @@ interface GitHubContextType {
   isConnected: boolean;
   isConnecting: boolean;
   connectError: string | null;
-  connect: (token: string, owner: string, repo: string) => Promise<boolean>;
+  connect: (url: string, token: string, branch?: string) => Promise<boolean>;
   disconnect: () => void;
   testConnection: () => Promise<boolean>;
+  createOrUpdateFile: (path: string, content: string, message: string) => Promise<boolean>;
+  getFileContent: (path: string, ref?: string) => Promise<string>;
+  deleteFile: (path: string, message: string) => Promise<void>;
+  listFiles: (path?: string) => Promise<{name: string, path: string, type: string}[]>;
 }
 
 const GitHubContext = createContext<GitHubContextType | null>(null);
@@ -30,6 +34,7 @@ export const GitHubProvider = ({ children }: { children: ReactNode }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [service, setService] = useState<GitHubService | null>(null);
 
   // Load GitHub configuration from local storage on component mount
   useEffect(() => {
@@ -38,14 +43,22 @@ export const GitHubProvider = ({ children }: { children: ReactNode }) => {
       try {
         const config = JSON.parse(savedConfig);
         setGithubConfig(config);
-        // Test connection with saved token
-        testGitHubConnection(config)
-          .then((result) => {
-            setIsConnected(result);
-          })
-          .catch(() => {
-            setIsConnected(false);
-          });
+        // Try to initialize service with saved config
+        try {
+          const newService = new GitHubService(config);
+          setService(newService);
+          // Test connection with saved token
+          newService.testConnection()
+            .then((result) => {
+              setIsConnected(result);
+            })
+            .catch(() => {
+              setIsConnected(false);
+            });
+        } catch (error) {
+          console.error('Error initializing GitHub service:', error);
+          setIsConnected(false);
+        }
       } catch (error) {
         console.error('Error parsing saved GitHub config:', error);
         localStorage.removeItem('githubConfig');
@@ -54,15 +67,21 @@ export const GitHubProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   // Connect to GitHub
-  const connect = async (token: string, owner: string, repo: string): Promise<boolean> => {
+  const connect = async (url: string, token: string, branch?: string): Promise<boolean> => {
     setIsConnecting(true);
     setConnectError(null);
     
     try {
+      // Parse GitHub URL to get owner and repo
+      const { owner, repo } = GitHubService.parseGitHubUrl(url);
       const config: GitHubConfig = { token, owner, repo };
-      const result = await connectGitHub(config);
+      
+      // Create service
+      const newService = new GitHubService(config);
+      const result = await newService.testConnection();
       
       if (result) {
+        setService(newService);
         setGithubConfig(config);
         setIsConnected(true);
         // Save to local storage
@@ -87,6 +106,7 @@ export const GitHubProvider = ({ children }: { children: ReactNode }) => {
   // Disconnect from GitHub
   const disconnect = () => {
     setGithubConfig(null);
+    setService(null);
     setIsConnected(false);
     localStorage.removeItem('githubConfig');
     toast.info('Disconnected from GitHub');
@@ -94,10 +114,10 @@ export const GitHubProvider = ({ children }: { children: ReactNode }) => {
 
   // Test GitHub connection
   const testConnection = async (): Promise<boolean> => {
-    if (!githubConfig) return false;
+    if (!service) return false;
 
     try {
-      const result = await testGitHubConnection(githubConfig);
+      const result = await service.testConnection();
       setIsConnected(result);
       if (result) {
         toast.success('GitHub connection is working');
@@ -112,6 +132,71 @@ export const GitHubProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // Create or update a file
+  const createOrUpdateFile = async (path: string, content: string, message: string): Promise<boolean> => {
+    if (!service) {
+      toast.error('GitHub service not initialized');
+      return false;
+    }
+
+    try {
+      return await service.createOrUpdateFile(path, content, message);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(`Failed to save file: ${errorMessage}`);
+      throw error;
+    }
+  };
+
+  // Get file content
+  const getFileContent = async (path: string, ref = 'main'): Promise<string> => {
+    if (!service) {
+      toast.error('GitHub service not initialized');
+      throw new Error('GitHub service not initialized');
+    }
+
+    try {
+      return await service.getFileContent(path, ref);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(`Failed to get file content: ${errorMessage}`);
+      throw error;
+    }
+  };
+
+  // Delete a file
+  const deleteFile = async (path: string, message: string): Promise<void> => {
+    if (!service) {
+      toast.error('GitHub service not initialized');
+      throw new Error('GitHub service not initialized');
+    }
+
+    try {
+      await service.deleteFile(path, message);
+      toast.success('File deleted successfully');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(`Failed to delete file: ${errorMessage}`);
+      throw error;
+    }
+  };
+
+  // List files
+  const listFiles = async (path = ''): Promise<{name: string, path: string, type: string}[]> => {
+    if (!service) {
+      toast.error('GitHub service not initialized');
+      return [];
+    }
+
+    try {
+      return await service.listFiles(path);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(`Failed to list files: ${errorMessage}`);
+      throw error;
+    }
+  };
+
   return (
     <GitHubContext.Provider
       value={{
@@ -121,7 +206,11 @@ export const GitHubProvider = ({ children }: { children: ReactNode }) => {
         connectError,
         connect,
         disconnect,
-        testConnection
+        testConnection,
+        createOrUpdateFile,
+        getFileContent,
+        deleteFile,
+        listFiles
       }}
     >
       {children}
