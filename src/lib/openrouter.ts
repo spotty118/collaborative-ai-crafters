@@ -40,6 +40,7 @@ export const sendAgentPrompt = async (
 ): Promise<string> => {
   try {
     console.log(`Sending prompt to ${agent.name} (${agent.type}) agent using google/gemini-2.0-flash-thinking-exp:free model`);
+    console.log(`Prompt content (first 100 chars): ${prompt.substring(0, 100)}...`);
     
     // Prepare detailed project context including GitHub repo if available
     const projectContext = project ? {
@@ -70,6 +71,8 @@ export const sendAgentPrompt = async (
       enhancedPrompt += ` When providing code, please use markdown code blocks with language and file path. For example: \`\`\`typescript [src/utils/helper.ts]\ncode here\n\`\`\``;
     }
     
+    console.log('Calling OpenRouter Supabase function with payload...');
+    
     const { data, error } = await supabase.functions.invoke('openrouter', {
       body: {
         agentType: agent.type,
@@ -78,11 +81,15 @@ export const sendAgentPrompt = async (
       }
     });
 
+    // Enhanced error logging
     if (error) {
       console.error('Error calling OpenRouter function:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
       return `Error: ${error.message}`;
     }
 
+    console.log('Received response from OpenRouter function:', data ? 'success' : 'no data');
+    
     const response = data as OpenRouterResponse;
     
     if (response.error) {
@@ -94,6 +101,7 @@ export const sendAgentPrompt = async (
       const content = response.choices[0].message.content;
       
       console.log("Received response from OpenRouter, parsing code blocks...");
+      console.log(`Response content (first 100 chars): ${content.substring(0, 100)}...`);
       
       // Look for code blocks in the response
       const codeBlocks = parseCodeBlocks(content);
@@ -170,6 +178,7 @@ export const sendAgentPrompt = async (
     return 'No response generated. Please try again.';
   } catch (error) {
     console.error('Exception when calling OpenRouter:', error);
+    console.error('Detailed error:', error instanceof Error ? error.stack : 'Unknown error structure');
     return `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`;
   }
 };

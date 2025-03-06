@@ -10,6 +10,13 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  // Add request logging
+  console.log('OpenRouter function received request:', {
+    method: req.method,
+    url: req.url,
+    headers: Object.fromEntries(req.headers.entries())
+  });
+  
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -25,7 +32,12 @@ serve(async (req) => {
   }
 
   try {
-    const { prompt, agentType, projectContext = {}, taskId } = await req.json();
+    // Log the raw request body for debugging
+    const rawBody = await req.text();
+    console.log('Request body:', rawBody);
+    
+    // Parse body again after reading text
+    const { prompt, agentType, projectContext = {}, taskId } = JSON.parse(rawBody);
     
     console.log(`Processing request for ${agentType} agent with project context: ${JSON.stringify(projectContext)}`);
     
@@ -90,7 +102,7 @@ IMPORTANT: Do not return complex objects in error messages. Always convert error
       headers: {
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://lovable.dev', // Replace with your actual domain
+        'HTTP-Referer': 'https://lovable.dev', 
         'X-Title': 'Agentic Development Platform',
       },
       body: JSON.stringify({

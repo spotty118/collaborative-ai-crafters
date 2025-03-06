@@ -4,6 +4,7 @@ import { createMessage, getAgents, createAgents, updateAgent } from '@/lib/api';
 import { broadcastMessage } from './messageBroker';
 import { toast } from 'sonner';
 import { startAgentWithOrchestration } from './agentLifecycle';
+import { sendAgentPrompt } from '@/lib/openrouter';
 
 /**
  * Initialize agent orchestration for a project
@@ -86,6 +87,20 @@ export const initializeOrchestration = async (project: Project): Promise<void> =
     } catch (error) {
       console.error('Error creating initial message:', error);
       toast.error("Communication error. Continuing anyway...");
+    }
+    
+    // Make a direct OpenRouter call to test API connectivity
+    try {
+      console.log('Testing OpenRouter API connection with direct prompt...');
+      const testResponse = await sendAgentPrompt(
+        architectAgent,
+        `Initialize project planning for "${project.name}". This is a ${project.description}`,
+        project
+      );
+      console.log('OpenRouter test response:', testResponse.substring(0, 100) + '...');
+    } catch (error) {
+      console.error('Error testing OpenRouter connection:', error);
+      toast.error("API communication error. Check console for details.");
     }
     
     // Broadcast initial message from architect to all agents
