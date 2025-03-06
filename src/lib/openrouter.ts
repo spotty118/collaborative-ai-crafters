@@ -1,8 +1,7 @@
+
 import { Agent, Project } from '@/lib/types';
 import { createMessage } from '@/lib/api';
 import { broadcastMessage } from './agent/messageBroker';
-
-const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 /**
  * Send a prompt to the agent using OpenRouter
@@ -13,62 +12,44 @@ export const sendAgentPrompt = async (
   project: Project
 ): Promise<string> => {
   try {
-    // Get the OpenRouter API key from environment variables
-    const openRouterApiKey = process.env.NEXT_PUBLIC_OPENROUTER_API_KEY;
+    console.log(`Sending prompt to ${agent.name}: ${prompt.substring(0, 50)}...`);
     
-    if (!openRouterApiKey) {
-      throw new Error("OpenRouter API key is missing. Please set the OPENROUTER_API_KEY environment variable.");
-    }
-    
-    // Construct the request body
-    const requestBody = {
-      model: "mistralai/mistral-medium",
-      messages: [
-        {
-          role: "system",
-          content: `You are an AI agent specializing in ${agent.type || 'software development'}.
-Your role is to help build a software project named "${project.name}".
-${project.description ? `Project description: ${project.description}` : ''}
-
-As the ${agent.type} specialist, your responsibilities include:
-- Writing high-quality, well-documented code
-- Following best practices for software development
-- Collaborating effectively with other specialists`
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      // Add any other parameters required by the OpenRouter API
-    };
-    
-    // Make the API request to OpenRouter
-    const response = await fetch(OPENROUTER_API_URL, {
-      method: "POST",
+    // Send the request to our Supabase Edge Function for OpenRouter
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openrouter`, {
+      method: 'POST',
       headers: {
-        "Authorization": `Bearer ${openRouterApiKey}`,
-        "Content-Type": "application/json"
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify(requestBody)
+      body: JSON.stringify({
+        prompt,
+        agentType: agent.type,
+        projectContext: {
+          name: project.name,
+          description: project.description,
+          sourceUrl: project.sourceUrl,
+          sourceType: project.sourceType,
+          id: project.id,
+          created_at: project.created_at
+        }
+      }),
     });
-    
-    // Check if the request was successful
+
     if (!response.ok) {
-      console.error('OpenRouter API Error:', response.status, response.statusText);
       const errorData = await response.json();
-      console.error('OpenRouter API Error Details:', errorData);
-      throw new Error(`OpenRouter API request failed with status ${response.status}: ${response.statusText}`);
+      console.error('OpenRouter API Error:', errorData);
+      throw new Error(`OpenRouter API request failed: ${errorData.error || response.statusText}`);
     }
-    
-    // Parse the response as JSON
+
     const responseData = await response.json();
-    
-    // Extract the agent's response from the API response
     const agentResponse = responseData.choices[0].message.content;
     
-    // Log the interaction
-    console.log(`Agent ${agent.name} response:`, agentResponse);
+    // Check if the response includes progress update data
+    if (responseData.progressUpdate && responseData.progressUpdate.progress) {
+      // This would be handled by the orchestrator now, but we could add a fallback here
+      console.log(`Agent ${agent.name} progress update:`, responseData.progressUpdate.progress);
+    }
+    
+    console.log(`Agent ${agent.name} response:`, agentResponse.substring(0, 100) + '...');
     
     return agentResponse;
   } catch (error: any) {
@@ -80,6 +61,102 @@ As the ${agent.type} specialist, your responsibilities include:
         project_id: project.id,
         content: `I encountered an error: ${error.message}`,
         sender: agent.name,
+        type: "error"
+      });
+    }
+    
+    throw error;
+  }
+};
+
+/**
+ * Send a team collaborative prompt to multiple agents
+ */
+export const sendTeamPrompt = async (
+  agents: Agent[],
+  prompt: string,
+  project: Project
+): Promise<Record<string, string>> => {
+  try {
+    console.log(`Sending team prompt to ${agents.length} agents: ${prompt.substring(0, 50)}...`);
+    
+    // Create a map to store each agent's response
+    const responses: Record<string, string> = {};
+    
+    // Process agents in sequence for a more coherent conversation flow
+    for (const agent of agents) {
+      // Add context about which agents are participating
+      const teamContext = {
+        team: agents.map(a => ({ name: a.name, type: a.type })),
+        currentAgent: { name: agent.name, type: agent.type }
+      };
+      
+      // Create an enhanced prompt that includes team context
+      const enhancedPrompt = `
+As part of a development team that includes ${agents.map(a => a.name).join(', ')}, 
+please respond to the following request from the user:
+
+${prompt}
+
+Remember that you are the ${agent.name} (${agent.type}) and should focus on your specialty 
+while acknowledging the roles of your teammates.`;
+      
+      // Send the request to our Supabase Edge Function for OpenRouter
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openrouter`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: enhancedPrompt,
+          agentType: agent.type,
+          projectContext: {
+            name: project.name,
+            description: project.description,
+            sourceUrl: project.sourceUrl,
+            sourceType: project.sourceType,
+            id: project.id,
+            created_at: project.created_at,
+            teamContext
+          }
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error(`OpenRouter API Error for ${agent.name}:`, errorData);
+        responses[agent.id] = `I couldn't process this request due to an error: ${errorData.error || response.statusText}`;
+        continue;
+      }
+
+      const responseData = await response.json();
+      const agentResponse = responseData.choices[0].message.content;
+      
+      // Store the response
+      responses[agent.id] = agentResponse;
+      
+      // Send the message to the chat
+      await createMessage({
+        project_id: project.id,
+        content: agentResponse,
+        sender: agent.name,
+        type: "text"
+      });
+      
+      // Small delay between agent responses to make the conversation more natural
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    return responses;
+  } catch (error: any) {
+    console.error("Error in sendTeamPrompt:", error);
+    
+    // Create an error message in chat
+    if (project.id) {
+      await createMessage({
+        project_id: project.id,
+        content: `Team communication error: ${error.message}`,
+        sender: "System",
         type: "error"
       });
     }
