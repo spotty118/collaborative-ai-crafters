@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project, CodeFileDB } from '@/lib/types';
 import { createTask, createCodeFile, createMessage, getAgents } from './api';
@@ -12,6 +13,9 @@ import {
   restartAgentWithOrchestration,
   handleTaskCompletion
 } from './agent/orchestrator';
+
+// Store task titles to prevent duplicate creation
+const recentlyCreatedTasks = new Set<string>();
 
 export interface OpenRouterResponse {
   id: string;
@@ -216,6 +220,9 @@ export const analyzeGitHubAndCreateTasks = async (
   }
 
   try {
+    // Clear any previously stored task titles when starting a fresh analysis
+    recentlyCreatedTasks.clear();
+    
     // Prioritize architect agent for analysis
     let analysisAgent = agent;
     if (agent.type !== 'architect') {
@@ -242,15 +249,16 @@ export const analyzeGitHubAndCreateTasks = async (
     }
     
     // Create an analysis prompt that focuses only on creating tasks without summaries
+    // Reduced number of tasks to prevent overwhelming the system and duplication
     const analysisPrompts: Record<string, string> = {
-      'architect': `For the GitHub repository at ${project.sourceUrl}, identify exactly 5 specific tasks to improve the overall architecture and project structure. For each task, clearly specify which agent (frontend, backend, testing, or devops) should handle it based on their specialties. DO NOT provide a summary of the repository - focus ONLY on creating tasks.`,
-      'frontend': `For the GitHub repository at ${project.sourceUrl}, identify exactly 4 specific frontend tasks to improve UI/UX, performance, and code quality. DO NOT provide a summary of the repository - focus ONLY on creating tasks.`,
-      'backend': `For the GitHub repository at ${project.sourceUrl}, identify exactly 4 specific backend tasks to improve API design, database optimization, and security. DO NOT provide a summary of the repository - focus ONLY on creating tasks.`,
-      'testing': `For the GitHub repository at ${project.sourceUrl}, identify exactly 4 specific testing tasks to improve test coverage and quality assurance. DO NOT provide a summary of the repository - focus ONLY on creating tasks.`,
-      'devops': `For the GitHub repository at ${project.sourceUrl}, identify exactly 4 specific DevOps tasks to improve CI/CD, deployment, and infrastructure. DO NOT provide a summary of the repository - focus ONLY on creating tasks.`
+      'architect': `For the GitHub repository at ${project.sourceUrl}, identify exactly 3 specific tasks to improve the overall architecture and project structure. For each task, clearly specify which agent (frontend, backend, testing, or devops) should handle it based on their specialties. DO NOT provide a summary of the repository - focus ONLY on creating tasks.`,
+      'frontend': `For the GitHub repository at ${project.sourceUrl}, identify exactly 2 specific frontend tasks to improve UI/UX, performance, and code quality. DO NOT provide a summary of the repository - focus ONLY on creating tasks.`,
+      'backend': `For the GitHub repository at ${project.sourceUrl}, identify exactly 2 specific backend tasks to improve API design, database optimization, and security. DO NOT provide a summary of the repository - focus ONLY on creating tasks.`,
+      'testing': `For the GitHub repository at ${project.sourceUrl}, identify exactly 2 specific testing tasks to improve test coverage and quality assurance. DO NOT provide a summary of the repository - focus ONLY on creating tasks.`,
+      'devops': `For the GitHub repository at ${project.sourceUrl}, identify exactly 2 specific DevOps tasks to improve CI/CD, deployment, and infrastructure. DO NOT provide a summary of the repository - focus ONLY on creating tasks.`
     };
     
-    const prompt = analysisPrompts[analysisAgent.type] || `For the GitHub repository at ${project.sourceUrl}, list 4 specific tasks to improve it. DO NOT provide a repository summary - focus ONLY on creating tasks.`;
+    const prompt = analysisPrompts[analysisAgent.type] || `For the GitHub repository at ${project.sourceUrl}, list 2 specific tasks to improve it. DO NOT provide a repository summary - focus ONLY on creating tasks.`;
     
     console.log(`Agent ${analysisAgent.name} analyzing GitHub repository: ${project.sourceUrl}`);
     
@@ -260,10 +268,16 @@ export const analyzeGitHubAndCreateTasks = async (
     // Parse tasks from the response and create them
     const tasks = parseTasksFromAIResponse(analysisResponse, analysisAgent, project);
     
-    // Create each task in the database
+    // Create each task in the database, avoiding duplicates
+    let tasksCreated = 0;
+    const agents = project.agents || await getAgents(project.id);
+    
     for (const task of tasks) {
-      // Safely check for project.agents
-      const agents = project.agents || await getAgents(project.id);
+      // Skip if we've seen this task before (by title) in this session
+      if (recentlyCreatedTasks.has(task.title)) {
+        console.log(`Skipping duplicate task: "${task.title}"`);
+        continue;
+      }
       
       // Determine the appropriate agent type based on task content and name patterns
       let assignedAgentType = 'architect'; // Default fallback
@@ -300,29 +314,37 @@ export const analyzeGitHubAndCreateTasks = async (
       const assignedAgent = agents.find(a => a.type === assignedAgentType);
       const assignedAgentId = assignedAgent ? assignedAgent.id : analysisAgent.id;
       
-      await createTask({
-        title: task.title,
-        description: task.description,
-        priority: 'medium',
-        status: 'pending',
-        assigned_to: assignedAgentId,
-        project_id: project.id
-      });
-      
-      console.log(`Created task "${task.title}" assigned to ${assignedAgentType} agent`);
+      try {
+        await createTask({
+          title: task.title,
+          description: task.description,
+          priority: 'medium',
+          status: 'pending',
+          assigned_to: assignedAgentId,
+          project_id: project.id
+        });
+        
+        // Store this task title to avoid duplicates
+        recentlyCreatedTasks.add(task.title);
+        tasksCreated++;
+        
+        console.log(`Created task "${task.title}" assigned to ${assignedAgentType} agent`);
+      } catch (error) {
+        console.error(`Error creating task "${task.title}":`, error);
+      }
     }
     
-    console.log(`Agent ${analysisAgent.name} created ${tasks.length} tasks from GitHub analysis`);
+    console.log(`Agent ${analysisAgent.name} created ${tasksCreated} tasks from GitHub analysis`);
     
     // If architect performed the analysis, have them delegate tasks to other agents using the new orchestration
-    if (analysisAgent.type === 'architect') {
+    if (analysisAgent.type === 'architect' && tasksCreated > 0) {
       setTimeout(async () => {
         const agents = project.agents || await getAgents(project.id);
         
         if (agents && agents.length > 0) {
           broadcastMessage(
             analysisAgent,
-            `I've analyzed the repository and created tasks assigned to the appropriate specialists. Let's collaborate on implementing them efficiently.`,
+            `I've analyzed the repository and created ${tasksCreated} new tasks assigned to the appropriate specialists. Let's collaborate on implementing them efficiently.`,
             project,
             3
           );
@@ -330,7 +352,7 @@ export const analyzeGitHubAndCreateTasks = async (
       }, 5000);
     }
     
-    return true;
+    return tasksCreated > 0;
   } catch (error) {
     console.error('Error analyzing GitHub repository:', error);
     return false;
@@ -354,7 +376,7 @@ function parseTasksFromAIResponse(
   
   for (const line of lines) {
     // Check if line starts with a number or bullet point, indicating a new task
-    const taskMatch = line.match(/^(\d+[.)]|-|\*)\s+(.+)$/);
+    const taskMatch = line.match(/^(\d+[.)]|-|\*|Task \d+:)\s+(.+)$/i);
     
     if (taskMatch) {
       // If we have a current task, add it to the collection
@@ -365,11 +387,11 @@ function parseTasksFromAIResponse(
       // Start a new task with this line as the title
       currentTask = {
         title: taskMatch[2].trim(),
-        description: `Task suggested by ${agent.name} for ${project.name}`
+        description: `Task suggested by ${agent.name} for ${project.name}: `
       };
     } else if (currentTask && line.trim() && !line.startsWith('#')) {
       // Add non-empty, non-header lines to the current task description
-      currentTask.description += '\n' + line.trim();
+      currentTask.description += line.trim() + ' ';
     }
   }
   
@@ -395,7 +417,7 @@ function parseTasksFromAIResponse(
   }
   
   return tasks;
-}
+};
 
 /**
  * Continue agent work on completion of a task

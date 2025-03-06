@@ -9,6 +9,30 @@ type ParsedTask = {
   agentType?: string;
 };
 
+// Track previously created tasks to avoid duplication within a session
+const taskTitleCache = new Set<string>();
+
+/**
+ * Clear the task title cache when starting a new analysis session
+ */
+export function clearTaskTitleCache(): void {
+  taskTitleCache.clear();
+}
+
+/**
+ * Check if a task title has been seen before
+ */
+export function isTaskTitleDuplicate(title: string): boolean {
+  return taskTitleCache.has(title);
+}
+
+/**
+ * Record a task title as having been created
+ */
+export function recordTaskTitle(title: string): void {
+  taskTitleCache.add(title);
+}
+
 /**
  * Parse tasks from architect's response
  */
@@ -92,10 +116,21 @@ export function parseTasksFromArchitectResponse(
   }
   
   // Cleanup task descriptions by trimming whitespace
-  return tasks.map(task => ({
+  const parsedTasks = tasks.map(task => ({
     ...task,
     description: concise ? `Task assigned to ${task.agentType || 'unspecified'} agent.` : task.description.trim()
   }));
+  
+  // Filter out duplicate tasks by title
+  const uniqueTasks = parsedTasks.filter(task => {
+    if (isTaskTitleDuplicate(task.title)) {
+      console.log(`Skipping duplicate parsed task: "${task.title}"`);
+      return false;
+    }
+    return true;
+  });
+  
+  return uniqueTasks;
 }
 
 /**

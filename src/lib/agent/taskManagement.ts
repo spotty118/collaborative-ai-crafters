@@ -2,9 +2,19 @@
 import { Agent, Project, Task } from '@/lib/types';
 import { createMessage, createTask, getAgents, updateAgent } from '@/lib/api';
 import { sendAgentPrompt } from '@/lib/openrouter';
-import { parseTasksFromArchitectResponse, formatErrorForTaskDescription } from './utils/taskParser';
+import { parseTasksFromArchitectResponse, formatErrorForTaskDescription, recordTaskTitle } from './utils/taskParser';
 import { acquireToken, releaseToken, broadcastMessage } from './messageBroker';
 import { initiateConversation } from './agentCommunication';
+
+// Track recently created tasks to prevent duplicates
+const recentTaskTitles = new Set<string>();
+
+/**
+ * Clear the task title tracking when starting a new project session
+ */
+export const clearTaskTracking = (): void => {
+  recentTaskTitles.clear();
+};
 
 /**
  * Handle agent task completion and coordinate next steps
@@ -107,8 +117,16 @@ For each task, specify which specialist agent (frontend, backend, testing, or de
           // Get all agents for assignment
           const agents = project.agents || await getAgents(project.id);
           
-          // Create each task in the database
+          // Create each task in the database, avoiding duplicates
+          let tasksCreated = 0;
+          
           for (const task of newTasks) {
+            // Skip if we've seen this task before
+            if (recentTaskTitles.has(task.title)) {
+              console.log(`Skipping duplicate task: "${task.title}"`);
+              continue;
+            }
+            
             // Determine the appropriate agent for the task
             let assignedAgentId = agent.id; // Default to architect
             
@@ -119,23 +137,36 @@ For each task, specify which specialist agent (frontend, backend, testing, or de
               }
             }
             
-            await createTask({
-              title: task.title,
-              description: task.description,
-              priority: 'medium',
-              status: 'pending',
-              assigned_to: assignedAgentId,
-              project_id: project.id
-            });
+            try {
+              await createTask({
+                title: task.title,
+                description: task.description,
+                priority: 'medium',
+                status: 'pending',
+                assigned_to: assignedAgentId,
+                project_id: project.id
+              });
+              
+              // Record this task to avoid duplicates
+              recentTaskTitles.add(task.title);
+              recordTaskTitle(task.title);
+              tasksCreated++;
+              
+              console.log(`Created new task: ${task.title}`);
+            } catch (error) {
+              console.error(`Error creating task "${task.title}":`, error);
+            }
           }
           
           // Broadcast next steps to the team with cooldown to prevent duplicates
-          broadcastMessage(
-            agent, 
-            `I've updated our task list based on our progress. Please check your assigned tasks.`, 
-            project,
-            30 // 30 second cooldown to prevent duplicate broadcasts
-          );
+          if (tasksCreated > 0) {
+            broadcastMessage(
+              agent, 
+              `I've updated our task list with ${tasksCreated} new tasks based on our progress. Please check your assigned tasks.`, 
+              project,
+              30 // 30 second cooldown to prevent duplicate broadcasts
+            );
+          }
         } finally {
           // Always release the token when done
           releaseToken(agent.id);

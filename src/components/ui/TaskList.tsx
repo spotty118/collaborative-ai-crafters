@@ -1,4 +1,5 @@
-import React from "react";
+
+import React, { useEffect, useState } from "react";
 import { Task, Agent } from "@/lib/types";
 import { CheckCircle2, Circle, Clock, AlertCircle, RotateCw, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,54 @@ interface TaskListProps {
 }
 
 const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, className }) => {
+  // State to track which tasks have already been displayed
+  const [displayedTaskIds, setDisplayedTaskIds] = useState<Set<string>>(new Set());
+  
+  // Filter out duplicate tasks based on title
+  const uniqueTasks = tasks.reduce((acc: Task[], task) => {
+    // Skip tasks we've already displayed
+    if (displayedTaskIds.has(task.id)) {
+      return acc;
+    }
+    
+    // Check if we already have a task with the same title
+    const existingTask = acc.find(t => t.title === task.title);
+    if (existingTask) {
+      // If the existing task is older, replace it with the newer one
+      if (new Date(existingTask.created_at) < new Date(task.created_at)) {
+        // Remove the older task
+        const taskIndex = acc.findIndex(t => t.id === existingTask.id);
+        if (taskIndex !== -1) {
+          acc.splice(taskIndex, 1);
+        }
+        // Add this task and its ID to displayed tasks
+        acc.push(task);
+        setDisplayedTaskIds(prev => {
+          const newSet = new Set(prev);
+          newSet.add(task.id);
+          return newSet;
+        });
+      } else {
+        // Add the ID to displayed tasks
+        setDisplayedTaskIds(prev => {
+          const newSet = new Set(prev);
+          newSet.add(task.id);
+          return newSet;
+        });
+      }
+    } else {
+      // This is a unique task title, add it
+      acc.push(task);
+      setDisplayedTaskIds(prev => {
+        const newSet = new Set(prev);
+        newSet.add(task.id);
+        return newSet;
+      });
+    }
+    
+    return acc;
+  }, []);
+  
   const getTaskStatusIcon = (status: Task["status"]) => {
     switch (status) {
       case "pending":
@@ -66,12 +115,12 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, 
 
   return (
     <div className={cn("space-y-4", className)}>
-      <h3 className="text-lg font-semibold">Tasks</h3>
+      <h3 className="text-lg font-semibold">Tasks ({uniqueTasks.length})</h3>
       <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
-        {tasks.length === 0 ? (
+        {uniqueTasks.length === 0 ? (
           <div className="text-center py-8 text-gray-500">No tasks yet</div>
         ) : (
-          tasks.map((task) => (
+          uniqueTasks.map((task) => (
             <div
               key={task.id}
               className="p-3 border rounded-md bg-white hover:bg-gray-50 transition-colors"
