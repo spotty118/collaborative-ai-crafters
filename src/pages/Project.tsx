@@ -281,9 +281,9 @@ const Project: React.FC = () => {
         onImportProject={() => navigate("/")}
       />
       
-      <div className="bg-white border-b px-4 py-3">
+      <div className="bg-white border-b px-2 sm:px-4 py-3">
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "dashboard" | "code" | "settings")} className="w-full">
-          <TabsList className="grid grid-cols-3 w-full max-w-md">
+          <TabsList className="grid grid-cols-3 w-full max-w-md mx-auto">
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="code">Code Files</TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -312,9 +312,9 @@ const Project: React.FC = () => {
             />
           </TabsContent>
 
-          <TabsContent value="code" className="p-4">
+          <TabsContent value="code" className="p-2 sm:p-4">
             <div className="bg-white rounded-lg border h-full">
-              <div className="border-b px-4 py-3 flex justify-between items-center">
+              <div className="border-b px-3 py-3 flex justify-between items-center flex-wrap gap-2">
                 <h2 className="font-semibold">Code Files</h2>
                 <div className="flex items-center gap-2">
                   <Button
@@ -342,15 +342,15 @@ const Project: React.FC = () => {
                   onClose={() => setSelectedFile(null)}
                 />
               ) : (
-                <div className="grid md:grid-cols-2 gap-4 p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 sm:p-4">
                   {files.map(file => (
                     <div
                       key={file.id}
                       className="border rounded-md p-3 hover:bg-gray-50 cursor-pointer"
                       onClick={() => handleFileClick(file)}
                     >
-                      <div className="flex justify-between items-start mb-2">
-                        <h3 className="font-medium">{file.name}</h3>
+                      <div className="flex justify-between items-start mb-2 flex-wrap gap-1">
+                        <h3 className="font-medium truncate max-w-[calc(100%-70px)]">{file.name}</h3>
                         <span className="text-xs bg-gray-100 px-2 py-1 rounded">{file.language || 'Unknown'}</span>
                       </div>
                       <p className="text-sm text-gray-600 truncate">{file.path}</p>
@@ -364,21 +364,21 @@ const Project: React.FC = () => {
             </div>
           </TabsContent>
 
-          <TabsContent value="settings" className="p-4">
-            <div className="bg-white rounded-lg border p-6 max-w-2xl mx-auto">
+          <TabsContent value="settings" className="p-2 sm:p-4">
+            <div className="bg-white rounded-lg border p-4 sm:p-6 max-w-2xl mx-auto">
               <h2 className="text-xl font-semibold mb-6">Project Settings</h2>
               
               <div className="space-y-6">
                 <div>
                   <h3 className="text-base font-medium mb-2">Project Information</h3>
                   <div className="space-y-2">
-                    <div className="flex items-center">
+                    <div className="flex items-center flex-wrap">
                       <span className="font-medium w-32">Name:</span>
-                      <span>{project.name}</span>
+                      <span className="break-words">{project.name}</span>
                     </div>
-                    <div className="flex items-start">
+                    <div className="flex items-start flex-wrap">
                       <span className="font-medium w-32">Description:</span>
-                      <span>{project.description || 'No description'}</span>
+                      <span className="break-words">{project.description || 'No description'}</span>
                     </div>
                   </div>
                 </div>
@@ -387,20 +387,20 @@ const Project: React.FC = () => {
                   <div>
                     <h3 className="text-base font-medium mb-4">GitHub Integration</h3>
                     <div className="space-y-4">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
                         <span>Connection Status:</span>
                         <span className={`px-2 py-1 rounded text-sm ${github.isConnected ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                           {github.isConnected ? 'Connected' : 'Not Connected'}
                         </span>
                       </div>
 
-                      <div className="flex items-start">
+                      <div className="flex items-start flex-wrap">
                         <span className="font-medium w-32">Repository:</span>
                         <a 
                           href={project.sourceUrl} 
                           target="_blank" 
                           rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline truncate max-w-md"
+                          className="text-blue-600 hover:underline truncate max-w-full break-all"
                         >
                           {project.sourceUrl}
                         </a>
@@ -426,7 +426,7 @@ const Project: React.FC = () => {
                             GitHub Settings
                           </a>
                         </p>
-                        <Button onClick={handleConnectGitHub} className="mt-2">
+                        <Button onClick={handleConnectGitHub} className="mt-2 w-full sm:w-auto">
                           {github.isConnected ? 'Reconnect GitHub' : 'Connect GitHub'}
                         </Button>
                       </div>

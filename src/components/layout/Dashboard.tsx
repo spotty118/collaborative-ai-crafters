@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { SendHorizontal } from "lucide-react";
+import { SendHorizontal, Menu } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface DashboardProps {
@@ -48,6 +48,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   isLoading
 }) => {
   const [chatMessage, setChatMessage] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const handleSendMessage = () => {
@@ -76,10 +77,39 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   }, [filteredMessages]);
 
+  // Close sidebar on mobile when an agent is selected
+  useEffect(() => {
+    if (activeChat && window.innerWidth < 768) {
+      setSidebarOpen(false);
+    }
+  }, [activeChat]);
+
   return (
-    <div className="flex h-[calc(100vh-73px)]">
+    <div className="flex flex-col md:flex-row h-[calc(100vh-73px)]">
+      {/* Mobile sidebar toggle */}
+      <div className="md:hidden flex items-center justify-between p-3 border-b">
+        <div className="flex items-center">
+          <Button
+            variant="ghost" 
+            size="icon"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="mr-2"
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+          <h2 className="text-lg font-semibold">
+            {activeChat ? `Chat with ${getActiveAgentName()}` : project.name}
+          </h2>
+        </div>
+        {activeChat && (
+          <Badge variant="secondary" className="text-xs">
+            Active
+          </Badge>
+        )}
+      </div>
+      
       {/* Left sidebar with agents */}
-      <div className="w-1/4 border-r bg-gray-50 p-4 overflow-auto">
+      <div className={`${sidebarOpen ? 'block' : 'hidden'} md:block w-full md:w-1/4 border-r bg-gray-50 p-4 overflow-auto h-full md:h-auto ${sidebarOpen ? 'absolute z-10 top-[112px] left-0 right-0 bottom-0 bg-white' : ''}`}>
         <h2 className="text-lg font-semibold mb-3">Project</h2>
         <div className="mb-4 bg-white p-3 rounded-md border">
           <h3 className="font-medium">{project.name}</h3>
@@ -119,11 +149,11 @@ const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col">
+      <div className={`flex-1 flex flex-col ${sidebarOpen ? 'hidden md:flex' : 'flex'}`}>
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-0">
           {/* Chat section */}
           <div className="border-r flex flex-col h-full overflow-hidden">
-            <div className="border-b p-4">
+            <div className="border-b p-4 hidden md:block">
               <h2 className="text-lg font-semibold">
                 {activeChat 
                   ? `Chat with ${getActiveAgentName()}`
@@ -133,7 +163,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             </div>
             
             <div className="flex-1 overflow-hidden">
-              <ScrollArea className="h-[calc(100vh-220px)]">
+              <ScrollArea className="h-[calc(100vh-200px)] md:h-[calc(100vh-220px)]">
                 <div className="space-y-4 p-4">
                   {isLoading.messages ? (
                     <div className="flex justify-center py-8">
@@ -141,7 +171,9 @@ const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                   ) : filteredMessages.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
-                      No messages yet. Start a conversation with an agent.
+                      {activeChat 
+                        ? "No messages yet. Start a conversation with this agent." 
+                        : "Select an agent from the sidebar to start a conversation."}
                     </div>
                   ) : (
                     filteredMessages.map((message) => (
@@ -155,7 +187,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                             })}
                           </div>
                         </div>
-                        <div className="pl-2 border-l-2 border-gray-200 text-sm text-gray-700">
+                        <div className="pl-2 border-l-2 border-gray-200 text-sm text-gray-700 break-words">
                           {message.content}
                         </div>
                         <Separator className="mt-4" />
@@ -167,7 +199,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               </ScrollArea>
             </div>
             
-            <div className="p-4 border-t mt-auto">
+            <div className="p-3 md:p-4 border-t mt-auto">
               <div className="flex gap-2">
                 <Input
                   placeholder={activeChat ? "Type a message..." : "Select an agent to chat"}
@@ -192,8 +224,8 @@ const Dashboard: React.FC<DashboardProps> = ({
             </div>
           </div>
           
-          {/* Tasks section */}
-          <div className="p-4 bg-gray-50 overflow-auto h-[calc(100vh-73px)]">
+          {/* Tasks section - Hidden on mobile initially, shown in the Tasks tab */}
+          <div className="hidden md:block p-4 bg-gray-50 overflow-auto h-[calc(100vh-73px)]">
             {isLoading.tasks ? (
               <div className="flex justify-center py-8">
                 <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
