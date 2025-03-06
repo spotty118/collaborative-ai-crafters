@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { GitHubConfig } from '@/lib/types';
 import { GitHubService } from '@/lib/github';
@@ -28,6 +27,9 @@ export const useGitHubContext = () => {
   }
   return context;
 };
+
+// Also export with an alias for backward compatibility
+export const useGitHub = useGitHubContext;
 
 export const GitHubProvider = ({ children }: { children: ReactNode }) => {
   const [githubConfig, setGithubConfig] = useState<GitHubConfig | null>(null);

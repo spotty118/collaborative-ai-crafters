@@ -24,6 +24,14 @@ export {
   createInitialCrewTasks
 } from './crewAI';
 
+// Export message broker functions
+export {
+  acquireToken,
+  releaseToken,
+  getTokenState,
+  broadcastMessage
+} from './messageBroker';
+
 // The orchestrator now serves as a facade for the agent orchestration system,
 // providing a unified API for the rest of the application while delegating
 // the actual implementation to more specialized modules.

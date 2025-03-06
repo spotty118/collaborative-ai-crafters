@@ -187,7 +187,7 @@ serve(async (req) => {
       JSON.stringify({ 
         success: true, 
         message: `CrewAI orchestration ${action} initiated for project ${projectId}`,
-        project: projectData.name
+        project: projectData?.name || 'Unknown Project'
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
