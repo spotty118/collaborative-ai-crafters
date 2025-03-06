@@ -24,7 +24,19 @@ export const setConversationState = (
   conversationId: string,
   state: ConversationState
 ) => {
-  conversationStates[conversationId] = state;
+  // Ensure initiatedAt is a Date object
+  if (!(state.initiatedAt instanceof Date)) {
+    state.initiatedAt = new Date(state.initiatedAt);
+  }
+  
+  // Validate state before storing it
+  if (isValidConversationState(state)) {
+    conversationStates[conversationId] = state;
+    return true;
+  } else {
+    console.error(`Invalid conversation state for ${conversationId}:`, state);
+    return false;
+  }
 };
 
 /**
@@ -33,7 +45,14 @@ export const setConversationState = (
 export const getConversationState = (
   conversationId: string
 ): ConversationState | null => {
-  return conversationStates[conversationId] || null;
+  const state = conversationStates[conversationId];
+  
+  // Ensure we're returning a valid state object
+  if (state && isValidConversationState(state)) {
+    return state;
+  }
+  
+  return null;
 };
 
 /**
@@ -49,17 +68,44 @@ export const getAllConversationStates = (): Record<string, ConversationState> =>
 export const isValidConversationState = (state: ConversationState | null): boolean => {
   if (!state) return false;
   
-  // Check that all required properties exist and have valid values
-  return (
-    !!state.conversationId &&
-    Array.isArray(state.participants) &&
-    state.participants.length >= 2 &&
-    typeof state.lastMessage === 'string' &&
-    typeof state.turnCount === 'number' &&
-    ['active', 'completed', 'error'].includes(state.status) &&
-    typeof state.priority === 'number' &&
-    state.initiatedAt instanceof Date
-  );
+  try {
+    // Check that all required properties exist and have valid values
+    const hasValidId = typeof state.conversationId === 'string' && state.conversationId.length > 0;
+    const hasValidParticipants = Array.isArray(state.participants) && state.participants.length >= 2;
+    const hasValidMessage = typeof state.lastMessage === 'string';
+    const hasValidTurnCount = typeof state.turnCount === 'number' && !isNaN(state.turnCount);
+    const hasValidStatus = ['active', 'completed', 'error'].includes(state.status);
+    const hasValidPriority = typeof state.priority === 'number' && !isNaN(state.priority);
+    
+    // Make sure initiatedAt is a valid Date
+    let hasValidDate = false;
+    if (state.initiatedAt) {
+      if (state.initiatedAt instanceof Date) {
+        hasValidDate = !isNaN(state.initiatedAt.getTime());
+      } else if (typeof state.initiatedAt === 'string') {
+        // Try to convert string to Date
+        const dateObj = new Date(state.initiatedAt);
+        hasValidDate = !isNaN(dateObj.getTime());
+        // Update the state with the Date object if valid
+        if (hasValidDate) {
+          state.initiatedAt = dateObj;
+        }
+      }
+    }
+    
+    return (
+      hasValidId &&
+      hasValidParticipants &&
+      hasValidMessage &&
+      hasValidTurnCount &&
+      hasValidStatus &&
+      hasValidPriority &&
+      hasValidDate
+    );
+  } catch (error) {
+    console.error('Error validating conversation state:', error);
+    return false;
+  }
 };
 
 /**
@@ -176,7 +222,7 @@ export const continueConversation = async (
             });
         }, 5000); 
       } else {
-        console.log(`Agent ${nextNextAgentId} failed to acquire token, currently held by ${updatedState.participants[(nextAgentIndex + 1) % updatedState.participants.length]}`);
+        console.log(`Agent ${nextNextAgentId} failed to acquire token, conversation will be resumed later`);
       }
     }
   } catch (error) {

@@ -1,3 +1,4 @@
+
 import { Agent, Project } from '@/lib/types';
 import { createMessage, updateAgent } from '@/lib/api';
 import { sendAgentPrompt } from '@/lib/openrouter';
@@ -5,6 +6,7 @@ import { acquireToken, releaseToken, getTokenState } from './messageBroker';
 import { initializeCrewAI, createInitialCrewTasks } from './crewAI';
 import { toast } from 'sonner';
 
+// Track agent start attempts with exponential backoff
 const agentStartAttempts = new Map<string, { count: number, lastAttempt: number }>();
 const MAX_START_ATTEMPTS = 3;
 const ATTEMPT_RESET_TIME = 5 * 60 * 1000; // 5 minutes
@@ -87,7 +89,7 @@ export const startAgentWithOrchestration = async (
       }
       
       // Set a timeout to try again later with exponential backoff
-      const backoffTime = Math.min(30000 * Math.pow(1.5, attempts.count - 1), 120000);
+      const backoffTime = Math.min(30000 * Math.pow(1.5, attempts.count - 1), 180000); // Up to 3 minutes
       setTimeout(() => {
         startAgentWithOrchestration(agent, project)
           .catch(error => console.error(`Error restarting agent ${agent.name}:`, error));

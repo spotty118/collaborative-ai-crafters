@@ -12,10 +12,48 @@ let tokenHolderAgent: string | null = null;
 const recentBroadcasts = new Map<string, number>();
 const BROADCAST_COOLDOWN_MS = 30000; // 30 seconds cooldown between identical broadcasts
 
+// Track agent message rates to prevent flooding
+const agentMessageRates = new Map<string, { lastMessage: number, messageCount: number }>();
+const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
+const MAX_MESSAGES_PER_WINDOW = 5; // Max 5 messages per minute
+
+/**
+ * Check if an agent is rate limited
+ */
+const isRateLimited = (agentId: string): boolean => {
+  const now = Date.now();
+  const rateData = agentMessageRates.get(agentId) || { lastMessage: 0, messageCount: 0 };
+  
+  // Reset counter if outside window
+  if (now - rateData.lastMessage > RATE_LIMIT_WINDOW_MS) {
+    agentMessageRates.set(agentId, { lastMessage: now, messageCount: 1 });
+    return false;
+  }
+  
+  // Check if over rate limit
+  if (rateData.messageCount >= MAX_MESSAGES_PER_WINDOW) {
+    return true;
+  }
+  
+  // Update counter
+  agentMessageRates.set(agentId, {
+    lastMessage: now,
+    messageCount: rateData.messageCount + 1
+  });
+  
+  return false;
+};
+
 /**
  * Acquire the communication token for an agent to begin/continue communication
  */
 export const acquireToken = (agentId: string): boolean => {
+  // Rate limit check
+  if (isRateLimited(agentId)) {
+    console.log(`Agent ${agentId} is rate limited, denying token`);
+    return false;
+  }
+  
   // If no one has the token or this agent already has it, grant it
   if (!communicationToken || tokenHolderAgent === agentId) {
     communicationToken = `token-${Date.now()}`;
