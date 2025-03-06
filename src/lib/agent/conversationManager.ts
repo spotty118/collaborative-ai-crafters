@@ -1,3 +1,4 @@
+
 import { Agent, Project } from '@/lib/types';
 import { createMessage, getAgents } from '@/lib/api';
 import { sendAgentPrompt } from '@/lib/openrouter';
@@ -44,6 +45,10 @@ export const continueConversation = async (
     return;
   }
   
+  // Declare currentSpeaker outside try/catch for proper scope
+  let currentSpeaker: Agent | undefined;
+  let currentListenerId: string | undefined;
+  
   try {
     // Get the current conversation participants
     const allAgents = project.agents || await getAgents(project.id);
@@ -58,8 +63,9 @@ export const continueConversation = async (
     
     // Determine whose turn it is (alternating turns)
     const isEvenTurn = state.turnCount % 2 === 0;
-    const currentSpeaker = isEvenTurn ? sourceAgent : targetAgent;
+    currentSpeaker = isEvenTurn ? sourceAgent : targetAgent;
     const currentListener = isEvenTurn ? targetAgent : sourceAgent;
+    currentListenerId = currentListener.id;
     
     // If token isn't held by the current speaker, we can't continue now
     if (acquireToken(currentSpeaker.id) === false) {
@@ -166,7 +172,9 @@ Reply in a way that moves the project forward. If appropriate, suggest specific 
     }
     
     // Release the token so other conversations can happen
-    releaseToken(currentSpeaker.id);
+    if (currentSpeaker) {
+      releaseToken(currentSpeaker.id);
+    }
   }
 };
 
