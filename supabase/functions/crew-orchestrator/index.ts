@@ -29,7 +29,7 @@ serve(async (req) => {
     console.log('Request body:', rawBody);
     
     // Parse body again after reading text
-    const { projectId, agentId, taskId, action = 'start', agents, projectContext } = JSON.parse(rawBody);
+    const { projectId, agentId, taskId, action = 'start', agents, projectContext, autostart = false } = JSON.parse(rawBody);
     
     if (!projectId) {
       return new Response(
@@ -135,6 +135,28 @@ serve(async (req) => {
           sender: "Architect Agent",
           type: 'text'
         }]);
+        
+      // Auto-start all agents if the flag is set
+      if (autostart === true) {
+        setTimeout(async () => {
+          if (agents && agents.length > 0) {
+            // Start all agents
+            for (const agent of agents) {
+              // Skip architect as it's already running
+              if (agent.type === 'architect') continue;
+              
+              console.log(`Auto-starting agent ${agent.name} (${agent.id})`);
+              try {
+                processAgentWorkflow(projectId, agent.id, agent, []).catch(err => {
+                  console.error(`Error auto-starting agent ${agent.name}:`, err);
+                });
+              } catch (error) {
+                console.error(`Failed to auto-start agent ${agent.name}:`, error);
+              }
+            }
+          }
+        }, 1000); // Short delay before autostarting
+      }
     }
     
     // Generate immediate response to client
@@ -262,7 +284,7 @@ async function processTeamCollaboration(projectId, projectData, agents, projectC
           type: 'text'
         }]);
       
-      // Have each agent acknowledge their tasks
+      // Auto-start all agents immediately after task creation
       for (const agent of agents) {
         if (agent.type !== 'architect') {
           // Fetch the agent's tasks
@@ -294,15 +316,11 @@ async function processTeamCollaboration(projectId, projectData, agents, projectC
               
             console.log(`${agent.name} acknowledged tasks`);
             
-            // Start working on the first task after a short delay
-            setTimeout(async () => {
-              if (agentTasks.length > 0) {
-                const firstTask = agentTasks[0];
-                console.log(`${agent.name} starting work on task: ${firstTask.title}`);
-                
-                await processTask(projectId, agent.id, { name: agent.name, agent_type: agent.type }, firstTask);
-              }
-            }, 2000 + Math.random() * 3000); // Shorter random delay
+            // Start working on the first task immediately
+            console.log(`${agent.name} starting work on task: ${agentTasks[0].title}`);
+            processTask(projectId, agent.id, { name: agent.name, agent_type: agent.type }, agentTasks[0]).catch(error => {
+              console.error(`Error processing task: ${error}`);
+            });
           }
         }
       }
@@ -311,6 +329,32 @@ async function processTeamCollaboration(projectId, projectData, agents, projectC
       
       // Create default tasks if no tasks could be extracted
       await createInitialTasks(projectId, agents);
+      
+      // Auto-start all agents after default task creation
+      for (const agent of agents) {
+        if (agent.type !== 'architect') {
+          const { data: agentTasks } = await supabase
+            .from('tasks')
+            .select('*')
+            .eq('project_id', projectId)
+            .eq('assigned_to', agent.id)
+            .eq('status', 'pending');
+            
+          if (agentTasks && agentTasks.length > 0) {
+            // Update agent status to working
+            await supabase
+              .from('agent_statuses')
+              .update({ status: 'working', progress: 10 })
+              .eq('id', agent.id);
+              
+            // Start working on the first task
+            console.log(`Starting ${agent.name} on default task`);
+            processTask(projectId, agent.id, { name: agent.name, agent_type: agent.type }, agentTasks[0]).catch(error => {
+              console.error(`Error processing default task: ${error}`);
+            });
+          }
+        }
+      }
     }
     
     // Set up more frequent check for pending tasks

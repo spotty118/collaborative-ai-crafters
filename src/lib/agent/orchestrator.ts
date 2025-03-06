@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { broadcastMessage } from "./messageBroker";
 import { Agent, Project } from "@/lib/types";
@@ -55,12 +55,11 @@ export const startAgentOrchestration = async (
         
       if (projectData) {
         // Start team collaboration automatically with a shorter delay
-        // to ensure the architect has time to initialize
         toast.info("Team collaboration will start automatically in a few seconds");
         
         setTimeout(() => {
           initiateTeamCollaboration(projectId, projectData);
-        }, 3000); // Reduced from 5000 to 3000ms for faster collaboration startup
+        }, 1500); // Reduced from 3000 to 1500ms for faster collaboration startup
       }
     }
     
@@ -122,7 +121,8 @@ const initiateTeamCollaboration = async (projectId: string, project: any) => {
         projectId,
         action: 'team_collaborate',
         agents: agents.map(a => ({ id: a.id, type: a.agent_type, name: a.name })),
-        projectContext: project
+        projectContext: project,
+        autostart: true // Add explicit flag to auto-start all agents
       }
     });
     
@@ -135,7 +135,7 @@ const initiateTeamCollaboration = async (projectId: string, project: any) => {
     console.log('Team collaboration initiated:', data);
   } catch (error) {
     console.error('Error initiating team collaboration:', error);
-    toast.error(`Failed to initiate team collaboration: ${error.message}`);
+    toast.error(`Failed to initiate team collaboration: ${(error as Error).message}`);
   }
 };
 
