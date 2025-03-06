@@ -1,10 +1,13 @@
-
 import { Agent, Project } from '@/lib/types';
 import { createMessage, updateAgent } from '@/lib/api';
 import { sendAgentPrompt } from '@/lib/openrouter';
 import { acquireToken, releaseToken, getTokenState } from './messageBroker';
 import { initializeCrewAI, createInitialCrewTasks } from './crewAI';
 import { toast } from 'sonner';
+
+const agentStartAttempts = new Map<string, { count: number, lastAttempt: number }>();
+const MAX_START_ATTEMPTS = 3;
+const ATTEMPT_RESET_TIME = 5 * 60 * 1000; // 5 minutes
 
 /**
  * Start an agent with orchestration
@@ -16,7 +19,35 @@ export const startAgentWithOrchestration = async (
   if (!project.id) return false;
   
   try {
-    console.log(`Starting agent ${agent.name} with orchestration`);
+    // Check if agent is already working
+    if (agent.status === 'working') {
+      console.log(`Agent ${agent.name} is already working, skipping start`);
+      return true;
+    }
+    
+    // Prevent rapid cycling of start attempts
+    const agentId = agent.id;
+    const now = Date.now();
+    const attempts = agentStartAttempts.get(agentId) || { count: 0, lastAttempt: 0 };
+    
+    // Reset attempts if it's been a while
+    if (now - attempts.lastAttempt > ATTEMPT_RESET_TIME) {
+      attempts.count = 0;
+    }
+    
+    // Increment attempt count
+    attempts.count += 1;
+    attempts.lastAttempt = now;
+    agentStartAttempts.set(agentId, attempts);
+    
+    // Prevent too many rapid attempts
+    if (attempts.count > MAX_START_ATTEMPTS) {
+      console.log(`Too many start attempts for agent ${agent.name}, limiting frequency`);
+      toast.error(`Agent ${agent.name} cannot be started again so soon. Please try again later.`);
+      return false;
+    }
+    
+    console.log(`Starting agent ${agent.name} with orchestration (attempt ${attempts.count})`);
     
     // Check if this is an architect agent
     if (agent.type === 'architect') {
@@ -55,11 +86,12 @@ export const startAgentWithOrchestration = async (
         });
       }
       
-      // Set a timeout to try again later
+      // Set a timeout to try again later with exponential backoff
+      const backoffTime = Math.min(30000 * Math.pow(1.5, attempts.count - 1), 120000);
       setTimeout(() => {
         startAgentWithOrchestration(agent, project)
           .catch(error => console.error(`Error restarting agent ${agent.name}:`, error));
-      }, 30000); // Try again in 30 seconds
+      }, backoffTime);
       
       return false;
     }
@@ -109,6 +141,9 @@ export const restartAgentWithOrchestration = async (
   try {
     // First stop the agent if it's running
     await stopAgentWithOrchestration(agent);
+    
+    // Reset attempt counter for this agent to allow restart
+    agentStartAttempts.delete(agent.id);
     
     // Then start it again
     return await startAgentWithOrchestration(agent, project);

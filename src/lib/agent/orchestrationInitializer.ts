@@ -1,3 +1,4 @@
+
 import { Agent, Project } from '@/lib/types';
 import { createMessage, getAgents, createAgents, updateAgent } from '@/lib/api';
 import { broadcastMessage } from './messageBroker';
@@ -127,34 +128,39 @@ Let's establish our initial goals and constraints based on the project requireme
     const nonArchitectAgents = agents.filter(a => a.type !== 'architect' && a.status === 'idle');
     console.log(`Starting ${nonArchitectAgents.length} non-architect agents with delays...`);
     
+    // Use much longer staggered delays to prevent cycling
     for (let i = 0; i < nonArchitectAgents.length; i++) {
       const agent = nonArchitectAgents[i];
       
       try {
-        // Update agent status to working
-        console.log(`Updating agent ${agent.name} status to working...`);
-        await updateAgent(agent.id, { status: 'working' });
-        agent.status = 'working'; // Update local object too
+        // Use a longer delay between agent starts - starting with 15 seconds and increasing
+        // This helps prevent rate limiting and agent cycling issues
+        const startDelay = 15000 + (i * 10000); // 15s, 25s, 35s, etc.
         
-        // Start the agent with a 5-second delay between each
+        console.log(`Queuing agent ${agent.name} to start in ${startDelay/1000} seconds`);
+        
+        // Update agent status to queued rather than immediately working
+        await updateAgent(agent.id, { status: 'idle' });
+        
+        // Start the agent with a longer delay
         setTimeout(() => {
-          console.log(`Starting agent ${agent.name} after delay...`);
+          console.log(`Starting agent ${agent.name} after ${startDelay/1000}s delay...`);
           startAgentWithOrchestration(agent, project)
             .then(() => console.log(`Agent ${agent.name} started successfully`))
             .catch(err => {
               console.error(`Error starting agent ${agent.name}:`, err);
               toast.error(`Failed to start ${agent.name}. Please try restarting it.`);
             });
-        }, (i + 1) * 5000);
+        }, startDelay);
         
-        console.log(`Queued start for ${agent.name} with ${(i + 1) * 5}s delay`);
+        console.log(`Queued start for ${agent.name} with ${startDelay/1000}s delay`);
       } catch (error) {
         console.error(`Error queuing agent ${agent.name}:`, error);
         toast.error(`Failed to queue ${agent.name} for startup.`);
       }
     }
     
-    toast.success("Orchestration initialized - agents will start automatically");
+    toast.success("Orchestration initialized - agents will start automatically with staggered delays");
     console.log('Orchestration initialization completed successfully');
   } catch (error) {
     console.error('Error initializing orchestration:', error);

@@ -24,7 +24,7 @@ export const initiateConversation = (
     
     // Update the existing conversation with the new message to keep it active
     const existingState = getConversationState(existingId);
-    if (existingState) {
+    if (existingState && isValidConversationState(existingState)) {
       // Update the last message and reset turn count
       existingState.lastMessage = initialMessage;
       existingState.turnCount = 0;
@@ -80,40 +80,52 @@ export const initiateConversation = (
  * to prevent duplicate conversations
  */
 function checkForExistingConversation(sourceAgentId: string, targetAgentId: string): string | null {
-  // Use the imported getAllConversationStates instead of require
-  const conversations = getAllConversationStates();
-  
-  // Look for a recent active conversation between the same agents
-  const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000);
-  
-  for (const [id, state] of Object.entries(conversations)) {
-    // Ensure proper type casting for the state object
-    const typedState = state as ConversationState;
-    const participants = typedState.participants || [];
+  try {
+    // Use the imported getAllConversationStates instead of require
+    const conversations = getAllConversationStates();
     
-    // Make sure initiatedAt is a proper Date object
-    let initiatedDate: Date;
-    if (typedState.initiatedAt instanceof Date) {
-      initiatedDate = typedState.initiatedAt;
-    } else if (typeof typedState.initiatedAt === 'string') {
-      initiatedDate = new Date(typedState.initiatedAt);
-    } else {
-      // Skip invalid records
-      continue;
+    // Look for a recent active conversation between the same agents
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000); // Reduced from 3 minutes to 1 minute
+    
+    for (const [id, state] of Object.entries(conversations)) {
+      // Ensure proper type casting for the state object
+      const typedState = state as ConversationState;
+      
+      // Skip invalid conversation states
+      if (!isValidConversationState(typedState)) {
+        console.warn(`Skipping invalid conversation state for ID ${id}`);
+        continue;
+      }
+      
+      const participants = typedState.participants || [];
+      
+      // Make sure initiatedAt is a proper Date object
+      let initiatedDate: Date;
+      if (typedState.initiatedAt instanceof Date) {
+        initiatedDate = typedState.initiatedAt;
+      } else if (typeof typedState.initiatedAt === 'string') {
+        initiatedDate = new Date(typedState.initiatedAt);
+      } else {
+        // Skip invalid records
+        continue;
+      }
+      
+      const isRecent = initiatedDate > oneMinuteAgo;
+      
+      // Check if both agents are participants in either order
+      if (
+        isRecent && 
+        typedState.status === 'active' &&
+        participants.includes(sourceAgentId) && 
+        participants.includes(targetAgentId)
+      ) {
+        return id;
+      }
     }
     
-    const isRecent = initiatedDate > threeMinutesAgo;
-    
-    // Check if both agents are participants
-    if (
-      isRecent && 
-      typedState.status === 'active' &&
-      participants.includes(sourceAgentId) && 
-      participants.includes(targetAgentId)
-    ) {
-      return id;
-    }
+    return null;
+  } catch (error) {
+    console.error('Error checking for existing conversations:', error);
+    return null;
   }
-  
-  return null;
-}
+};
