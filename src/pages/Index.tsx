@@ -1,16 +1,21 @@
+
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { getProjects, createProject } from "@/lib/api";
+import { getProjects, createProject, deleteProject } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { ProjectCard } from "@/components/ProjectCard";
 import ProjectSetup from "@/components/layout/ProjectSetup";
+import ProjectDeleteDialog from "@/components/ProjectDeleteDialog";
 import { Project } from "@/lib/types";
 import { toast } from "sonner";
+import { Trash2 } from "lucide-react";
 
 const Index: React.FC = () => {
   const navigate = useNavigate();
   const [showNewProject, setShowNewProject] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   const { 
     data: projects = [], 
@@ -47,6 +52,32 @@ const Index: React.FC = () => {
       console.error("Error creating project:", error);
       toast.error("Failed to create project: " + (error instanceof Error ? error.message : "Unknown error"));
     }
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, project: Project) => {
+    e.stopPropagation();
+    setProjectToDelete(project);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!projectToDelete) return;
+    
+    setIsDeleting(true);
+    try {
+      await deleteProject(projectToDelete.id);
+      toast.success(`Project "${projectToDelete.name}" deleted successfully`);
+      refetch();
+    } catch (error) {
+      console.error("Error deleting project:", error);
+      toast.error("Failed to delete project: " + (error instanceof Error ? error.message : "Unknown error"));
+    } finally {
+      setIsDeleting(false);
+      setProjectToDelete(null);
+    }
+  };
+
+  const closeDeleteDialog = () => {
+    setProjectToDelete(null);
   };
   
   return (
@@ -96,16 +127,32 @@ const Index: React.FC = () => {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {projects.map((project) => (
-                  <ProjectCard 
-                    key={project.id} 
-                    project={project} 
-                    onClick={() => navigate(`/project/${project.id}`)}
-                  />
+                  <div key={project.id} className="relative group">
+                    <ProjectCard 
+                      project={project} 
+                      onClick={() => navigate(`/project/${project.id}`)}
+                    />
+                    <button
+                      onClick={(e) => handleDeleteClick(e, project)}
+                      className="absolute top-2 right-2 bg-white p-2 rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-red-50"
+                      aria-label={`Delete project ${project.name}`}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
           </div>
         )}
+
+        <ProjectDeleteDialog 
+          isOpen={!!projectToDelete}
+          projectName={projectToDelete?.name || ''}
+          onClose={closeDeleteDialog}
+          onConfirm={handleDeleteConfirm}
+          isDeleting={isDeleting}
+        />
       </main>
     </div>
   );

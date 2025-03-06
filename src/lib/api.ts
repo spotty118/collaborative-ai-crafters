@@ -1,4 +1,3 @@
-
 import { supabase } from "@/lib/supabase";
 import { 
   Project, Agent, Task, Message, CodeFile, 
@@ -131,6 +130,48 @@ export const updateProject = async (id: string, updates: Partial<ProjectDB>): Pr
       deployment: data.tech_stack?.[3] || ''
     }
   };
+};
+
+export const deleteProject = async (id: string): Promise<void> => {
+  const projectExists = await checkProjectExists(id);
+  if (!projectExists) {
+    throw new Error('Project not found');
+  }
+
+  const { error: agentError } = await supabase
+    .from('agent_statuses')
+    .delete()
+    .eq('project_id', id);
+    
+  if (agentError) throw agentError;
+  
+  const { error: taskError } = await supabase
+    .from('tasks')
+    .delete()
+    .eq('project_id', id);
+    
+  if (taskError) throw taskError;
+  
+  const { error: messageError } = await supabase
+    .from('chat_messages')
+    .delete()
+    .eq('project_id', id);
+    
+  if (messageError) throw messageError;
+  
+  const { error: codeFileError } = await supabase
+    .from('code_files')
+    .delete()
+    .eq('project_id', id);
+    
+  if (codeFileError) throw codeFileError;
+  
+  const { error: projectError } = await supabase
+    .from('projects')
+    .delete()
+    .eq('id', id);
+    
+  if (projectError) throw projectError;
 };
 
 export const checkProjectExists = async (id: string | number): Promise<boolean> => {
