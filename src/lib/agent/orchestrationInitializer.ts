@@ -9,7 +9,10 @@ import { startAgentWithOrchestration } from './agentLifecycle';
  * Initialize agent orchestration for a project
  */
 export const initializeOrchestration = async (project: Project): Promise<void> => {
-  if (!project.id) return;
+  if (!project.id) {
+    console.error("Cannot initialize orchestration without a project ID");
+    return;
+  }
   
   try {
     console.log('Initializing agent orchestration for project:', project.name);
@@ -19,15 +22,28 @@ export const initializeOrchestration = async (project: Project): Promise<void> =
     
     if (!agents || agents.length === 0) {
       console.warn('No agents available for orchestration');
+      toast.error("No agents found for this project. Please refresh the page.");
       return;
     }
     
     // Find the architect agent as the lead orchestrator
     const architectAgent = agents.find(a => a.type === 'architect');
     
-    if (!architectAgent || architectAgent.status !== 'working') {
-      console.warn('Architect agent not available or not working');
+    if (!architectAgent) {
+      console.warn('Architect agent not available');
+      toast.error("Architect agent not found. Please refresh the page.");
       return;
+    }
+    
+    // Update architect's status to working if it's not already
+    if (architectAgent.status !== 'working') {
+      try {
+        await updateAgent(architectAgent.id, { status: 'working' });
+        architectAgent.status = 'working'; // Update local object too
+        console.log(`Updated architect agent status to working`);
+      } catch (error) {
+        console.error('Error updating architect agent status:', error);
+      }
     }
     
     // Inform the team that orchestration is starting
@@ -42,7 +58,7 @@ export const initializeOrchestration = async (project: Project): Promise<void> =
     const initialMessage = `
 I'm taking the role of lead coordinator for project "${project.name}". 
 Each of you will focus on your specialized areas while I ensure our components integrate properly.
-Let's establish our initial goals and constraints.
+Let's establish our initial goals and constraints based on the project requirements.
     `;
     
     // Broadcast message to all agents
@@ -62,18 +78,22 @@ Let's establish our initial goals and constraints.
         // Start the agent with a 5-second delay between each
         setTimeout(() => {
           startAgentWithOrchestration(agent, project)
-            .catch(err => console.error(`Error starting agent ${agent.name}:`, err));
+            .catch(err => {
+              console.error(`Error starting agent ${agent.name}:`, err);
+              toast.error(`Failed to start ${agent.name}. Please try restarting it.`);
+            });
         }, (i + 1) * 5000);
         
         console.log(`Queued start for ${agent.name} with ${(i + 1) * 5}s delay`);
       } catch (error) {
         console.error(`Error queuing agent ${agent.name}:`, error);
+        toast.error(`Failed to queue ${agent.name} for startup.`);
       }
     }
     
     toast.success("Orchestration initialized - agents will start automatically");
   } catch (error) {
     console.error('Error initializing orchestration:', error);
-    toast.error('Error starting agent orchestration');
+    toast.error('Error starting agent orchestration. Please try again.');
   }
 };
