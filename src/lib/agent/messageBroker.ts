@@ -49,16 +49,17 @@ export const broadcastMessage = async (
   sourceAgent: Agent,
   message: string,
   project: Project,
-  priority: number = 2
+  cooldownSeconds: number = 30
 ): Promise<void> => {
   try {
     // Create a unique key for this broadcast to prevent duplicates
     const broadcastKey = `${sourceAgent.id}-${message}`;
     const now = Date.now();
+    const cooldownMs = cooldownSeconds * 1000;
     
     // Check if this is a duplicate broadcast within the cooldown period
     const lastBroadcastTime = recentBroadcasts.get(broadcastKey);
-    if (lastBroadcastTime && (now - lastBroadcastTime) < BROADCAST_COOLDOWN_MS) {
+    if (lastBroadcastTime && (now - lastBroadcastTime) < cooldownMs) {
       console.log(`Skipping duplicate broadcast from ${sourceAgent.name}: "${message.substring(0, 30)}..."`);
       return;
     }
@@ -96,17 +97,20 @@ export const broadcastMessage = async (
     // If there are other agents, initiate conversations with them
     if (otherAgents.length > 0) {
       // Architect gets higher priority for their broadcasts
-      const actualPriority = sourceAgent.type === 'architect' ? priority + 1 : priority;
+      const actualPriority = sourceAgent.type === 'architect' ? cooldownSeconds + 1 : cooldownSeconds;
       
       // Import and use the initiateConversation function to avoid circular dependencies
       const { initiateConversation } = await import('./agentCommunication');
       
       // Start conversations with each agent with a delay to avoid rate limiting
-      otherAgents.forEach((agent, index) => {
+      for (let i = 0; i < otherAgents.length; i++) {
+        const agent = otherAgents[i];
+        
+        // Create a closure to preserve the agent variable
         setTimeout(() => {
           initiateConversation(sourceAgent, agent, message, project, actualPriority);
-        }, index * 8000); // 8-second spacing between conversation starts
-      });
+        }, i * 8000); // 8-second spacing between conversation starts
+      }
     }
   } catch (error) {
     console.error('Error broadcasting message:', error);

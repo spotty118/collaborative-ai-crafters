@@ -2,7 +2,7 @@
 import { Agent, Project } from '@/lib/types';
 import { createMessage, getAgents } from '@/lib/api';
 import { acquireToken } from './messageBroker';
-import { continueConversation } from './conversationManager';
+import { setConversationState } from './conversationManager';
 
 /**
  * Initiate a new conversation between agents
@@ -28,30 +28,24 @@ export const initiateConversation = (
     initiatedAt: new Date()
   };
   
-  // Store the conversation state (this is done in the conversationManager)
-  storeConversationState(conversationId, conversationState);
+  // Store the conversation state directly using the imported function
+  setConversationState(conversationId, conversationState);
   
   console.log(`Initiated conversation ${conversationId} between ${sourceAgent.name} and ${targetAgent.name}`);
   
   // Acquire token and start conversation if possible
   if (acquireToken(sourceAgent.id)) {
-    continueConversation(conversationId, project)
-      .catch(error => {
-        console.error(`Error starting conversation ${conversationId}:`, error);
-        import('./messageBroker').then(({ releaseToken }) => {
-          releaseToken(sourceAgent.id);
+    // Import needed to avoid circular dependencies
+    import('./conversationManager').then(({ continueConversation }) => {
+      continueConversation(conversationId, project)
+        .catch(error => {
+          console.error(`Error starting conversation ${conversationId}:`, error);
+          import('./messageBroker').then(({ releaseToken }) => {
+            releaseToken(sourceAgent.id);
+          });
         });
-      });
+    });
   }
   
   return conversationId;
-};
-
-/**
- * Store conversation state (this is needed to avoid circular dependencies)
- */
-const storeConversationState = (conversationId: string, state: any): void => {
-  import('./conversationManager').then(({ setConversationState }) => {
-    setConversationState(conversationId, state);
-  });
 };

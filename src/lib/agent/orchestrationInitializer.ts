@@ -45,8 +45,8 @@ Each of you will focus on your specialized areas while I ensure our components i
 Let's establish our initial goals and constraints.
     `;
     
-    // Broadcast with a cooldown to prevent duplicates
-    broadcastMessage(architectAgent, initialMessage, project, 30);
+    // Broadcast message to all agents
+    await broadcastMessage(architectAgent, initialMessage, project, 30);
     
     // Start each non-architect agent with a delay to prevent rate limiting
     const nonArchitectAgents = agents.filter(a => a.type !== 'architect' && a.status === 'idle');
@@ -54,17 +54,24 @@ Let's establish our initial goals and constraints.
     for (let i = 0; i < nonArchitectAgents.length; i++) {
       const agent = nonArchitectAgents[i];
       
-      // Update agent status to working
-      await updateAgent(agent.id, { status: 'working' });
-      
-      // Start the agent with a 5-second delay between each
-      setTimeout(() => {
-        startAgentWithOrchestration(agent, project);
-      }, (i + 1) * 5000);
-      
-      console.log(`Queued start for ${agent.name} with ${(i + 1) * 5}s delay`);
+      try {
+        // Update agent status to working
+        await updateAgent(agent.id, { status: 'working' });
+        agent.status = 'working'; // Update local object too
+        
+        // Start the agent with a 5-second delay between each
+        setTimeout(() => {
+          startAgentWithOrchestration(agent, project)
+            .catch(err => console.error(`Error starting agent ${agent.name}:`, err));
+        }, (i + 1) * 5000);
+        
+        console.log(`Queued start for ${agent.name} with ${(i + 1) * 5}s delay`);
+      } catch (error) {
+        console.error(`Error queuing agent ${agent.name}:`, error);
+      }
     }
     
+    toast.success("Orchestration initialized - agents will start automatically");
   } catch (error) {
     console.error('Error initializing orchestration:', error);
     toast.error('Error starting agent orchestration');

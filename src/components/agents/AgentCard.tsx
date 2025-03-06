@@ -25,21 +25,23 @@ const AgentCard: React.FC<AgentCardProps> = ({
   isActive = false 
 }) => {
   const [isHovered, setIsHovered] = useState(false);
-  const [progressValue, setProgressValue] = useState(0);
+  const [progressValue, setProgressValue] = useState(agent.progress || 0);
   const [animating, setAnimating] = useState(false);
   
-  // Initialize progress value and update it when agent progress changes
+  // Only update progress value when it significantly changes
   useEffect(() => {
-    setProgressValue(agent.progress || 0);
-  }, [agent.progress]);
-  
-  // Animate progress changes when they occur
-  useEffect(() => {
-    if (agent.progress && Math.abs(agent.progress - progressValue) > 5) {
-      setAnimating(true);
-      setTimeout(() => setAnimating(false), 700); // Animation time
+    // Only update if the difference is significant to avoid infinite loops
+    if (agent.progress !== undefined && Math.abs(agent.progress - progressValue) >= 1) {
+      setProgressValue(agent.progress);
+      
+      // Trigger animation for significant changes
+      if (Math.abs(agent.progress - progressValue) > 5) {
+        setAnimating(true);
+        const timer = setTimeout(() => setAnimating(false), 800);
+        return () => clearTimeout(timer);
+      }
     }
-  }, [agent.progress, progressValue]);
+  }, [agent.progress]);
 
   const getAgentColorClass = () => {
     switch (agent.type) {

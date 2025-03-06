@@ -30,6 +30,7 @@ export const getConversationState = (conversationId: string): ConversationState 
  */
 export const setConversationState = (conversationId: string, state: ConversationState): void => {
   conversationStates.set(conversationId, state);
+  console.log(`Conversation state set for ${conversationId}, status: ${state.status}`);
 };
 
 /**
@@ -40,8 +41,13 @@ export const continueConversation = async (
   project: Project
 ): Promise<void> => {
   const state = conversationStates.get(conversationId);
-  if (!state || state.status !== 'active') {
-    console.warn(`Cannot continue conversation ${conversationId}: Invalid state`);
+  if (!state) {
+    console.warn(`Cannot continue conversation ${conversationId}: State not found`);
+    return;
+  }
+  
+  if (state.status !== 'active') {
+    console.warn(`Cannot continue conversation ${conversationId}: Status is ${state.status}`);
     return;
   }
   
