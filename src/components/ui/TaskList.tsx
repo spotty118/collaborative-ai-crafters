@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from "react";
 import { Task, Agent } from "@/lib/types";
 import { CheckCircle2, Circle, Clock, AlertCircle, RotateCw, Play } from "lucide-react";
@@ -133,6 +134,7 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, 
   };
 
   const getAgentNameById = (agentId: string) => {
+    if (!agents || agents.length === 0) return "Unassigned";
     const agent = agents.find(a => a.id === agentId);
     return agent ? agent.name : "Unassigned";
   };

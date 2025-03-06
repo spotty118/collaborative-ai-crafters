@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages } from "@/lib/api";
+import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, createAgents } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -66,6 +66,23 @@ const Project: React.FC = () => {
     queryFn: () => id ? getAgents(id) : Promise.resolve([]),
     enabled: !!id
   });
+
+  const createAgentsMutation = useMutation({
+    mutationFn: (projectId: string) => createAgents(projectId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agents', id] });
+      toast.success("Agents created successfully");
+    },
+    onError: (error) => {
+      toast.error(`Failed to create agents: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  useEffect(() => {
+    if (id && agents && agents.length === 0 && !loadingAgents && project) {
+      createAgentsMutation.mutate(id);
+    }
+  }, [id, agents, loadingAgents, project]);
 
   const { 
     data: tasks = [], 

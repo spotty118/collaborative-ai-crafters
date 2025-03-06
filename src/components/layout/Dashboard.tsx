@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { SendHorizontal, Menu, LayoutPanelLeft } from "lucide-react";
+import { SendHorizontal, Menu, LayoutPanelLeft, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -152,7 +152,11 @@ const Dashboard: React.FC<DashboardProps> = ({
           ) : agents.length === 0 ? (
             <div className="text-center py-4 text-gray-500 bg-white rounded-md border p-4">
               <p>No agents available</p>
-              <p className="text-xs mt-2">There are no agents configured for this project.</p>
+              <p className="text-xs mt-2">Agents are being initialized. Please wait or refresh the page.</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => window.location.reload()}>
+                <RefreshCw className="h-4 w-4 mr-1" />
+                Refresh
+              </Button>
             </div>
           ) : (
             <div className="grid gap-3">
