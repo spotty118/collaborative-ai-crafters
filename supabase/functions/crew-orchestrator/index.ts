@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { supabase } from "../_shared/supabase-client.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
@@ -29,7 +30,7 @@ serve(async (req) => {
     console.log('Request body:', rawBody);
     
     // Parse body again after reading text
-    const { projectId, agentId, taskId, action = 'start' } = JSON.parse(rawBody);
+    const { projectId, agentId, taskId, action = 'start', agents, projectContext } = JSON.parse(rawBody);
     
     if (!projectId) {
       return new Response(
@@ -103,7 +104,7 @@ serve(async (req) => {
       tasksData = data || [];
     }
     
-    // Create initialization message
+    // Create initialization message based on action
     if (action === 'start') {
       await supabase
         .from('chat_messages')
@@ -126,6 +127,15 @@ serve(async (req) => {
           sender: agentId ? agentData?.name : 'System',
           type: 'text'
         }]);
+    } else if (action === 'team_collaborate') {
+      await supabase
+        .from('chat_messages')
+        .insert([{
+          project_id: projectId,
+          content: `The team is now collaborating on project: ${projectData.name}. Agents will automatically assign and work on tasks.`,
+          sender: "Architect Agent",
+          type: 'text'
+        }]);
     }
     
     // Generate immediate response to client
@@ -141,9 +151,15 @@ serve(async (req) => {
     );
     
     // Process orchestration asynchronously (don't await this)
-    processOrchestration(projectId, projectData, agentId, agentData, tasksData, action).catch(error => {
-      console.error('Error in asynchronous orchestration processing:', error);
-    });
+    if (action === 'team_collaborate') {
+      processTeamCollaboration(projectId, projectData, agents || [], projectContext).catch(error => {
+        console.error('Error in team collaboration processing:', error);
+      });
+    } else {
+      processOrchestration(projectId, projectData, agentId, agentData, tasksData, action).catch(error => {
+        console.error('Error in asynchronous orchestration processing:', error);
+      });
+    }
     
     return response;
     
@@ -161,6 +177,222 @@ serve(async (req) => {
     );
   }
 });
+
+/**
+ * Process team collaboration
+ */
+async function processTeamCollaboration(projectId, projectData, agents, projectContext) {
+  console.log(`Starting team collaboration for project ${projectId} with ${agents.length} agents`);
+  
+  if (!agents || agents.length === 0) {
+    console.error('No agents provided for team collaboration');
+    return;
+  }
+  
+  try {
+    // Start with architect planning
+    const architect = agents.find(a => a.type === 'architect');
+    if (!architect) {
+      console.error('No architect agent found for team collaboration');
+      return;
+    }
+    
+    // Generate initial plan with the architect
+    const architectPlan = await callOpenRouter(
+      'architect',
+      `You are the lead architect for project "${projectData.name}". ${projectData.description || ''}
+      Create a detailed plan for implementing this project, breaking it down into specific tasks for each team member.
+      For each task, specify:
+      1. Task title
+      2. Which agent should work on it (Frontend, Backend, DevOps, or Testing)
+      3. A detailed description of what needs to be implemented
+      4. Priority (High, Medium, Low)
+      
+      Format each task as:
+      TASK: [Task Title]
+      ASSIGNED TO: [Agent Type] Agent
+      DESCRIPTION: [Detailed description]
+      PRIORITY: [Priority]
+      
+      Include at least one task for each team member.`,
+      { projectId, projectName: projectData.name, projectDescription: projectData.description }
+    );
+    
+    // Add the architect's plan to chat
+    await supabase
+      .from('chat_messages')
+      .insert([{
+        project_id: projectId,
+        content: architectPlan,
+        sender: architect.name,
+        type: 'text'
+      }]);
+    
+    // Extract tasks from the plan
+    const tasksInfo = extractTasksInfo(architectPlan);
+    
+    if (tasksInfo.length > 0) {
+      console.log(`Extracted ${tasksInfo.length} tasks from architect's plan`);
+      
+      // Create the tasks in the database
+      for (const taskInfo of tasksInfo) {
+        const agentType = taskInfo.assignedTo.replace(' Agent', '').toLowerCase();
+        const assignedAgent = agents.find(a => a.type.toLowerCase() === agentType);
+        
+        if (assignedAgent) {
+          await supabase
+            .from('tasks')
+            .insert([{
+              project_id: projectId,
+              title: taskInfo.title,
+              description: taskInfo.description,
+              assigned_to: assignedAgent.id,
+              status: 'pending',
+              priority: taskInfo.priority.toLowerCase()
+            }]);
+            
+          console.log(`Created task "${taskInfo.title}" for ${assignedAgent.name}`);
+        }
+      }
+      
+      // Have each agent acknowledge their tasks
+      for (const agent of agents) {
+        if (agent.type !== 'architect') {
+          // Fetch the agent's tasks
+          const { data: agentTasks } = await supabase
+            .from('tasks')
+            .select('*')
+            .eq('project_id', projectId)
+            .eq('assigned_to', agent.id)
+            .eq('status', 'pending');
+            
+          if (agentTasks && agentTasks.length > 0) {
+            // Generate acknowledgment using AI
+            const acknowledgment = await callOpenRouter(
+              agent.type,
+              `You've been assigned ${agentTasks.length} task(s) for project "${projectData.name}":
+              ${agentTasks.map((t, i) => `${i+1}. ${t.title}: ${t.description}`).join('\n')}
+              
+              Acknowledge these tasks and briefly mention how you plan to approach them.`,
+              { projectId, projectName: projectData.name, agentTasks }
+            );
+            
+            await supabase
+              .from('chat_messages')
+              .insert([{
+                project_id: projectId,
+                content: acknowledgment,
+                sender: agent.name,
+                type: 'text'
+              }]);
+              
+            console.log(`${agent.name} acknowledged tasks`);
+            
+            // Start working on the first task after a short delay
+            setTimeout(async () => {
+              if (agentTasks.length > 0) {
+                const firstTask = agentTasks[0];
+                console.log(`${agent.name} starting work on task: ${firstTask.title}`);
+                
+                await processTask(projectId, agent.id, { name: agent.name, agent_type: agent.type }, firstTask);
+              }
+            }, 5000 + Math.random() * 5000); // Random delay between 5-10 seconds
+          }
+        }
+      }
+    } else {
+      console.error('No tasks could be extracted from architect plan');
+      
+      // Create default tasks if no tasks could be extracted
+      await createInitialTasks(projectId, agents);
+    }
+    
+    // Set up periodic check for pending tasks
+    setTimeout(() => {
+      checkAndAssignPendingTasks(projectId, agents);
+    }, 30000); // Check after 30 seconds
+    
+  } catch (error) {
+    console.error('Error in team collaboration:', error);
+    
+    // Add error message to chat
+    await supabase
+      .from('chat_messages')
+      .insert([{
+        project_id: projectId,
+        content: `Team collaboration encountered an error: ${error.message}`,
+        sender: "System",
+        type: "error"
+      }]);
+  }
+}
+
+/**
+ * Periodically check for pending tasks and assign them to agents
+ */
+async function checkAndAssignPendingTasks(projectId, agents) {
+  try {
+    console.log(`Checking for pending tasks in project ${projectId}`);
+    
+    // Get all pending tasks
+    const { data: pendingTasks, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('project_id', projectId)
+      .eq('status', 'pending');
+      
+    if (error) {
+      console.error('Error fetching pending tasks:', error);
+      return;
+    }
+    
+    if (pendingTasks && pendingTasks.length > 0) {
+      console.log(`Found ${pendingTasks.length} pending tasks`);
+      
+      // Check which agents are idle
+      const { data: agentStatuses } = await supabase
+        .from('agent_statuses')
+        .select('*')
+        .eq('project_id', projectId);
+        
+      if (agentStatuses) {
+        const idleAgents = agentStatuses.filter(a => a.status !== 'working');
+        
+        if (idleAgents.length > 0) {
+          // Assign a task to the first idle agent
+          const agent = idleAgents[0];
+          const task = pendingTasks.find(t => t.assigned_to === agent.id) || pendingTasks[0];
+          
+          if (task) {
+            console.log(`Assigning task "${task.title}" to ${agent.name}`);
+            
+            // Update agent status
+            await supabase
+              .from('agent_statuses')
+              .update({ status: 'working', progress: 10 })
+              .eq('id', agent.id);
+              
+            // Process the task
+            await processTask(projectId, agent.id, agent, task);
+          }
+        }
+      }
+    }
+    
+    // Schedule next check
+    setTimeout(() => {
+      checkAndAssignPendingTasks(projectId, agents);
+    }, 60000); // Check every minute
+    
+  } catch (error) {
+    console.error('Error checking pending tasks:', error);
+    
+    // Schedule next check even if there was an error
+    setTimeout(() => {
+      checkAndAssignPendingTasks(projectId, agents);
+    }, 60000);
+  }
+}
 
 /**
  * Process the orchestration asynchronously
@@ -422,7 +654,9 @@ async function processTask(projectId, agentId, agentData, task) {
     TASK: [Title]
     ASSIGNED TO: [Agent Type] Agent
     DESCRIPTION: [Details]
-    PRIORITY: [High/Medium/Low]`,
+    PRIORITY: [High/Medium/Low]
+    
+    Think about how your work integrates with the rest of the team. Consider dependencies and collaborations needed.`,
     { projectId, taskId: task.id, taskTitle: task.title, taskDescription: task.description }
   );
   
@@ -546,7 +780,8 @@ async function processTask(projectId, agentId, agentData, task) {
   // Generate completion message using AI
   const completionResponse = await callOpenRouter(
     agentData.agent_type,
-    `You've completed task: "${task.title}". Provide a summary of what you've accomplished and any recommendations for next steps.`,
+    `You've completed task: "${task.title}". Provide a summary of what you've accomplished and any recommendations for next steps.
+    Consider how your work might affect other team members' tasks.`,
     { projectId, taskId: task.id, taskTitle: task.title, taskDescription: task.description }
   );
   
@@ -558,6 +793,12 @@ async function processTask(projectId, agentId, agentData, task) {
       sender: agentData.name,
       type: "text"
     }]);
+    
+  // Update agent status to idle
+  await supabase
+    .from('agent_statuses')
+    .update({ status: 'idle', progress: 100 })
+    .eq('id', agentId);
     
   // Determine if a follow-up task is needed
   const needsFollowUp = Math.random() > 0.3; // 70% chance of follow-up
@@ -612,7 +853,7 @@ async function processTask(projectId, agentId, agentData, task) {
           // Announce the follow-up task creation
           const announcement = await callOpenRouter(
             agentData.agent_type,
-            `You've identified a follow-up task: "${taskInfo.title}". Briefly explain why this task is important.`,
+            `You've identified a follow-up task: "${taskInfo.title}". Briefly explain why this task is important and how it relates to the work you just completed.`,
             { projectId, taskId: task.id, followUpTaskTitle: taskInfo.title }
           );
           
@@ -629,6 +870,33 @@ async function processTask(projectId, agentId, agentData, task) {
     } catch (error) {
       console.error('Error creating follow-up task:', error);
     }
+  }
+  
+  // Check for other pending tasks and work on them
+  const { data: pendingTasks } = await supabase
+    .from('tasks')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('assigned_to', agentId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true })
+    .limit(1);
+    
+  if (pendingTasks && pendingTasks.length > 0) {
+    console.log(`Agent ${agentData.name} has another pending task: ${pendingTasks[0].title}`);
+    
+    // Update agent status back to working
+    await supabase
+      .from('agent_statuses')
+      .update({ status: 'working', progress: 10 })
+      .eq('id', agentId);
+      
+    // Process the next task after a short delay
+    setTimeout(() => {
+      processTask(projectId, agentId, agentData, pendingTasks[0]).catch(error => {
+        console.error(`Error processing next task: ${error}`);
+      });
+    }, 5000);
   }
 }
 
@@ -845,7 +1113,6 @@ async function createInitialTasks(projectId, agentsData) {
 }
 
 // Utility functions for default task creation
-
 function getDefaultTaskTitle(agentType) {
   switch (agentType) {
     case 'architect':

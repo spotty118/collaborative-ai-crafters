@@ -59,10 +59,11 @@ export const sendAgentPrompt = async (
     });
     
     // Process any code snippets that were returned
-    if (responseData.codeSnippets && responseData.codeSnippets.length > 0) {
-      console.log(`Agent ${agent.name} generated ${responseData.codeSnippets.length} code snippets`);
+    const codeSnippets = extractCodeSnippets(agentResponse);
+    if (codeSnippets && codeSnippets.length > 0) {
+      console.log(`Agent ${agent.name} generated ${codeSnippets.length} code snippets`);
       
-      for (const snippet of responseData.codeSnippets) {
+      for (const snippet of codeSnippets) {
         const fileName = snippet.filePath.split('/').pop();
         
         // Create a code file entry in the database
@@ -88,10 +89,11 @@ export const sendAgentPrompt = async (
     }
     
     // Process any tasks that were created
-    if (responseData.tasksInfo && responseData.tasksInfo.length > 0) {
-      console.log(`Agent ${agent.name} created ${responseData.tasksInfo.length} tasks`);
+    const tasksInfo = extractTasksInfo(agentResponse);
+    if (tasksInfo && tasksInfo.length > 0) {
+      console.log(`Agent ${agent.name} created ${tasksInfo.length} tasks`);
       
-      for (const taskInfo of responseData.tasksInfo) {
+      for (const taskInfo of tasksInfo) {
         // Get the right agent ID based on the assigned agent type
         let assignedAgentId = agent.id; // Default to the current agent
         
@@ -140,6 +142,44 @@ export const sendAgentPrompt = async (
     throw error;
   }
 };
+
+/**
+ * Extract code snippets from content
+ */
+function extractCodeSnippets(content: string): { filePath: string; code: string }[] {
+  const snippets = [];
+  const regex = /```filepath:(.*?)\n([\s\S]*?)```/g;
+  let match;
+  
+  while ((match = regex.exec(content)) !== null) {
+    snippets.push({
+      filePath: match[1].trim(),
+      code: match[2].trim()
+    });
+  }
+  
+  return snippets;
+}
+
+/**
+ * Extract task information from content
+ */
+function extractTasksInfo(content: string): { title: string; assignedTo: string; description: string; priority: string }[] {
+  const tasks = [];
+  const regex = /TASK: (.*?)\nASSIGNED TO: (.*?)\nDESCRIPTION: (.*?)\nPRIORITY: (.*?)(?:\n|$)/gs;
+  let match;
+  
+  while ((match = regex.exec(content)) !== null) {
+    tasks.push({
+      title: match[1].trim(),
+      assignedTo: match[2].trim(),
+      description: match[3].trim(),
+      priority: match[4].trim().toLowerCase()
+    });
+  }
+  
+  return tasks;
+}
 
 /**
  * Determine the language of a file based on its extension
@@ -265,6 +305,61 @@ while acknowledging the roles of your teammates.`;
         sender: agent.name,
         type: "text"
       });
+      
+      // Process any code snippets and tasks
+      const codeSnippets = extractCodeSnippets(agentResponse);
+      if (codeSnippets && codeSnippets.length > 0) {
+        for (const snippet of codeSnippets) {
+          const fileName = snippet.filePath.split('/').pop();
+          
+          // Create a code file entry in the database
+          await createCodeFile({
+            project_id: project.id,
+            name: fileName,
+            path: snippet.filePath,
+            content: snippet.code,
+            language: determineLanguage(snippet.filePath),
+            created_by: agent.name,
+            last_modified_by: agent.name
+          });
+          
+          // Add a message about the created file
+          await createMessage({
+            project_id: project.id,
+            content: `I've created a new file: ${snippet.filePath}`,
+            sender: agent.name,
+            type: "code",
+            code_language: determineLanguage(snippet.filePath)
+          });
+        }
+      }
+      
+      // Process any tasks that were created
+      const tasksInfo = extractTasksInfo(agentResponse);
+      if (tasksInfo && tasksInfo.length > 0) {
+        for (const taskInfo of tasksInfo) {
+          let assignedAgentId = agent.id; // Default to the current agent
+          
+          // Try to find the correct agent by type
+          if (taskInfo.assignedTo !== agent.type && taskInfo.assignedTo.includes('Agent')) {
+            const agentType = taskInfo.assignedTo.replace(' Agent', '').toLowerCase();
+            const assignedAgent = agents.find(a => a.type.toLowerCase() === agentType);
+            if (assignedAgent) {
+              assignedAgentId = assignedAgent.id;
+            }
+          }
+          
+          // Create the task
+          await createTask({
+            project_id: project.id,
+            title: taskInfo.title,
+            description: taskInfo.description,
+            assigned_to: assignedAgentId,
+            status: 'pending',
+            priority: taskInfo.priority as TaskPriority || 'medium'
+          });
+        }
+      }
       
       // Small delay between agent responses to make the conversation more natural
       await new Promise(resolve => setTimeout(resolve, 1000));
