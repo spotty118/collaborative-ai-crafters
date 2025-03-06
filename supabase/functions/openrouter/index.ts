@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
@@ -95,10 +94,9 @@ IMPORTANT: Do not return complex objects in error messages. Always convert error
       fullSystemPrompt += ` Provide a concise solution to the task, focusing on code implementation rather than lengthy explanations.`;
     }
     
-    console.log('Sending request to OpenRouter API with model: anthropic/claude-3.7-sonnet:thinking');
+    console.log('Sending request to OpenRouter API with model: google/gemini-2.0-flash-thinking-exp:free');
     
-    // For Claude with thinking enabled, we need to configure appropriate token limits
-    // The 'thinking' feature requires max_tokens to be greater than thinking.budget_tokens
+    // For Gemini Flash with thinking enabled, adjust parameters appropriately
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -108,16 +106,15 @@ IMPORTANT: Do not return complex objects in error messages. Always convert error
         'X-Title': 'Agentic Development Platform',
       },
       body: JSON.stringify({
-        model: 'anthropic/claude-3.7-sonnet:thinking',
+        model: 'google/gemini-2.0-flash-thinking-exp:free',
         messages: [
           { role: 'system', content: fullSystemPrompt },
           { role: 'user', content: prompt }
         ],
         temperature: 0.7,
-        max_tokens: 4096,  // Increased from 1024 to accommodate thinking.budget_tokens requirement
+        max_tokens: 4096,
         thinking: {
-          enabled: true,
-          budget_tokens: 2048  // Allocate tokens for thinking, which must be less than max_tokens
+          enabled: true
         }
       }),
     });
