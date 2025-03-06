@@ -43,6 +43,13 @@ export const releaseToken = (agentId: string): boolean => {
 };
 
 /**
+ * Check if an agent currently holds the token
+ */
+export const getTokenState = (agentId: string): boolean => {
+  return tokenHolderAgent === agentId;
+};
+
+/**
  * Create a broadcast message from one agent to all other agents
  */
 export const broadcastMessage = async (
