@@ -31,7 +31,7 @@ serve(async (req) => {
     console.log('Request body:', rawBody);
     
     // Parse body again after reading text
-    const { projectId, agentId, taskId, action = 'start', agents, projectContext, autostart = false } = JSON.parse(rawBody);
+    const { projectId, agentId, taskId, action = 'start', agents, projectContext, autostart = false, verbose = true } = JSON.parse(rawBody);
     
     if (!projectId) {
       return new Response(
@@ -40,7 +40,7 @@ serve(async (req) => {
       );
     }
     
-    console.log(`Processing ${action} request for project ${projectId}, agent ${agentId || 'all'}`);
+    console.log(`Processing ${action} request for project ${projectId}, agent ${agentId || 'all'}, verbose=${verbose}`);
     
     // Fetch project to send as context
     const { data: projectData, error: projectError } = await supabase
@@ -112,8 +112,8 @@ serve(async (req) => {
         .insert([{
           project_id: projectId,
           content: agentId 
-            ? `Starting ${agentData?.name || 'Agent'} for project: ${projectData.name}`
-            : `CrewAI orchestration started for project: ${projectData.name}`,
+            ? `Starting ${agentData?.name || 'Agent'} for project: ${projectData.name} (verbose=${verbose})`
+            : `CrewAI orchestration started for project: ${projectData.name} (verbose=${verbose})`,
           sender: agentId ? agentData?.name : 'System',
           type: 'text'
         }]);
@@ -133,7 +133,7 @@ serve(async (req) => {
         .from('chat_messages')
         .insert([{
           project_id: projectId,
-          content: `The team is now collaborating on project: ${projectData.name}. Agents will automatically assign and work on tasks.`,
+          content: `The team is now collaborating on project: ${projectData.name} (verbose=${verbose}). Agents will automatically assign and work on tasks.`,
           sender: "Architect Agent",
           type: 'text'
         }]);
@@ -147,9 +147,9 @@ serve(async (req) => {
               // Skip architect as it's already running
               if (agent.type === 'architect') continue;
               
-              console.log(`Auto-starting agent ${agent.name} (${agent.id})`);
+              console.log(`Auto-starting agent ${agent.name} (${agent.id}) with verbose=${verbose}`);
               try {
-                processAgentWorkflow(projectId, agent.id, agent, []).catch(err => {
+                processAgentWorkflow(projectId, agent.id, agent, [], verbose).catch(err => {
                   console.error(`Error auto-starting agent ${agent.name}:`, err);
                 });
               } catch (error) {
@@ -165,21 +165,22 @@ serve(async (req) => {
     const response = new Response(
       JSON.stringify({ 
         success: true, 
-        message: `CrewAI orchestration ${action} initiated for ${agentId ? 'agent' : 'project'} ${agentId || projectId}`,
+        message: `CrewAI orchestration ${action} initiated for ${agentId ? 'agent' : 'project'} ${agentId || projectId} (verbose=${verbose})`,
         project: projectData?.name || 'Unknown Project',
         agent: agentData?.name || null,
-        tasks: tasksData?.length || 0
+        tasks: tasksData?.length || 0,
+        verbose: verbose
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
     
     // Process orchestration asynchronously (don't await this)
     if (action === 'team_collaborate') {
-      processTeamCollaboration(projectId, projectData, agents || [], projectContext).catch(error => {
+      processTeamCollaboration(projectId, projectData, agents || [], projectContext, verbose).catch(error => {
         console.error('Error in team collaboration processing:', error);
       });
     } else {
-      processOrchestration(projectId, projectData, agentId, agentData, tasksData, action).catch(error => {
+      processOrchestration(projectId, projectData, agentId, agentData, tasksData, action, verbose).catch(error => {
         console.error('Error in asynchronous orchestration processing:', error);
       });
     }
@@ -204,8 +205,8 @@ serve(async (req) => {
 /**
  * Process team collaboration
  */
-async function processTeamCollaboration(projectId, projectData, agents, projectContext) {
-  console.log(`Starting team collaboration for project ${projectId} with ${agents.length} agents`);
+async function processTeamCollaboration(projectId, projectData, agents, projectContext, verbose = false) {
+  console.log(`Starting team collaboration for project ${projectId} with ${agents.length} agents (verbose=${verbose})`);
   
   if (!agents || agents.length === 0) {
     console.error('No agents provided for team collaboration');
@@ -235,7 +236,9 @@ async function processTeamCollaboration(projectId, projectData, agents, projectC
       
       Assign at least one task to each agent type: Frontend, Backend, DevOps, Testing.
       Keep your analysis brief and focus on creating well-defined tasks.`,
-      { projectId, projectName: projectData.name, projectDescription: projectData.description }
+      { projectId, projectName: projectData.name, projectDescription: projectData.description },
+      null,
+      verbose
     );
     
     // Add the architect's plan to chat - SIMPLIFIED
@@ -319,8 +322,8 @@ async function processTeamCollaboration(projectId, projectData, agents, projectC
             console.log(`${agent.name} acknowledged tasks`);
             
             // Start working on the first task immediately
-            console.log(`${agent.name} starting work on task: ${agentTasks[0].title}`);
-            processTask(projectId, agent.id, { name: agent.name, agent_type: agent.type }, agentTasks[0]).catch(error => {
+            console.log(`${agent.name} starting work on task: ${agentTasks[0].title} (verbose=${verbose})`);
+            processTask(projectId, agent.id, { name: agent.name, agent_type: agent.type }, agentTasks[0], verbose).catch(error => {
               console.error(`Error processing task: ${error}`);
             });
           }
@@ -350,8 +353,8 @@ async function processTeamCollaboration(projectId, projectData, agents, projectC
               .eq('id', agent.id);
               
             // Start working on the first task
-            console.log(`Starting ${agent.name} on default task`);
-            processTask(projectId, agent.id, { name: agent.name, agent_type: agent.type }, agentTasks[0]).catch(error => {
+            console.log(`Starting ${agent.name} on default task (verbose=${verbose})`);
+            processTask(projectId, agent.id, { name: agent.name, agent_type: agent.type }, agentTasks[0], verbose).catch(error => {
               console.error(`Error processing default task: ${error}`);
             });
           }
@@ -361,7 +364,7 @@ async function processTeamCollaboration(projectId, projectData, agents, projectC
     
     // Set up more frequent check for pending tasks
     setTimeout(() => {
-      checkAndAssignPendingTasks(projectId, agents);
+      checkAndAssignPendingTasks(projectId, agents, verbose);
     }, 15000); // Check after 15 seconds
     
   } catch (error) {
@@ -436,7 +439,7 @@ async function createInitialTasks(projectId, agents) {
 /**
  * Periodically check for pending tasks and assign them to agents
  */
-async function checkAndAssignPendingTasks(projectId, agents) {
+async function checkAndAssignPendingTasks(projectId, agents, verbose = false) {
   try {
     console.log(`Checking for pending tasks in project ${projectId}`);
     
@@ -470,7 +473,7 @@ async function checkAndAssignPendingTasks(projectId, agents) {
           const task = pendingTasks.find(t => t.assigned_to === agent.id) || pendingTasks[0];
           
           if (task) {
-            console.log(`Assigning task "${task.title}" to ${agent.name}`);
+            console.log(`Assigning task "${task.title}" to ${agent.name} (verbose=${verbose})`);
             
             // Update agent status
             await supabase
@@ -479,7 +482,7 @@ async function checkAndAssignPendingTasks(projectId, agents) {
               .eq('id', agent.id);
               
             // Process the task
-            await processTask(projectId, agent.id, agent, task);
+            await processTask(projectId, agent.id, agent, task, verbose);
           }
         }
       }
@@ -487,7 +490,7 @@ async function checkAndAssignPendingTasks(projectId, agents) {
     
     // Schedule next check
     setTimeout(() => {
-      checkAndAssignPendingTasks(projectId, agents);
+      checkAndAssignPendingTasks(projectId, agents, verbose);
     }, 60000); // Check every minute
     
   } catch (error) {
@@ -495,7 +498,7 @@ async function checkAndAssignPendingTasks(projectId, agents) {
     
     // Schedule next check even if there was an error
     setTimeout(() => {
-      checkAndAssignPendingTasks(projectId, agents);
+      checkAndAssignPendingTasks(projectId, agents, verbose);
     }, 60000);
   }
 }
@@ -503,17 +506,17 @@ async function checkAndAssignPendingTasks(projectId, agents) {
 /**
  * Process the orchestration asynchronously
  */
-async function processOrchestration(projectId, projectData, agentId, agentData, tasksData, action) {
-  console.log(`Starting asynchronous orchestration processing for project ${projectId}`);
+async function processOrchestration(projectId, projectData, agentId, agentData, tasksData, action, verbose = false) {
+  console.log(`Starting asynchronous orchestration processing for project ${projectId} (verbose=${verbose})`);
   
   try {
     if (action === 'start') {
       if (agentId) {
         // Single agent workflow
-        await processAgentWorkflow(projectId, agentId, agentData, tasksData);
+        await processAgentWorkflow(projectId, agentId, agentData, tasksData, verbose);
       } else {
         // Full project workflow
-        await processProjectWorkflow(projectId, projectData);
+        await processProjectWorkflow(projectId, projectData, verbose);
       }
     } else if (action === 'stop') {
       if (agentId) {
@@ -549,8 +552,8 @@ async function processOrchestration(projectId, projectData, agentId, agentData, 
 /**
  * Process workflow for a project (multi-agent)
  */
-async function processProjectWorkflow(projectId, projectData) {
-  console.log(`Processing workflow for project ${projectId}`);
+async function processProjectWorkflow(projectId, projectData, verbose = false) {
+  console.log(`Processing workflow for project ${projectId} (verbose=${verbose})`);
   
   // Full project implementation would go here
   // This is a placeholder for now as we're focusing on single agent workflows
@@ -559,7 +562,7 @@ async function processProjectWorkflow(projectId, projectData) {
     .from('chat_messages')
     .insert([{
       project_id: projectId,
-      content: `Project workflow for ${projectData.name} is starting. Individual agents will be initialized and assigned tasks.`,
+      content: `Project workflow for ${projectData.name} is starting. Individual agents will be initialized and assigned tasks. (verbose=${verbose})`,
       sender: "System",
       type: "text"
     }]);
@@ -568,12 +571,12 @@ async function processProjectWorkflow(projectId, projectData) {
 /**
  * Call OpenRouter API to generate agent response
  */
-async function callOpenRouter(agentType, prompt, projectContext = {}, taskId = null) {
+async function callOpenRouter(agentType, prompt, projectContext = {}, taskId = null, verbose = false) {
   if (!OPENROUTER_API_KEY) {
     throw new Error('OpenRouter API key is not configured');
   }
 
-  console.log(`Calling OpenRouter API for ${agentType} agent with prompt: ${prompt.substring(0, 100)}...`);
+  console.log(`Calling OpenRouter API for ${agentType} agent with prompt: ${prompt.substring(0, 100)}... (verbose=${verbose})`);
 
   const systemPrompts = {
     'architect': `You are the Architect Agent in a software development team. You analyze requirements and delegate tasks to specialized agents. 
@@ -613,6 +616,10 @@ async function callOpenRouter(agentType, prompt, projectContext = {}, taskId = n
     fullSystemPrompt += `\n\nProject context: ${JSON.stringify(projectContext)}`;
   }
 
+  if (verbose) {
+    fullSystemPrompt += `\n\nDETAILED VERBOSE OUTPUT: Your responses should include a detailed step-by-step reasoning process. Explain exactly what you're doing and why.`;
+  }
+
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -642,10 +649,15 @@ async function callOpenRouter(agentType, prompt, projectContext = {}, taskId = n
   }
 
   const data = await response.json();
+  
+  if (verbose) {
+    console.log('OpenRouter API full response:', JSON.stringify(data, null, 2));
+  }
+  
   const content = data.choices[0].message.content;
   
   // Filter out descriptive content that isn't real code
-  const filteredContent = filterForProductionCode(content);
+  const filteredContent = filterForProductionCode(content, verbose);
   
   return filteredContent;
 }
@@ -653,7 +665,7 @@ async function callOpenRouter(agentType, prompt, projectContext = {}, taskId = n
 /**
  * Filter content to ensure it contains real code and not just descriptions
  */
-function filterForProductionCode(content) {
+function filterForProductionCode(content, verbose = false) {
   // Check if content has code blocks
   const hasCodeBlocks = content.includes('```');
   
@@ -678,6 +690,13 @@ function filterForProductionCode(content) {
     if (pattern.test(content)) {
       console.log(`Warning: Generated content contains descriptive language that may indicate non-implementation: ${pattern}`);
       hasDescriptiveWarnings = true;
+      
+      if (verbose) {
+        console.log('Pattern match details:', {
+          pattern: pattern.toString(),
+          matches: content.match(pattern)
+        });
+      }
     }
   }
   
@@ -685,6 +704,10 @@ function filterForProductionCode(content) {
   if (hasDescriptiveWarnings) {
     // We'll still return the content, but log a warning
     console.log('WARNING: Generated content may contain descriptive rather than implementational code');
+    
+    if (verbose) {
+      console.log('Full content with descriptive warnings:', content);
+    }
   }
   
   return content;
@@ -873,8 +896,8 @@ async function stopAgent(projectId, agentId) {
 /**
  * Process workflow for a single agent
  */
-async function processAgentWorkflow(projectId, agentId, agentData, tasksData) {
-  console.log(`Processing workflow for agent ${agentId} with ${tasksData.length} tasks`);
+async function processAgentWorkflow(projectId, agentId, agentData, tasksData, verbose = false) {
+  console.log(`Processing workflow for agent ${agentId} with ${tasksData.length} tasks (verbose=${verbose})`);
   
   // If no tasks, create a default task for the agent
   if (tasksData.length === 0) {
@@ -906,7 +929,9 @@ async function processAgentWorkflow(projectId, agentId, agentData, tasksData) {
     const response = await callOpenRouter(
       agentData.agent_type,
       `You've been assigned a new task: ${taskTitle}. Briefly describe how you will approach this task.`,
-      { projectId, taskTitle, taskDescription: taskDesc }
+      { projectId, taskTitle, taskDescription: taskDesc },
+      null,
+      verbose
     );
     
     await supabase
@@ -927,7 +952,7 @@ async function processAgentWorkflow(projectId, agentId, agentData, tasksData) {
     
   // Process each task in sequence with real AI responses
   for (const task of tasksData) {
-    await processTask(projectId, agentId, agentData, task);
+    await processTask(projectId, agentId, agentData, task, verbose);
   }
   
   // Final update to agent
@@ -940,7 +965,9 @@ async function processAgentWorkflow(projectId, agentId, agentData, tasksData) {
   const completionResponse = await callOpenRouter(
     agentData.agent_type,
     `You've completed all your assigned tasks for project ${projectId}. Summarize what you've accomplished.`,
-    { projectId }
+    { projectId },
+    null,
+    verbose
   );
   
   await supabase
@@ -956,8 +983,8 @@ async function processAgentWorkflow(projectId, agentId, agentData, tasksData) {
 /**
  * Process a specific task
  */
-async function processTask(projectId, agentId, agentData, task) {
-  console.log(`Processing task ${task.id}: ${task.title}`);
+async function processTask(projectId, agentId, agentData, task, verbose = false) {
+  console.log(`Processing task ${task.id}: ${task.title} (verbose=${verbose})`);
   
   // Update task status to in_progress
   await supabase
@@ -981,7 +1008,9 @@ async function processTask(projectId, agentId, agentData, task) {
     PRIORITY: [High/Medium/Low]
     
     Think about how your work integrates with the rest of the team. Consider dependencies and collaborations needed.`,
-    { projectId, taskId: task.id, taskTitle: task.title, taskDescription: task.description }
+    { projectId, taskId: task.id, taskTitle: task.title, taskDescription: task.description },
+    task.id,
+    verbose
   );
   
   // Extract code snippets and create code files
@@ -1121,7 +1150,9 @@ async function processTask(projectId, agentId, agentData, task) {
   const completionResponse = await callOpenRouter(
     agentData.agent_type,
     `You've completed task: "${task.title}". Provide a summary of what you've accomplished and any recommendations for future improvements.`,
-    { projectId, taskId: task.id }
+    { projectId, taskId: task.id },
+    task.id,
+    verbose
   );
   
   await supabase
@@ -1152,7 +1183,7 @@ async function processTask(projectId, agentId, agentData, task) {
     
   if (pendingTasks && pendingTasks.length > 0) {
     console.log(`Agent ${agentId} has more pending tasks. Processing next task: ${pendingTasks[0].id}`);
-    await processTask(projectId, agentId, agentData, pendingTasks[0]);
+    await processTask(projectId, agentId, agentData, pendingTasks[0], verbose);
   } else {
     console.log(`Agent ${agentId} has completed all tasks`);
   }
