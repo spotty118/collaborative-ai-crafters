@@ -1,6 +1,5 @@
-
-import { Agent, Project } from '@/lib/types';
-import { createMessage } from '@/lib/api';
+import { Agent, Project, Task, TaskPriority, CodeFile } from '@/lib/types';
+import { createMessage, createTask, createCodeFile } from '@/lib/api';
 import { broadcastMessage } from './agent/messageBroker';
 
 /**
@@ -51,6 +50,79 @@ export const sendAgentPrompt = async (
     
     console.log(`Agent ${agent.name} response:`, agentResponse.substring(0, 100) + '...');
     
+    // Create a message in the chat with the agent's response
+    await createMessage({
+      project_id: project.id,
+      content: agentResponse,
+      sender: agent.name,
+      type: "text"
+    });
+    
+    // Process any code snippets that were returned
+    if (responseData.codeSnippets && responseData.codeSnippets.length > 0) {
+      console.log(`Agent ${agent.name} generated ${responseData.codeSnippets.length} code snippets`);
+      
+      for (const snippet of responseData.codeSnippets) {
+        const fileName = snippet.filePath.split('/').pop();
+        
+        // Create a code file entry in the database
+        await createCodeFile({
+          project_id: project.id,
+          name: fileName,
+          path: snippet.filePath,
+          content: snippet.code,
+          language: determineLanguage(snippet.filePath),
+          created_by: agent.name,
+          last_modified_by: agent.name
+        });
+        
+        // Add a message about the created file
+        await createMessage({
+          project_id: project.id,
+          content: `I've created a new file: ${snippet.filePath}`,
+          sender: agent.name,
+          type: "code",
+          code_language: determineLanguage(snippet.filePath)
+        });
+      }
+    }
+    
+    // Process any tasks that were created
+    if (responseData.tasksInfo && responseData.tasksInfo.length > 0) {
+      console.log(`Agent ${agent.name} created ${responseData.tasksInfo.length} tasks`);
+      
+      for (const taskInfo of responseData.tasksInfo) {
+        // Get the right agent ID based on the assigned agent type
+        let assignedAgentId = agent.id; // Default to the current agent
+        
+        if (taskInfo.assignedTo !== agent.type && taskInfo.assignedTo.includes('Agent')) {
+          // Try to find the correct agent by type
+          const agentType = taskInfo.assignedTo.replace(' Agent', '').toLowerCase();
+          // This would need access to all agents, which we don't have here
+          // For now, we'll keep it assigned to the current agent
+          console.log(`Task assigned to ${agentType} agent, but we don't have access to that agent's ID`);
+        }
+        
+        // Create the task
+        await createTask({
+          project_id: project.id,
+          title: taskInfo.title,
+          description: taskInfo.description,
+          assigned_to: assignedAgentId,
+          status: 'pending',
+          priority: taskInfo.priority as TaskPriority || 'medium'
+        });
+        
+        // Add a message about the created task
+        await createMessage({
+          project_id: project.id,
+          content: `I've created a new task: "${taskInfo.title}" with ${taskInfo.priority} priority`,
+          sender: agent.name,
+          type: "text"
+        });
+      }
+    }
+    
     return agentResponse;
   } catch (error: any) {
     console.error("Error in sendAgentPrompt:", error);
@@ -68,6 +140,57 @@ export const sendAgentPrompt = async (
     throw error;
   }
 };
+
+/**
+ * Determine the language of a file based on its extension
+ */
+function determineLanguage(filePath: string): string {
+  const extension = filePath.split('.').pop()?.toLowerCase();
+  
+  switch (extension) {
+    case 'js':
+      return 'javascript';
+    case 'ts':
+      return 'typescript';
+    case 'jsx':
+      return 'jsx';
+    case 'tsx':
+      return 'tsx';
+    case 'html':
+      return 'html';
+    case 'css':
+      return 'css';
+    case 'json':
+      return 'json';
+    case 'md':
+      return 'markdown';
+    case 'py':
+      return 'python';
+    case 'rb':
+      return 'ruby';
+    case 'go':
+      return 'go';
+    case 'java':
+      return 'java';
+    case 'php':
+      return 'php';
+    case 'c':
+      return 'c';
+    case 'cpp':
+      return 'cpp';
+    case 'cs':
+      return 'csharp';
+    case 'yml':
+    case 'yaml':
+      return 'yaml';
+    case 'sh':
+      return 'bash';
+    case 'sql':
+      return 'sql';
+    default:
+      return 'plaintext';
+  }
+}
 
 /**
  * Send a team collaborative prompt to multiple agents

@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { supabase } from "../_shared/supabase-client.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
@@ -416,9 +415,105 @@ async function processTask(projectId, agentId, agentData, task) {
   // Generate a message about starting the task using AI
   const startResponse = await callOpenRouter(
     agentData.agent_type,
-    `You're starting work on task: "${task.title}". ${task.description} Explain how you'll approach it.`,
+    `Execute the following task: "${task.title}". ${task.description} 
+    Provide a detailed implementation with real code examples that could be used in the project.
+    Remember to use the filepath format for any code examples: \`\`\`filepath:/path/to/file\`\`\`
+    If your task involves creating other tasks for team members, format them as:
+    TASK: [Title]
+    ASSIGNED TO: [Agent Type] Agent
+    DESCRIPTION: [Details]
+    PRIORITY: [High/Medium/Low]`,
     { projectId, taskId: task.id, taskTitle: task.title, taskDescription: task.description }
   );
+  
+  // Extract code snippets and create code files
+  const codeSnippets = extractCodeSnippets(startResponse);
+  if (codeSnippets.length > 0) {
+    for (const snippet of codeSnippets) {
+      const fileName = snippet.filePath.split('/').pop();
+      
+      // Check if file already exists
+      const { data: existingFiles } = await supabase
+        .from('code_files')
+        .select('id')
+        .eq('path', snippet.filePath)
+        .eq('project_id', projectId);
+        
+      if (existingFiles && existingFiles.length > 0) {
+        // Update existing file
+        await supabase
+          .from('code_files')
+          .update({
+            content: snippet.code,
+            last_modified_by: agentData.name,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingFiles[0].id);
+      } else {
+        // Create new file
+        await supabase
+          .from('code_files')
+          .insert([{
+            project_id: projectId,
+            name: fileName,
+            path: snippet.filePath,
+            content: snippet.code,
+            language: determineLanguage(snippet.filePath),
+            created_by: agentData.name,
+            last_modified_by: agentData.name
+          }]);
+      }
+    }
+    
+    // Add a message about the created files
+    await supabase
+      .from('chat_messages')
+      .insert([{
+        project_id: projectId,
+        content: `I've created/updated ${codeSnippets.length} code files as part of this task.`,
+        sender: agentData.name,
+        type: "text"
+      }]);
+  }
+  
+  // Extract and create tasks
+  const tasksInfo = extractTasksInfo(startResponse);
+  if (tasksInfo.length > 0) {
+    for (const taskInfo of tasksInfo) {
+      // Find the agent for the task
+      const agentType = taskInfo.assignedTo.replace(' Agent', '').toLowerCase();
+      const { data: agents } = await supabase
+        .from('agent_statuses')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('agent_type', agentType);
+        
+      const assignedToId = agents && agents.length > 0 ? agents[0].id : agentId;
+      
+      // Create the task
+      await supabase
+        .from('tasks')
+        .insert([{
+          project_id: projectId,
+          title: taskInfo.title,
+          description: taskInfo.description,
+          assigned_to: assignedToId,
+          status: 'pending',
+          priority: taskInfo.priority.toLowerCase(),
+          parent_task_id: task.id
+        }]);
+    }
+    
+    // Add a message about the created tasks
+    await supabase
+      .from('chat_messages')
+      .insert([{
+        project_id: projectId,
+        content: `I've created ${tasksInfo.length} new tasks based on my work.`,
+        sender: agentData.name,
+        type: "text"
+      }]);
+  }
   
   await supabase
     .from('chat_messages')
@@ -426,42 +521,17 @@ async function processTask(projectId, agentId, agentData, task) {
       project_id: projectId,
       content: startResponse,
       sender: agentData.name,
-      type: 'text'
+      type: "text"
     }]);
     
   // Update agent progress to show we're working on the task
   await supabase
     .from('agent_statuses')
-    .update({ progress: 30 })
+    .update({ progress: 70 })
     .eq('id', agentId);
     
   // Wait some time to simulate work
-  await new Promise(resolve => setTimeout(resolve, 3000));
-  
-  // Mid-progress update with AI response
-  await supabase
-    .from('agent_statuses')
-    .update({ progress: 60 })
-    .eq('id', agentId);
-    
-  // Generate progress update message using AI
-  const progressResponse = await callOpenRouter(
-    agentData.agent_type,
-    `You're making progress on task: "${task.title}". Give an update on your current status and what you've accomplished so far.`,
-    { projectId, taskId: task.id, taskTitle: task.title, taskDescription: task.description }
-  );
-  
-  await supabase
-    .from('chat_messages')
-    .insert([{
-      project_id: projectId,
-      content: progressResponse,
-      sender: agentData.name,
-      type: 'text'
-    }]);
-    
-  // Wait some more time to simulate work
-  await new Promise(resolve => setTimeout(resolve, 3000));
+  await new Promise(resolve => setTimeout(resolve, 2000));
   
   // Complete the task
   await supabase
@@ -486,15 +556,19 @@ async function processTask(projectId, agentId, agentData, task) {
       project_id: projectId,
       content: completionResponse,
       sender: agentData.name,
-      type: 'text'
+      type: "text"
     }]);
     
   // Determine if a follow-up task is needed
-  const needsFollowUp = Math.random() > 0.5; // 50% chance of follow-up
+  const needsFollowUp = Math.random() > 0.3; // 70% chance of follow-up
   
   if (needsFollowUp) {
     // Generate a follow-up task idea using AI
-    const followUpPrompt = `Based on the completed task "${task.title}" (${task.description}), suggest a logical follow-up task that would be appropriate for your role as the ${agentData.agent_type} agent. Format your response as a JSON object with 'title' and 'description' fields only.`;
+    const followUpPrompt = `Based on the completed task "${task.title}" (${task.description}), suggest a logical follow-up task that would be appropriate for your role as the ${agentData.agent_type} agent. Format your response as:
+    TASK: [Title]
+    ASSIGNED TO: [Agent Type] Agent
+    DESCRIPTION: [Details]
+    PRIORITY: [High/Medium/Low]`;
     
     try {
       const followUpResponse = await callOpenRouter(
@@ -503,59 +577,54 @@ async function processTask(projectId, agentId, agentData, task) {
         { projectId, taskId: task.id, taskTitle: task.title, taskDescription: task.description }
       );
       
-      // Try to parse the response as JSON
-      let followUpTask;
-      try {
-        // Extract JSON from the response (it might be wrapped in markdown code blocks)
-        const jsonMatch = followUpResponse.match(/```json\s*(\{.*?\})\s*```/s) || 
-                         followUpResponse.match(/\{[\s\S]*"title"[\s\S]*"description"[\s\S]*\}/);
-        
-        if (jsonMatch) {
-          followUpTask = JSON.parse(jsonMatch[1] || jsonMatch[0]);
-        } else {
-          // Fallback to trying to parse the whole response
-          followUpTask = JSON.parse(followUpResponse);
-        }
-      } catch (e) {
-        console.error('Failed to parse follow-up task JSON:', e);
-        // Create a manually structured follow-up task
-        followUpTask = {
-          title: `Follow-up to ${task.title}`,
-          description: followUpResponse.substring(0, 200) + '...'
-        };
-      }
+      // Extract task information
+      const tasksInfo = extractTasksInfo(followUpResponse);
       
-      // Create the follow-up task
-      const { data: newTask, error } = await supabase
-        .from('tasks')
-        .insert([{
-          project_id: projectId,
-          title: followUpTask.title,
-          description: followUpTask.description,
-          assigned_to: agentId,
-          status: 'pending',
-          priority: 'medium',
-          parent_task_id: task.id
-        }])
-        .select()
-        .single();
+      if (tasksInfo.length > 0) {
+        // Find the agent for the task
+        const taskInfo = tasksInfo[0]; // Take the first suggested task
+        const agentType = taskInfo.assignedTo.replace(' Agent', '').toLowerCase();
         
-      if (!error && newTask) {
-        // Announce the follow-up task creation
-        const announcement = await callOpenRouter(
-          agentData.agent_type,
-          `You've identified a follow-up task: "${followUpTask.title}". Briefly explain why this task is important.`,
-          { projectId, taskId: task.id, followUpTaskTitle: followUpTask.title }
-        );
+        const { data: agents } = await supabase
+          .from('agent_statuses')
+          .select('id')
+          .eq('project_id', projectId)
+          .eq('agent_type', agentType);
+          
+        const assignedToId = agents && agents.length > 0 ? agents[0].id : agentId;
         
-        await supabase
-          .from('chat_messages')
+        // Create the task
+        const { data: newTask, error } = await supabase
+          .from('tasks')
           .insert([{
             project_id: projectId,
-            content: announcement,
-            sender: agentData.name,
-            type: 'text'
-          }]);
+            title: taskInfo.title,
+            description: taskInfo.description,
+            assigned_to: assignedToId,
+            status: 'pending',
+            priority: taskInfo.priority.toLowerCase(),
+            parent_task_id: task.id
+          }])
+          .select()
+          .single();
+          
+        if (!error && newTask) {
+          // Announce the follow-up task creation
+          const announcement = await callOpenRouter(
+            agentData.agent_type,
+            `You've identified a follow-up task: "${taskInfo.title}". Briefly explain why this task is important.`,
+            { projectId, taskId: task.id, followUpTaskTitle: taskInfo.title }
+          );
+          
+          await supabase
+            .from('chat_messages')
+            .insert([{
+              project_id: projectId,
+              content: announcement,
+              sender: agentData.name,
+              type: "text"
+            }]);
+        }
       }
     } catch (error) {
       console.error('Error creating follow-up task:', error);
@@ -808,5 +877,88 @@ function getDefaultTaskDescription(agentType) {
       return 'Configure deployment pipelines and infrastructure setup.';
     default:
       return 'Complete assigned task for the project.';
+  }
+}
+
+// Function to extract code snippets from content
+function extractCodeSnippets(content) {
+  const snippets = [];
+  const regex = /```filepath:(.*?)\n([\s\S]*?)```/g;
+  let match;
+  
+  while ((match = regex.exec(content)) !== null) {
+    snippets.push({
+      filePath: match[1].trim(),
+      code: match[2].trim()
+    });
+  }
+  
+  return snippets;
+}
+
+// Function to extract task information from content
+function extractTasksInfo(content) {
+  const tasks = [];
+  const regex = /TASK: (.*?)\nASSIGNED TO: (.*?)\nDESCRIPTION: (.*?)\nPRIORITY: (.*?)(?:\n|$)/gs;
+  let match;
+  
+  while ((match = regex.exec(content)) !== null) {
+    tasks.push({
+      title: match[1].trim(),
+      assignedTo: match[2].trim(),
+      description: match[3].trim(),
+      priority: match[4].trim().toLowerCase()
+    });
+  }
+  
+  return tasks;
+}
+
+// Function to determine the language of a file based on its extension
+function determineLanguage(filePath) {
+  const extension = filePath.split('.').pop()?.toLowerCase();
+  
+  switch (extension) {
+    case 'js':
+      return 'javascript';
+    case 'ts':
+      return 'typescript';
+    case 'jsx':
+      return 'jsx';
+    case 'tsx':
+      return 'tsx';
+    case 'html':
+      return 'html';
+    case 'css':
+      return 'css';
+    case 'json':
+      return 'json';
+    case 'md':
+      return 'markdown';
+    case 'py':
+      return 'python';
+    case 'rb':
+      return 'ruby';
+    case 'go':
+      return 'go';
+    case 'java':
+      return 'java';
+    case 'php':
+      return 'php';
+    case 'c':
+      return 'c';
+    case 'cpp':
+      return 'cpp';
+    case 'cs':
+      return 'csharp';
+    case 'yml':
+    case 'yaml':
+      return 'yaml';
+    case 'sh':
+      return 'bash';
+    case 'sql':
+      return 'sql';
+    default:
+      return 'plaintext';
   }
 }
