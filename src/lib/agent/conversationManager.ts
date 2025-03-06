@@ -1,6 +1,5 @@
-
 import { Project } from '@/lib/types';
-import { createMessage, getAgentById } from '@/lib/api';
+import { createMessage, getAgents } from '@/lib/api';
 import { sendAgentPrompt } from '@/lib/openrouter';
 import { acquireToken, releaseToken } from './messageBroker';
 
@@ -44,6 +43,32 @@ export const getAllConversationStates = (): Record<string, ConversationState> =>
 };
 
 /**
+ * Get an agent by ID from the project's agents
+ */
+const getAgentById = async (agentId: string, project?: Project) => {
+  // If project is provided with agents, use that (faster)
+  if (project?.agents) {
+    return project.agents.find(agent => agent.id === agentId) || null;
+  }
+  
+  // Otherwise fetch all agents and find the one with matching ID
+  // This requires that getAgents knows which project to use
+  const projectId = project?.id;
+  if (!projectId) {
+    console.error('Cannot get agent: No project ID available');
+    return null;
+  }
+  
+  try {
+    const agents = await getAgents(projectId);
+    return agents.find(agent => agent.id === agentId) || null;
+  } catch (error) {
+    console.error(`Error getting agent by ID ${agentId}:`, error);
+    return null;
+  }
+};
+
+/**
  * Continue an ongoing conversation
  */
 export const continueConversation = async (
@@ -63,7 +88,8 @@ export const continueConversation = async (
   const nextAgentId = state.participants[currentAgentIndex];
   
   try {
-    const agent = await getAgentById(nextAgentId);
+    // Use the local getAgentById function
+    const agent = await getAgentById(nextAgentId, project);
     
     if (!agent) {
       console.error(`Agent ${nextAgentId} not found for conversation ${conversationId}`);

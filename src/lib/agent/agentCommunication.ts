@@ -1,7 +1,8 @@
+
 import { Agent, Project } from '@/lib/types';
 import { createMessage, getAgents } from '@/lib/api';
 import { acquireToken } from './messageBroker';
-import { setConversationState, getConversationState } from './conversationManager';
+import { setConversationState, getConversationState, ConversationState } from './conversationManager';
 
 /**
  * Initiate a new conversation between agents
@@ -81,13 +82,15 @@ function checkForExistingConversation(sourceAgentId: string, targetAgentId: stri
   const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000);
   
   for (const [id, state] of Object.entries(conversations)) {
-    const participants = state.participants || [];
-    const isRecent = state.initiatedAt && new Date(state.initiatedAt) > threeMinutesAgo;
+    // Ensure proper type casting for the state object
+    const typedState = state as ConversationState;
+    const participants = typedState.participants || [];
+    const isRecent = typedState.initiatedAt && new Date(typedState.initiatedAt) > threeMinutesAgo;
     
     // Check if both agents are participants
     if (
       isRecent && 
-      state.status === 'active' &&
+      typedState.status === 'active' &&
       participants.includes(sourceAgentId) && 
       participants.includes(targetAgentId)
     ) {
