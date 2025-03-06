@@ -45,6 +45,14 @@ export const sendAgentPrompt = async (
     
     console.log(`Agent ${agent.name} response:`, agentResponse.substring(0, 100) + '...');
     
+    // Check if the response contains any markers of non-production code
+    if (agentResponse.includes("let's implement") || 
+        agentResponse.includes("Let's implement") ||
+        agentResponse.includes("would look something like") ||
+        agentResponse.includes("might look like")) {
+      console.warn("Response contains descriptive language instead of real code");
+    }
+    
     // Create a message in the chat with the agent's response
     await createMessage({
       project_id: project.id,
@@ -60,6 +68,18 @@ export const sendAgentPrompt = async (
       
       for (const snippet of codeSnippets) {
         const fileName = snippet.filePath.split('/').pop();
+        
+        // Skip code snippets that appear to be descriptive rather than real code
+        if (isDescriptiveCode(snippet.code)) {
+          console.warn(`Skipping non-implementation code for ${snippet.filePath}`);
+          await createMessage({
+            project_id: project.id,
+            content: `Warning: I detected that the code for ${snippet.filePath} was descriptive rather than a real implementation. I've skipped creating this file. Please ask me to implement it properly.`,
+            sender: agent.name,
+            type: "error"
+          });
+          continue;
+        }
         
         // Create a code file entry in the database
         await createCodeFile({
@@ -179,6 +199,42 @@ export const sendAgentPrompt = async (
     throw error;
   }
 };
+
+/**
+ * Check if code appears to be descriptive rather than an actual implementation
+ */
+function isDescriptiveCode(code: string): boolean {
+  // Check for tell-tale signs that this is describing code rather than being code
+  const descriptiveKeywords = [
+    "let's", "Let's", 
+    "we need to", "We need to", 
+    "We'll", "we'll", 
+    "I'll", "i'll",
+    "would look something like", 
+    "might look like",
+    "For example", "for example"
+  ];
+  
+  // Check for presence of descriptive keywords
+  for (const keyword of descriptiveKeywords) {
+    if (code.includes(keyword)) return true;
+  }
+  
+  // Check for absence of common code syntax (for JS/TS files)
+  if (code.length > 20 && 
+      !code.includes(";") && 
+      !code.includes("=") && 
+      !code.includes("{") && 
+      !code.includes("}") && 
+      !code.includes("import") && 
+      !code.includes("export") &&
+      !code.includes("<") && // For HTML/JSX
+      !code.includes(">")) {
+    return true;
+  }
+  
+  return false;
+}
 
 /**
  * Extract code snippets from content

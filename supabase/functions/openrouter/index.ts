@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
@@ -71,6 +70,7 @@ TECHNICAL EXPERTISE:
 - Performance optimization
 
 WHEN CREATING CODE:
+IMPORTANT: You must always provide REAL, PRODUCTION-GRADE code. DO NOT describe what the code should do - implement it fully.
 Always provide complete, functional code snippets with clear file paths using this format:
 \`\`\`filepath:src/components/Example.tsx
 import React from 'react';
@@ -117,6 +117,7 @@ TECHNICAL EXPERTISE:
 - Accessibility (a11y) best practices
 
 WHEN CREATING CODE:
+IMPORTANT: You must always provide REAL, PRODUCTION-GRADE code. DO NOT describe what the code should do - implement it fully.
 Always provide complete, functional code snippets with clear file paths using this format:
 \`\`\`filepath:src/components/Example.tsx
 import React from 'react';
@@ -164,6 +165,7 @@ TECHNICAL EXPERTISE:
 - Security best practices
 
 WHEN CREATING CODE:
+IMPORTANT: You must always provide REAL, PRODUCTION-GRADE code. DO NOT describe what the code should do - implement it fully.
 Always provide complete, functional code snippets with clear file paths using this format:
 \`\`\`filepath:src/server/routes/example.ts
 import express from 'express';
@@ -211,6 +213,7 @@ TECHNICAL EXPERTISE:
 - Bug reporting and tracking
 
 WHEN CREATING CODE:
+IMPORTANT: You must always provide REAL, PRODUCTION-GRADE code. DO NOT describe what the code should do - implement it fully.
 Always provide complete, functional code snippets with clear file paths using this format:
 \`\`\`filepath:src/tests/Example.test.tsx
 import { render, screen } from '@testing-library/react';
@@ -260,6 +263,7 @@ TECHNICAL EXPERTISE:
 - Disaster recovery planning
 
 WHEN CREATING CODE:
+IMPORTANT: You must always provide REAL, PRODUCTION-GRADE code. DO NOT describe what the code should do - implement it fully.
 Always provide complete, functional code snippets with clear file paths using this format:
 \`\`\`filepath:docker-compose.yml
 version: '3'
@@ -302,10 +306,11 @@ Focus on creating reliable, scalable infrastructure and deployment processes tha
       }
     }
     
-    // Add specific task execution instructions
+    // Add specific task execution instructions with stronger emphasis on real code
     if (isTaskExecution) {
       fullSystemPrompt += `\nYou are currently working on a specific task. Provide a detailed, step-by-step solution that demonstrates your expertise as the ${agentType} specialist. Consider how your work interfaces with other team members.`;
-      fullSystemPrompt += `\n\nINCLUDE REAL CODE IMPLEMENTATION. Your response should include actual code that could be implemented directly into the project.`;
+      fullSystemPrompt += `\n\nCRITICAL INSTRUCTION: YOU MUST ALWAYS WRITE REAL, PRODUCTION-GRADE CODE. DO NOT DESCRIBE OR EXPLAIN WHAT THE CODE SHOULD DO - IMPLEMENT IT FULLY. YOUR JOB IS TO WRITE ACTUAL CODE, NOT DESCRIBE CODE.`;
+      fullSystemPrompt += `\n\nINCLUDE REAL CODE IMPLEMENTATION. Your response should include actual code that can be implemented directly into the project.`;
     }
     
     console.log('Sending request to OpenRouter API with model: google/gemini-2.0-flash-thinking-exp:free');
@@ -346,13 +351,26 @@ Focus on creating reliable, scalable infrastructure and deployment processes tha
     console.log('OpenRouter response received successfully');
     
     // Process the response to extract code and task information
-    const content = data.choices[0].message.content;
+    let content = data.choices[0].message.content;
+    
+    // Filter out any non-code content masquerading as code
+    content = filterOutDescriptiveCode(content);
+    
     const codeSnippets = extractCodeSnippets(content);
     const tasksInfo = extractTasksInfo(content);
     
     // Add the code snippets and tasks to the response
     const enhancedResponse = {
       ...data,
+      choices: [
+        {
+          ...data.choices[0],
+          message: {
+            ...data.choices[0].message,
+            content: content
+          }
+        }
+      ],
       codeSnippets,
       tasksInfo
     };
@@ -383,6 +401,46 @@ function extractCodeSnippets(content) {
   }
   
   return snippets;
+}
+
+// Function to filter out descriptive "code" that's not actual implementation
+function filterOutDescriptiveCode(content) {
+  // Look for code blocks that contain descriptive language instead of actual code
+  const descriptiveRegex = /```(?:filepath:)?([^`]+?)```/g;
+  
+  // Return the original content with suspicious "code" blocks removed or replaced
+  return content.replace(descriptiveRegex, (match, codeContent) => {
+    // Check if this looks like descriptive content instead of actual code
+    if (
+      // If it contains phrases like "let's implement" or "we need to"
+      (codeContent.includes("let's") || 
+       codeContent.includes("Let's") || 
+       codeContent.includes("we need to") ||
+       codeContent.includes("We need to") ||
+       codeContent.includes("We'll") ||
+       codeContent.includes("we'll") ||
+       codeContent.includes("I'll") ||
+       codeContent.includes("i'll") ||
+       // Or if it's describing what code would do instead of showing code
+       codeContent.includes("would look something like") ||
+       codeContent.includes("might look like") ||
+       // Or if it doesn't contain typical code syntax
+       (!codeContent.includes(";") && !codeContent.includes("=") && !codeContent.includes("{") && 
+        !codeContent.includes("}") && !codeContent.includes("import") && !codeContent.includes("export") &&
+        !codeContent.length > 500)) &&
+       // And it's not actual code in a non-JS language
+       !codeContent.includes("<!DOCTYPE") &&
+       !codeContent.includes("<html") &&
+       !codeContent.includes("<?xml")
+    ) {
+      // This block is likely descriptive text masquerading as code
+      // Replace the entire code block with instructions to provide real code
+      return "**PLEASE PROVIDE ACTUAL CODE IMPLEMENTATION INSTEAD OF DESCRIPTIONS**";
+    }
+    
+    // Otherwise keep the code block as is
+    return match;
+  });
 }
 
 // Function to extract task information from the content
