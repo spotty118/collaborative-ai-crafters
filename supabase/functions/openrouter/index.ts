@@ -95,7 +95,7 @@ IMPORTANT: Do not return complex objects in error messages. Always convert error
       fullSystemPrompt += ` Provide a concise solution to the task, focusing on code implementation rather than lengthy explanations.`;
     }
     
-    console.log('Sending request to OpenRouter API with model: google/gemini-2.0-flash-thinking-exp:free');
+    console.log('Sending request to OpenRouter API with model: anthropic/claude-3.7-sonnet:thinking');
     
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -106,7 +106,7 @@ IMPORTANT: Do not return complex objects in error messages. Always convert error
         'X-Title': 'Agentic Development Platform',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-thinking-exp:free',
+        model: 'anthropic/claude-3.7-sonnet:thinking',
         messages: [
           { role: 'system', content: fullSystemPrompt },
           { role: 'user', content: prompt }
