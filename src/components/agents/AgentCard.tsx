@@ -5,7 +5,7 @@ import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress";
 import AgentStatus from "./AgentStatus";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, PlayCircle, PauseCircle, RefreshCw } from "lucide-react";
+import { MessageSquare, PlayCircle, PauseCircle, RefreshCw, Users } from "lucide-react";
 import { toast } from "sonner";
 
 interface AgentCardProps {
@@ -66,6 +66,9 @@ const AgentCard: React.FC<AgentCardProps> = ({
   // Handle starting agent with error handling
   const handleStartAgent = () => {
     try {
+      if (agent.type === "architect") {
+        toast.info("Starting Architect. Team collaboration will begin automatically.");
+      }
       onStart(agent.id);
     } catch (error) {
       console.error("Failed to start agent:", error);
@@ -98,16 +101,27 @@ const AgentCard: React.FC<AgentCardProps> = ({
   // Determine if restart button should be shown
   const showRestart = onRestart && (agent.status === "completed" || agent.status === "failed");
 
+  // Is this the architect agent?
+  const isArchitect = agent.type === "architect";
+
   return (
     <Card 
-      className={`agent-card overflow-hidden border-t-4 ${getAgentColorClass()} transition-all duration-300 ease-in-out agent-card-shadow hover:translate-y-[-4px] ${isActive ? 'ring-2 ring-primary/50' : ''}`}
+      className={`agent-card overflow-hidden border-t-4 ${getAgentColorClass()} transition-all duration-300 ease-in-out agent-card-shadow hover:translate-y-[-4px] ${isActive ? 'ring-2 ring-primary/50' : ''} ${isArchitect ? 'shadow-md' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       <CardHeader className="p-4 pb-0">
         <div className="flex justify-between items-start">
           <div>
-            <h3 className="text-lg font-semibold">{agent.name}</h3>
+            <h3 className="text-lg font-semibold flex items-center">
+              {agent.name}
+              {isArchitect && (
+                <span className="ml-2 bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full flex items-center">
+                  <Users className="h-3 w-3 mr-1" />
+                  Lead
+                </span>
+              )}
+            </h3>
             <AgentStatus status={agent.status} className="mt-1" />
           </div>
           <div className="text-3xl">{agent.avatar}</div>
@@ -151,14 +165,14 @@ const AgentCard: React.FC<AgentCardProps> = ({
           </Button>
         ) : agent.status === "idle" || agent.status === "failed" ? (
           <Button
-            variant="outline"
+            variant={isArchitect ? "default" : "outline"}
             size="sm"
-            className="flex-1 text-xs text-green-600 border-green-200 hover:bg-green-50"
+            className={`flex-1 text-xs ${isArchitect ? 'bg-blue-600 hover:bg-blue-700' : 'text-green-600 border-green-200 hover:bg-green-50'}`}
             onClick={handleStartAgent}
             disabled={isProcessing}
           >
             <PlayCircle className="mr-1 h-3.5 w-3.5" />
-            {isProcessing ? "Starting..." : "Start"}
+            {isProcessing ? "Starting..." : isArchitect ? "Start Team" : "Start"}
           </Button>
         ) : (
           <Button

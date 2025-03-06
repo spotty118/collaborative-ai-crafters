@@ -1,4 +1,3 @@
-
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { broadcastMessage } from "./messageBroker";
@@ -37,7 +36,7 @@ export const startAgentOrchestration = async (
     
     console.log('Orchestration response:', data);
     
-    // Automatically start collaboration with other agents if this is the Architect
+    // Fetch agent data to check if this is the Architect
     const { data: agentData } = await supabase
       .from('agent_statuses')
       .select('*')
@@ -45,6 +44,8 @@ export const startAgentOrchestration = async (
       .single();
       
     if (agentData && agentData.agent_type === 'architect') {
+      console.log('Architect agent detected, will start team collaboration');
+      
       // Fetch project data for context
       const { data: projectData } = await supabase
         .from('projects')
@@ -53,10 +54,13 @@ export const startAgentOrchestration = async (
         .single();
         
       if (projectData) {
-        // Start team collaboration automatically
+        // Start team collaboration automatically with a shorter delay
+        // to ensure the architect has time to initialize
+        toast.info("Team collaboration will start automatically in a few seconds");
+        
         setTimeout(() => {
           initiateTeamCollaboration(projectId, projectData);
-        }, 5000); // Give the architect a few seconds to initialize
+        }, 3000); // Reduced from 5000 to 3000ms for faster collaboration startup
       }
     }
     
@@ -82,11 +86,13 @@ const initiateTeamCollaboration = async (projectId: string, project: any) => {
       
     if (error) {
       console.error('Error fetching agents:', error);
+      toast.error('Failed to start team collaboration: Could not fetch agents');
       return;
     }
     
     if (!agents || agents.length === 0) {
       console.log('No agents found for collaboration');
+      toast.error('No agents found for collaboration');
       return;
     }
     
@@ -107,6 +113,9 @@ const initiateTeamCollaboration = async (projectId: string, project: any) => {
       .update({ status: 'working', progress: 10 })
       .in('id', agentIds);
       
+    // Add a visible toast notification
+    toast.success('Team collaboration initiated');
+    
     // Call the orchestrator in "team_mode" to start collaboration
     const { data, error: orchError } = await supabase.functions.invoke('crew-orchestrator', {
       body: {
@@ -119,12 +128,14 @@ const initiateTeamCollaboration = async (projectId: string, project: any) => {
     
     if (orchError) {
       console.error('Team collaboration error:', orchError);
+      toast.error(`Team collaboration failed: ${orchError.message}`);
       return;
     }
     
     console.log('Team collaboration initiated:', data);
   } catch (error) {
     console.error('Error initiating team collaboration:', error);
+    toast.error(`Failed to initiate team collaboration: ${error.message}`);
   }
 };
 
