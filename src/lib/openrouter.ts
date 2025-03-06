@@ -1,3 +1,4 @@
+
 import { Agent, Project, Task, TaskPriority, CodeFile } from '@/lib/types';
 import { createMessage, createTask, createCodeFile } from '@/lib/api';
 import { broadcastMessage } from './agent/messageBroker';
@@ -42,12 +43,6 @@ export const sendAgentPrompt = async (
     const responseData = await response.json();
     const agentResponse = responseData.choices[0].message.content;
     
-    // Check if the response includes progress update data
-    if (responseData.progressUpdate && responseData.progressUpdate.progress) {
-      // This would be handled by the orchestrator now, but we could add a fallback here
-      console.log(`Agent ${agent.name} progress update:`, responseData.progressUpdate.progress);
-    }
-    
     console.log(`Agent ${agent.name} response:`, agentResponse.substring(0, 100) + '...');
     
     // Create a message in the chat with the agent's response
@@ -59,7 +54,7 @@ export const sendAgentPrompt = async (
     });
     
     // Process any code snippets that were returned
-    const codeSnippets = extractCodeSnippets(agentResponse);
+    const codeSnippets = responseData.codeSnippets || extractCodeSnippets(agentResponse);
     if (codeSnippets && codeSnippets.length > 0) {
       console.log(`Agent ${agent.name} generated ${codeSnippets.length} code snippets`);
       
@@ -88,8 +83,8 @@ export const sendAgentPrompt = async (
       }
     }
     
-    // Process any tasks that were created - ENHANCED EXTRACTION
-    const tasksInfo = extractTasksInfo(agentResponse);
+    // Process any tasks that were created
+    const tasksInfo = responseData.tasksInfo || extractTasksInfo(agentResponse);
     if (tasksInfo && tasksInfo.length > 0) {
       console.log(`Agent ${agent.name} created ${tasksInfo.length} tasks`);
       
@@ -204,7 +199,7 @@ function extractCodeSnippets(content: string): { filePath: string; code: string 
 }
 
 /**
- * Extract task information from content - SIGNIFICANTLY IMPROVED
+ * Extract task information from content
  */
 function extractTasksInfo(content: string): { title: string; assignedTo: string; description: string; priority: string }[] {
   const tasks = [];
@@ -247,25 +242,6 @@ function extractTasksInfo(content: string): { title: string; assignedTo: string;
           assignedTo: (match[2] || 'Architect Agent').trim(),
           description: (match[3] || match[1]).trim(), // Use title as description if missing
           priority: (match[4] || 'medium').trim().toLowerCase()
-        });
-      }
-    }
-  }
-  
-  // Fourth ultra-flexible fallback - catch anything that looks task-like
-  if (tasks.length === 0) {
-    // Extract any numbered or bullet list items that look like tasks
-    const listRegex = /(?:^\d+\.|\*|\-)\s+([^:]+?)(?::\s*([^:\n]+))?(?:\n|$)/gm;
-    while ((match = listRegex.exec(content)) !== null) {
-      // If it looks like a task (has reasonable length and not too generic)
-      const possibleTitle = match[1].trim();
-      if (possibleTitle.length > 10 && possibleTitle.length < 100 &&
-          !possibleTitle.match(/^(introduction|overview|summary|conclusion)$/i)) {
-        tasks.push({
-          title: possibleTitle,
-          assignedTo: 'Architect Agent', // Default to architect
-          description: match[2] ? match[2].trim() : `Complete the task: ${possibleTitle}`,
-          priority: 'medium'
         });
       }
     }
@@ -407,7 +383,7 @@ PRIORITY: [high/medium/low]`;
       });
       
       // Process any code snippets and tasks
-      const codeSnippets = extractCodeSnippets(agentResponse);
+      const codeSnippets = responseData.codeSnippets || extractCodeSnippets(agentResponse);
       if (codeSnippets && codeSnippets.length > 0) {
         for (const snippet of codeSnippets) {
           const fileName = snippet.filePath.split('/').pop();
@@ -435,7 +411,7 @@ PRIORITY: [high/medium/low]`;
       }
       
       // Process any tasks that were created
-      const tasksInfo = extractTasksInfo(agentResponse);
+      const tasksInfo = responseData.tasksInfo || extractTasksInfo(agentResponse);
       if (tasksInfo && tasksInfo.length > 0) {
         console.log(`Agent ${agent.name} created ${tasksInfo.length} tasks in team collaboration`);
         

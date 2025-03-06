@@ -41,9 +41,8 @@ serve(async (req) => {
     
     console.log(`Processing request for ${agentType} agent with project context: ${JSON.stringify(projectContext)}`);
     
-    // Track task progress for updating agent status later
+    // Track if this is a task execution request
     const isTaskExecution = prompt.includes('Execute the following task:') || !!taskId;
-    const progressUpdate = isTaskExecution ? { progress: calculateProgress(projectContext, agentType) } : {};
     
     // Enhanced system prompts for more roleplay and teamwork focus
     const systemPrompts = {
@@ -304,7 +303,7 @@ Focus on creating reliable, scalable infrastructure and deployment processes tha
     }
     
     // Add specific task execution instructions
-    if (prompt.includes('Execute the following task:') || taskId) {
+    if (isTaskExecution) {
       fullSystemPrompt += `\nYou are currently working on a specific task. Provide a detailed, step-by-step solution that demonstrates your expertise as the ${agentType} specialist. Consider how your work interfaces with other team members.`;
       fullSystemPrompt += `\n\nINCLUDE REAL CODE IMPLEMENTATION. Your response should include actual code that could be implemented directly into the project.`;
     }
@@ -355,8 +354,7 @@ Focus on creating reliable, scalable infrastructure and deployment processes tha
     const enhancedResponse = {
       ...data,
       codeSnippets,
-      tasksInfo,
-      progressUpdate: isTaskExecution ? progressUpdate : {}
+      tasksInfo
     };
     
     return new Response(JSON.stringify(enhancedResponse), {
@@ -390,10 +388,12 @@ function extractCodeSnippets(content) {
 // Function to extract task information from the content
 function extractTasksInfo(content) {
   const tasks = [];
-  const regex = /TASK: (.*?)\nASSIGNED TO: (.*?)\nDESCRIPTION: (.*?)\nPRIORITY: (.*?)(?:\n|$)/gs;
+  
+  // Match TASK: format (standard format)
+  const standardRegex = /TASK:\s*(.*?)\nASSIGNED TO:\s*(.*?)\nDESCRIPTION:\s*(.*?)\nPRIORITY:\s*(.*?)(?:\n\n|\n$|$)/gs;
   let match;
   
-  while ((match = regex.exec(content)) !== null) {
+  while ((match = standardRegex.exec(content)) !== null) {
     tasks.push({
       title: match[1].trim(),
       assignedTo: match[2].trim(),
@@ -402,60 +402,55 @@ function extractTasksInfo(content) {
     });
   }
   
-  return tasks;
-}
-
-// Function to calculate progress based on tasks completed and agent type
-function calculateProgress(projectContext: any, agentType: string): number {
-  if (!projectContext) {
-    // Default starting progress varies by agent type
-    switch (agentType) {
-      case 'architect':
-        return 20 + Math.floor(Math.random() * 10);
-      case 'frontend':
-        return 15 + Math.floor(Math.random() * 12);
-      case 'backend':
-        return 18 + Math.floor(Math.random() * 8);
-      case 'testing':
-        return 12 + Math.floor(Math.random() * 10);
-      case 'devops':
-        return 16 + Math.floor(Math.random() * 9);
-      default:
-        return 15 + Math.floor(Math.random() * 5);
+  // If no tasks found in standard format, try alternative format (for compatibility)
+  if (tasks.length === 0) {
+    const altRegex = /Task:\s*(.*?)\nAssigned to:\s*(.*?)\nDescription:\s*(.*?)\nPriority:\s*(.*?)(?:\n\n|\n$|$)/gis;
+    while ((match = altRegex.exec(content)) !== null) {
+      tasks.push({
+        title: match[1].trim(),
+        assignedTo: match[2].trim(),
+        description: match[3].trim(),
+        priority: match[4].trim().toLowerCase()
+      });
     }
   }
   
-  // Base progress values differ by agent type
-  let baseProgress;
-  switch (agentType) {
-    case 'architect':
-      baseProgress = 50 + Math.floor(Math.random() * 10);
-      break;
-    case 'frontend':
-      baseProgress = 45 + Math.floor(Math.random() * 15);
-      break;
-    case 'backend':
-      baseProgress = 48 + Math.floor(Math.random() * 12);
-      break;
-    case 'testing':
-      baseProgress = 40 + Math.floor(Math.random() * 20);
-      break;
-    case 'devops':
-      baseProgress = 42 + Math.floor(Math.random() * 16);
-      break;
-    default:
-      baseProgress = 45 + Math.floor(Math.random() * 10);
+  // Third fallback - look for tasks in a more flexible way
+  if (tasks.length === 0) {
+    // Look for any combination of "task", "assigned", "description", "priority" in flexible order
+    const flexRegex = /(?:task|todo|to-do|task name|title)[\s\:]+([^\n]+)(?:[\s\n]+(?:assigned|agent|assigned to|for)[\s\:]+([^\n]+))?(?:[\s\n]+(?:description|details|task description)[\s\:]+([^\n]+))?(?:[\s\n]+(?:priority|importance)[\s\:]+([^\n]+))?/gis;
+    while ((match = flexRegex.exec(content)) !== null) {
+      // Only add if we can extract at minimum a title
+      if (match[1] && match[1].trim().length > 0) {
+        tasks.push({
+          title: match[1].trim(),
+          assignedTo: (match[2] || 'Architect Agent').trim(),
+          description: (match[3] || match[1]).trim(), // Use title as description if missing
+          priority: (match[4] || 'medium').trim().toLowerCase()
+        });
+      }
+    }
   }
   
-  // If we have analysis completed, add more progress
-  if (projectContext.requirements) {
-    return baseProgress + (10 + Math.floor(Math.random() * 15));
+  // Fourth ultra-flexible fallback - catch anything that looks task-like
+  if (tasks.length === 0) {
+    // Extract any numbered or bullet list items that look like tasks
+    const listRegex = /(?:^\d+\.|\*|\-)\s+([^:]+?)(?::\s*([^:\n]+))?(?:\n|$)/gm;
+    while ((match = listRegex.exec(content)) !== null) {
+      // If it looks like a task (has reasonable length and not too generic)
+      const possibleTitle = match[1].trim();
+      if (possibleTitle.length > 10 && possibleTitle.length < 100 &&
+          !possibleTitle.match(/^(introduction|overview|summary|conclusion)$/i)) {
+        tasks.push({
+          title: possibleTitle,
+          assignedTo: 'Architect Agent', // Default to architect
+          description: match[2] ? match[2].trim() : `Complete the task: ${possibleTitle}`,
+          priority: 'medium'
+        });
+      }
+    }
   }
   
-  // If we have source code being analyzed, progress further
-  if (projectContext.sourceUrl) {
-    return baseProgress + (15 + Math.floor(Math.random() * 20));
-  }
-  
-  return baseProgress;
+  console.log(`Extracted ${tasks.length} tasks from agent response`);
+  return tasks;
 }
