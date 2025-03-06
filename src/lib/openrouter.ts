@@ -97,31 +97,46 @@ export const sendAgentPrompt = async (
         // Get the right agent ID based on the assigned agent type
         let assignedAgentId = agent.id; // Default to the current agent
         
-        if (taskInfo.assignedTo !== agent.type && taskInfo.assignedTo.includes('Agent')) {
+        if (taskInfo.assignedTo !== agent.type && taskInfo.assignedTo.toLowerCase().includes('agent')) {
           // Try to find the correct agent by type
-          const agentType = taskInfo.assignedTo.replace(' Agent', '').toLowerCase();
+          const agentType = taskInfo.assignedTo.replace(/\s+agent/i, '').toLowerCase();
           // This would need access to all agents, which we don't have here
-          // For now, we'll keep it assigned to the current agent
-          console.log(`Task assigned to ${agentType} agent, but we don't have access to that agent's ID`);
+          console.log(`Task being assigned to ${agentType} agent type`);
+          
+          // For now, keep it assigned to the current agent and let the UI handle it
         }
         
-        // Create the task
-        await createTask({
-          project_id: project.id,
-          title: taskInfo.title,
-          description: taskInfo.description,
-          assigned_to: assignedAgentId,
-          status: 'pending',
-          priority: taskInfo.priority as TaskPriority || 'medium'
-        });
+        // Create the task with a more descriptive title that includes the agent name
+        const taskTitle = `[${agent.name}] ${taskInfo.title}`;
+        console.log(`Creating task: ${taskTitle} for agent ${assignedAgentId}`);
         
-        // Add a message about the created task
-        await createMessage({
-          project_id: project.id,
-          content: `I've created a new task: "${taskInfo.title}" with ${taskInfo.priority} priority`,
-          sender: agent.name,
-          type: "text"
-        });
+        try {
+          // Create the task
+          await createTask({
+            project_id: project.id,
+            title: taskTitle,
+            description: taskInfo.description,
+            assigned_to: assignedAgentId,
+            status: 'pending',
+            priority: taskInfo.priority as TaskPriority || 'medium'
+          });
+          
+          // Add a message about the created task
+          await createMessage({
+            project_id: project.id,
+            content: `I've created a new task: "${taskInfo.title}" with ${taskInfo.priority} priority`,
+            sender: agent.name,
+            type: "text"
+          });
+        } catch (error) {
+          console.error(`Error creating task ${taskTitle}:`, error);
+          await createMessage({
+            project_id: project.id,
+            content: `Failed to create task: "${taskInfo.title}" - ${error instanceof Error ? error.message : 'Unknown error'}`,
+            sender: agent.name,
+            type: "error"
+          });
+        }
       }
     }
     
@@ -166,10 +181,12 @@ function extractCodeSnippets(content: string): { filePath: string; code: string 
  */
 function extractTasksInfo(content: string): { title: string; assignedTo: string; description: string; priority: string }[] {
   const tasks = [];
-  const regex = /TASK: (.*?)\nASSIGNED TO: (.*?)\nDESCRIPTION: (.*?)\nPRIORITY: (.*?)(?:\n|$)/gs;
+  
+  // Match TASK: format (standard format)
+  const standardRegex = /TASK: (.*?)\nASSIGNED TO: (.*?)\nDESCRIPTION: (.*?)\nPRIORITY: (.*?)(?:\n|$)/gs;
   let match;
   
-  while ((match = regex.exec(content)) !== null) {
+  while ((match = standardRegex.exec(content)) !== null) {
     tasks.push({
       title: match[1].trim(),
       assignedTo: match[2].trim(),
@@ -178,6 +195,33 @@ function extractTasksInfo(content: string): { title: string; assignedTo: string;
     });
   }
   
+  // If no tasks found in standard format, try alternative format (for compatibility)
+  if (tasks.length === 0) {
+    const altRegex = /Task: (.*?)\nAssigned to: (.*?)\nDescription: (.*?)\nPriority: (.*?)(?:\n|$)/gis;
+    while ((match = altRegex.exec(content)) !== null) {
+      tasks.push({
+        title: match[1].trim(),
+        assignedTo: match[2].trim(),
+        description: match[3].trim(),
+        priority: match[4].trim().toLowerCase()
+      });
+    }
+  }
+  
+  // Third fallback - look for tasks in a more flexible way
+  if (tasks.length === 0) {
+    const flexRegex = /(?:task|todo|to-do):\s*(.*?)(?:\n|$).*?(?:assigned|agent):\s*(.*?)(?:\n|$).*?(?:description|details):\s*(.*?)(?:\n|$).*?(?:priority):\s*(.*?)(?:\n|$)/gis;
+    while ((match = flexRegex.exec(content)) !== null) {
+      tasks.push({
+        title: match[1].trim(),
+        assignedTo: match[2].trim(),
+        description: match[3].trim(),
+        priority: match[4].trim().toLowerCase() || 'medium'
+      });
+    }
+  }
+  
+  console.log(`Extracted ${tasks.length} tasks from agent response`);
   return tasks;
 }
 
@@ -262,7 +306,13 @@ please respond to the following request from the user:
 ${prompt}
 
 Remember that you are the ${agent.name} (${agent.type}) and should focus on your specialty 
-while acknowledging the roles of your teammates.`;
+while acknowledging the roles of your teammates.
+
+IMPORTANT: If you identify any tasks that need to be done, please list them in this format:
+TASK: [Task name]
+ASSIGNED TO: [Agent type, e.g. Frontend]
+DESCRIPTION: [Detailed description]
+PRIORITY: [high/medium/low]`;
       
       // Send the request to our Supabase Edge Function for OpenRouter
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openrouter`, {
@@ -337,27 +387,62 @@ while acknowledging the roles of your teammates.`;
       // Process any tasks that were created
       const tasksInfo = extractTasksInfo(agentResponse);
       if (tasksInfo && tasksInfo.length > 0) {
+        console.log(`Agent ${agent.name} created ${tasksInfo.length} tasks in team collaboration`);
+        
         for (const taskInfo of tasksInfo) {
           let assignedAgentId = agent.id; // Default to the current agent
           
           // Try to find the correct agent by type
-          if (taskInfo.assignedTo !== agent.type && taskInfo.assignedTo.includes('Agent')) {
-            const agentType = taskInfo.assignedTo.replace(' Agent', '').toLowerCase();
+          if (taskInfo.assignedTo !== agent.type && taskInfo.assignedTo.toLowerCase().includes('agent')) {
+            const agentType = taskInfo.assignedTo.replace(/\s+agent/i, '').toLowerCase();
             const assignedAgent = agents.find(a => a.type.toLowerCase() === agentType);
             if (assignedAgent) {
               assignedAgentId = assignedAgent.id;
+              console.log(`Found agent match: ${assignedAgent.name} (${assignedAgent.id})`);
+            } else {
+              console.log(`Could not find agent for type: ${agentType}`);
+            }
+          } else if (!taskInfo.assignedTo.toLowerCase().includes('agent')) {
+            // Try to match just the agent type without the word "agent"
+            const agentType = taskInfo.assignedTo.toLowerCase().trim();
+            const assignedAgent = agents.find(a => a.type.toLowerCase() === agentType);
+            if (assignedAgent) {
+              assignedAgentId = assignedAgent.id;
+              console.log(`Found agent match by type only: ${assignedAgent.name} (${assignedAgent.id})`);
             }
           }
           
-          // Create the task
-          await createTask({
-            project_id: project.id,
-            title: taskInfo.title,
-            description: taskInfo.description,
-            assigned_to: assignedAgentId,
-            status: 'pending',
-            priority: taskInfo.priority as TaskPriority || 'medium'
-          });
+          // Create the task with a more descriptive title that includes the agent name
+          const taskTitle = `[${agent.name}] ${taskInfo.title}`;
+          console.log(`Creating team task: ${taskTitle} for agent ${assignedAgentId}`);
+          
+          try {
+            // Create the task
+            await createTask({
+              project_id: project.id,
+              title: taskTitle,
+              description: taskInfo.description,
+              assigned_to: assignedAgentId,
+              status: 'pending',
+              priority: taskInfo.priority as TaskPriority || 'medium'
+            });
+            
+            // Add a message about the created task
+            await createMessage({
+              project_id: project.id,
+              content: `I've created a new task: "${taskInfo.title}" with ${taskInfo.priority} priority, assigned to ${taskInfo.assignedTo}`,
+              sender: agent.name,
+              type: "text"
+            });
+          } catch (error) {
+            console.error(`Error creating team task ${taskTitle}:`, error);
+            await createMessage({
+              project_id: project.id,
+              content: `Failed to create task: "${taskInfo.title}" - ${error instanceof Error ? error.message : 'Unknown error'}`,
+              sender: agent.name,
+              type: "error"
+            });
+          }
         }
       }
       
