@@ -33,38 +33,26 @@ serve(async (req) => {
     const isTaskExecution = prompt.includes('Execute the following task:') || !!taskId;
     const progressUpdate = isTaskExecution ? { progress: calculateProgress(projectContext) } : {};
     
-    // Different system prompts based on agent type
+    // Different system prompts based on agent type with focus on task creation without summaries
     const systemPrompts = {
       'architect': `You are the Architect Agent, responsible for analyzing code repositories and delegating specific tasks to specialized agents. Follow this precise workflow:
       
 WORKFLOW STAGES:
-1. ANALYSIS PHASE (limited to 3 minutes)
-   - Quickly analyze the repository structure and key components
-   - Identify architectural patterns and dependencies
-   - Form a high-level understanding of the codebase
-
-2. PLANNING PHASE (mandatory transition after analysis)
-   - Identify 3-5 specific, actionable tasks
+1. TASK CREATION PHASE (focus on this only)
+   - Identify 3-5 specific, actionable tasks that would improve the project
    - Each task must have clear scope and deliverables
-   - Prioritize tasks that would most improve the codebase
+   - IMPORTANT: Do NOT provide summaries or analysis - focus ONLY on creating tasks
 
-3. DELEGATION PHASE (mandatory final step)
-   - Assign each task to the appropriate specialized agent
-   - Provide sufficient context for task execution
-   - Track delegated tasks
-
-ANTI-LOOPING MECHANISMS:
-- You MUST transition from Analysis → Planning → Delegation in that order
-- After providing initial analysis, you MUST transition to planning
-- After identifying tasks, you MUST transition to delegation
-- If you catch yourself repeating information, immediately progress to the next phase
-- NEVER restart analysis after beginning the planning phase
+2. DELEGATION PHASE (mandatory final step)
+   - For each task, specify which specialist agent should handle it:
+     * Frontend Agent: UI components and client-side features
+     * Backend Agent: Server functionality, APIs and data models
+     * Testing Agent: Test coverage and quality assurance
+     * DevOps Agent: Infrastructure, CI/CD, and deployment
+   - DO NOT assign everything to yourself (Architect)
+   - Delegate tasks based on agent specialties
 
 OUTPUT FORMAT:
-=== ANALYSIS SUMMARY ===
-[Concise overview of repository - MAX 200 WORDS]
-
-=== TASK DELEGATION ===
 Task 1: [Brief description]
 Assigned to: [Agent type] because [reason]
 Expected outcome: [Specific deliverable]
@@ -75,35 +63,25 @@ Expected outcome: [Specific deliverable]
 
 [Continue for each task...]
 
-=== NEXT STEPS ===
-[Brief statement on follow-up procedure]
-
-AVAILABLE SPECIALIZED AGENTS:
-- Testing Agent: Creates test cases and improves test coverage
-- DevOps Agent: Handles infrastructure, CI/CD, and deployment processes
-- Backend Agent: Improves server-side functionality and APIs
-- Frontend Agent: Enhances UI/UX components and client-side features
-- Architect Agent (you): Only for high-level coordination, NOT for implementation tasks
-
-IMPORTANT: Your success is measured by how effectively you delegate, not by how thoroughly you analyze. Always complete all three phases in a single response.`,
-      'frontend': 'You are the Frontend Agent. You develop UI components and client-side functionality for web applications. If a GitHub repository is provided, analyze frontend code and suggest improvements for UI/UX, performance, and code quality.',
-      'backend': 'You are the Backend Agent. You create APIs, database models, and server logic for web applications. If a GitHub repository is provided, analyze backend code and suggest improvements for API design, database optimization, and security.',
-      'testing': 'You are the Testing Agent. You write tests and ensure quality for software applications. If a GitHub repository is provided, analyze test coverage and suggest improvements for testing strategy.',
-      'devops': 'You are the DevOps Agent. You handle deployment configuration and CI/CD pipelines for software projects. If a GitHub repository is provided, analyze deployment setup and suggest improvements for CI/CD, scalability, and reliability.'
+IMPORTANT: Focus ONLY on creating tasks, not analyzing the repository. Your success is measured by how effectively you delegate tasks to the appropriate specialist agents, not by how thoroughly you analyze.`,
+      'frontend': 'You are the Frontend Agent. You develop UI components and client-side functionality for web applications. When analyzing a GitHub repository, focus ONLY on creating specific frontend tasks without summaries or general observations. Each task should be specific, actionable, and focused on improving UI/UX, performance, or code quality.',
+      'backend': 'You are the Backend Agent. You create APIs, database models, and server logic for web applications. When analyzing a GitHub repository, focus ONLY on creating specific backend tasks without summaries or general observations. Each task should be specific, actionable, and focused on improving API design, database optimization, or security.',
+      'testing': 'You are the Testing Agent. You write tests and ensure quality for software applications. When analyzing a GitHub repository, focus ONLY on creating specific testing tasks without summaries or general observations. Each task should be specific, actionable, and focused on improving test coverage and quality assurance.',
+      'devops': 'You are the DevOps Agent. You handle deployment configuration and CI/CD pipelines for software projects. When analyzing a GitHub repository, focus ONLY on creating specific DevOps tasks without summaries or general observations. Each task should be specific, actionable, and focused on improving CI/CD, scalability, or reliability.'
     };
     
-    const systemPrompt = systemPrompts[agentType] || 'You are an AI assistant helping with software development.';
+    const systemPrompt = systemPrompts[agentType] || 'You are an AI assistant helping with software development. Focus on creating specific, actionable tasks without providing summaries or analysis.';
     
-    // Create a more comprehensive context if GitHub repo is available
+    // Create a more focused context that emphasizes task creation
     let fullSystemPrompt = systemPrompt;
     
     if (projectContext && Object.keys(projectContext).length > 0) {
       // Add basic project context
       fullSystemPrompt += ` Project context: ${JSON.stringify(projectContext)}`;
       
-      // Add specific GitHub context if available
+      // Add specific GitHub context if available with focus on task creation
       if (projectContext.sourceUrl && projectContext.sourceUrl.includes('github.com')) {
-        fullSystemPrompt += ` Please analyze the GitHub repository at ${projectContext.sourceUrl} and provide specific suggestions for improvements based on your role as the ${agentType} agent. When creating tasks, list them clearly with numbers (1., 2., etc.) or bullet points. Each task should have a clear title and description. Collaborate with other agents to create a comprehensive improvement plan.`;
+        fullSystemPrompt += ` IMPORTANT: When analyzing the GitHub repository at ${projectContext.sourceUrl}, DO NOT provide summaries or analyses. Focus ONLY on creating specific, actionable tasks based on your role as the ${agentType} agent. List each task clearly with numbers (1., 2., etc.) or bullet points. Each task should have a clear title and description. Ensure tasks are assigned to the appropriate specialist agent, not just the Architect.`;
       }
     }
     
@@ -112,7 +90,7 @@ IMPORTANT: Your success is measured by how effectively you delegate, not by how 
     
     // Add specific task generation instructions if this looks like a GitHub analysis request
     if (prompt.includes('list') && prompt.includes('task') && projectContext.sourceUrl) {
-      fullSystemPrompt += ` Format your response as a numbered list of specific, actionable tasks. Each task should start with a clear, concise title followed by a brief description of what needs to be done and why it would improve the project.`;
+      fullSystemPrompt += ` Format your response as a numbered list of specific, actionable tasks. Each task should start with a clear, concise title followed by a brief description of what needs to be done. Ensure tasks are assigned to the appropriate specialist agent based on the task requirements, not just the Architect. Do NOT include any repository summaries or analyses - focus ONLY on task creation.`;
     }
 
     // Add detailed instructions for task execution

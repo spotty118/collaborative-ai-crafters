@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project, CodeFileDB } from '@/lib/types';
 import { createTask, createCodeFile, createMessage, getAgents } from './api';
@@ -243,16 +244,16 @@ export const analyzeGitHubAndCreateTasks = async (
       }
     }
     
-    // Create an analysis prompt based on the agent type
+    // Create an analysis prompt that focuses only on creating tasks without summaries
     const analysisPrompts: Record<string, string> = {
-      'architect': `As the lead Architect, analyze the GitHub repository at ${project.sourceUrl} and create a comprehensive development plan. List 3-5 specific tasks to improve the overall architecture and project structure. Then specify which tasks should be delegated to other team members based on their specialties.`,
-      'frontend': `Analyze the GitHub repository frontend at ${project.sourceUrl} and list 3-5 specific tasks to improve UI/UX, performance, and code quality.`,
-      'backend': `Analyze the GitHub repository backend at ${project.sourceUrl} and list 3-5 specific tasks to improve API design, database optimization, and security.`,
-      'testing': `Analyze the GitHub repository testing at ${project.sourceUrl} and list 3-5 specific tasks to improve test coverage and quality assurance.`,
-      'devops': `Analyze the GitHub repository DevOps setup at ${project.sourceUrl} and list 3-5 specific tasks to improve CI/CD, deployment, and infrastructure.`
+      'architect': `For the GitHub repository at ${project.sourceUrl}, identify exactly 5 specific tasks to improve the overall architecture and project structure. For each task, clearly specify which agent (frontend, backend, testing, or devops) should handle it based on their specialties. DO NOT provide a summary of the repository - focus ONLY on creating tasks.`,
+      'frontend': `For the GitHub repository at ${project.sourceUrl}, identify exactly 4 specific frontend tasks to improve UI/UX, performance, and code quality. DO NOT provide a summary of the repository - focus ONLY on creating tasks.`,
+      'backend': `For the GitHub repository at ${project.sourceUrl}, identify exactly 4 specific backend tasks to improve API design, database optimization, and security. DO NOT provide a summary of the repository - focus ONLY on creating tasks.`,
+      'testing': `For the GitHub repository at ${project.sourceUrl}, identify exactly 4 specific testing tasks to improve test coverage and quality assurance. DO NOT provide a summary of the repository - focus ONLY on creating tasks.`,
+      'devops': `For the GitHub repository at ${project.sourceUrl}, identify exactly 4 specific DevOps tasks to improve CI/CD, deployment, and infrastructure. DO NOT provide a summary of the repository - focus ONLY on creating tasks.`
     };
     
-    const prompt = analysisPrompts[analysisAgent.type] || `Analyze the GitHub repository at ${project.sourceUrl} and list 3-5 specific tasks to improve it.`;
+    const prompt = analysisPrompts[analysisAgent.type] || `For the GitHub repository at ${project.sourceUrl}, list 4 specific tasks to improve it. DO NOT provide a repository summary - focus ONLY on creating tasks.`;
     
     console.log(`Agent ${analysisAgent.name} analyzing GitHub repository: ${project.sourceUrl}`);
     
@@ -267,22 +268,51 @@ export const analyzeGitHubAndCreateTasks = async (
       // Safely check for project.agents
       const agents = project.agents || await getAgents(project.id);
       
+      // Determine the appropriate agent type based on task content and name patterns
+      let assignedAgentType = 'architect'; // Default fallback
+      
+      // Check task title and description for keywords indicating agent type
+      const taskText = (task.title + ' ' + task.description).toLowerCase();
+      
+      if (taskText.includes('ui') || taskText.includes('interface') || 
+          taskText.includes('component') || taskText.includes('css') || 
+          taskText.includes('style') || taskText.includes('layout') ||
+          taskText.includes('react') || taskText.includes('vue') ||
+          taskText.includes('angular') || taskText.includes('frontend')) {
+        assignedAgentType = 'frontend';
+      } 
+      else if (taskText.includes('api') || taskText.includes('database') || 
+               taskText.includes('server') || taskText.includes('endpoint') || 
+               taskText.includes('route') || taskText.includes('controller') ||
+               taskText.includes('model') || taskText.includes('backend')) {
+        assignedAgentType = 'backend';
+      }
+      else if (taskText.includes('test') || taskText.includes('coverage') || 
+               taskText.includes('unit') || taskText.includes('integration') || 
+               taskText.includes('e2e') || taskText.includes('quality')) {
+        assignedAgentType = 'testing';
+      }
+      else if (taskText.includes('deploy') || taskText.includes('ci/cd') || 
+               taskText.includes('pipeline') || taskText.includes('infrastructure') || 
+               taskText.includes('docker') || taskText.includes('kubernetes') ||
+               taskText.includes('devops')) {
+        assignedAgentType = 'devops';
+      }
+      
+      // Find the agent with matching type
+      const assignedAgent = agents.find(a => a.type === assignedAgentType);
+      const assignedAgentId = assignedAgent ? assignedAgent.id : analysisAgent.id;
+      
       await createTask({
         title: task.title,
         description: task.description,
         priority: 'medium',
         status: 'pending',
-        assigned_to: task.title.toLowerCase().includes('frontend') ? 
-          agents.find(a => a.type === 'frontend')?.id || analysisAgent.id :
-          task.title.toLowerCase().includes('backend') ?
-          agents.find(a => a.type === 'backend')?.id || analysisAgent.id :
-          task.title.toLowerCase().includes('test') ?
-          agents.find(a => a.type === 'testing')?.id || analysisAgent.id :
-          task.title.toLowerCase().includes('deploy') || task.title.toLowerCase().includes('ci/cd') ?
-          agents.find(a => a.type === 'devops')?.id || analysisAgent.id :
-          analysisAgent.id,
+        assigned_to: assignedAgentId,
         project_id: project.id
       });
+      
+      console.log(`Created task "${task.title}" assigned to ${assignedAgentType} agent`);
     }
     
     console.log(`Agent ${analysisAgent.name} created ${tasks.length} tasks from GitHub analysis`);
@@ -295,7 +325,7 @@ export const analyzeGitHubAndCreateTasks = async (
         if (agents && agents.length > 0) {
           broadcastMessage(
             analysisAgent,
-            `I've analyzed the repository and created tasks. Let's collaborate on implementing them efficiently.`,
+            `I've analyzed the repository and created tasks assigned to the appropriate specialists. Let's collaborate on implementing them efficiently.`,
             project,
             3
           );
