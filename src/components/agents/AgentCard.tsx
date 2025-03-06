@@ -5,7 +5,7 @@ import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress";
 import AgentStatus from "./AgentStatus";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, PlayCircle, PauseCircle, RefreshCw, Users } from "lucide-react";
+import { MessageSquare, PlayCircle, PauseCircle, RefreshCw, Users, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface AgentCardProps {
@@ -67,7 +67,7 @@ const AgentCard: React.FC<AgentCardProps> = ({
   const handleStartAgent = () => {
     try {
       if (agent.type === "architect") {
-        toast.info("Starting Architect. Team collaboration will begin automatically.");
+        toast.info("Starting Architect. The team will begin generating tasks shortly.");
       }
       onStart(agent.id);
     } catch (error) {
@@ -103,10 +103,13 @@ const AgentCard: React.FC<AgentCardProps> = ({
 
   // Is this the architect agent?
   const isArchitect = agent.type === "architect";
+  
+  // Is the agent currently working?
+  const isWorking = agent.status === "working";
 
   return (
     <Card 
-      className={`agent-card overflow-hidden border-t-4 ${getAgentColorClass()} transition-all duration-300 ease-in-out agent-card-shadow hover:translate-y-[-4px] ${isActive ? 'ring-2 ring-primary/50' : ''} ${isArchitect ? 'shadow-md' : ''}`}
+      className={`agent-card overflow-hidden border-t-4 ${getAgentColorClass()} transition-all duration-300 ease-in-out agent-card-shadow hover:translate-y-[-4px] ${isActive ? 'ring-2 ring-primary/50' : ''} ${isArchitect ? 'shadow-md' : ''} ${isWorking ? 'bg-blue-50/50' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -122,13 +125,22 @@ const AgentCard: React.FC<AgentCardProps> = ({
                 </span>
               )}
             </h3>
-            <AgentStatus status={agent.status} className="mt-1" />
+            <div className="flex items-center mt-1">
+              <AgentStatus status={agent.status} className="" />
+              {isWorking && <Loader2 className="ml-2 h-3 w-3 animate-spin text-blue-500" />}
+            </div>
           </div>
           <div className="text-3xl">{agent.avatar}</div>
         </div>
       </CardHeader>
       <CardContent className="p-4">
-        <p className="text-sm text-gray-600 min-h-[40px]">{agent.description}</p>
+        <p className="text-sm text-gray-600 min-h-[40px]">
+          {agent.status === "working" && isArchitect 
+            ? "Generating tasks and coordinating with the team..." 
+            : agent.status === "working"
+            ? "Working on assigned tasks..."
+            : agent.description}
+        </p>
         <div className="mt-3">
           <div className="flex justify-between mb-1 text-xs">
             <span>Progress</span>

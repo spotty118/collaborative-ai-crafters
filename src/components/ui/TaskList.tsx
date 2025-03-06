@@ -1,22 +1,45 @@
 
 import React, { useEffect, useState } from "react";
 import { Task, Agent } from "@/lib/types";
-import { CheckCircle2, Circle, Clock, AlertCircle, RotateCw, Play } from "lucide-react";
+import { CheckCircle2, Circle, Clock, AlertCircle, RotateCw, Play, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 interface TaskListProps {
   tasks: Task[];
   agents?: Agent[];
   onExecuteTask?: (taskId: string, agentId: string) => void;
+  onRefreshTasks?: () => void;
+  isLoading?: boolean;
   className?: string;
 }
 
-const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, className }) => {
+const TaskList: React.FC<TaskListProps> = ({ 
+  tasks, 
+  agents = [], 
+  onExecuteTask, 
+  onRefreshTasks,
+  isLoading = false,
+  className 
+}) => {
   const [displayedTaskMap, setDisplayedTaskMap] = useState<Map<string, Set<string>>>(new Map());
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  
+  // Function to normalize task titles for deduplication
+  const normalizeTitle = (title: string) => {
+    return title.toLowerCase().replace(/[^\w\s]/g, '').trim();
+  };
+  
+  // Reset the task map when tasks change significantly
+  useEffect(() => {
+    if (tasks.length === 0) {
+      setDisplayedTaskMap(new Map());
+    }
+  }, [tasks.length === 0]);
   
   const uniqueTasks = tasks.reduce((acc: Task[], task) => {
-    const normalizedTitle = task.title.toLowerCase().replace(/[^\w\s]/g, '').trim();
+    const normalizedTitle = normalizeTitle(task.title);
     
     if (displayedTaskMap.has(normalizedTitle)) {
       const taskIds = displayedTaskMap.get(normalizedTitle);
@@ -25,7 +48,7 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, 
       }
       
       const existingTaskIndex = acc.findIndex(t => 
-        t.title.toLowerCase().replace(/[^\w\s]/g, '').trim() === normalizedTitle
+        normalizeTitle(t.title) === normalizedTitle
       );
       
       if (existingTaskIndex !== -1) {
@@ -146,12 +169,50 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, 
     return description;
   };
 
+  const handleRefresh = () => {
+    if (onRefreshTasks) {
+      onRefreshTasks();
+      setLastUpdated(new Date());
+      toast.info("Refreshing tasks...");
+    }
+  };
+
   return (
     <div className={cn("space-y-4", className)}>
-      <h3 className="text-lg font-semibold">Tasks ({finalFilteredTasks.length})</h3>
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-semibold">Tasks ({finalFilteredTasks.length})</h3>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">
+            Updated: {formatDate(lastUpdated)}
+          </span>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="h-7 w-7" 
+            onClick={handleRefresh}
+            disabled={isLoading}
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
+      </div>
+      
       <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
-        {finalFilteredTasks.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">No tasks yet</div>
+        {isLoading ? (
+          <div className="flex justify-center py-8">
+            <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
+          </div>
+        ) : finalFilteredTasks.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <p>No tasks yet</p>
+            <p className="text-xs mt-2">Tasks will appear here as the agents generate them</p>
+            {onRefreshTasks && (
+              <Button variant="outline" size="sm" className="mt-3" onClick={handleRefresh}>
+                <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                Refresh
+              </Button>
+            )}
+          </div>
         ) : (
           finalFilteredTasks.map((task) => (
             <div

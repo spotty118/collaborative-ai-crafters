@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
+import { useQueryClient } from "react-query";
 
 interface DashboardProps {
   agents: Agent[];
@@ -52,10 +53,24 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [chatMessage, setChatMessage] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [processingAgents, setProcessingAgents] = useState<Record<string, boolean>>({});
+  const [refreshingTasks, setRefreshingTasks] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<string>("chat");
+  const queryClient = useQueryClient();
   
+  const handleRefreshTasks = async () => {
+    try {
+      setRefreshingTasks(true);
+      await queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      setTimeout(() => setRefreshingTasks(false), 500);
+    } catch (error) {
+      console.error("Error refreshing tasks:", error);
+      toast.error("Failed to refresh tasks");
+      setRefreshingTasks(false);
+    }
+  };
+
   const handleSendMessage = () => {
     if (chatMessage.trim() && activeChat) {
       onSendMessage(chatMessage);
@@ -116,23 +131,31 @@ const Dashboard: React.FC<DashboardProps> = ({
     m.sender === getActiveAgentName() // Show only selected agent's messages
   );
 
-  // Scroll to bottom when messages change
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [filteredMessages]);
 
-  // Close sidebar on mobile when an agent is selected
   useEffect(() => {
     if (activeChat && window.innerWidth < 768) {
       setSidebarOpen(false);
     }
   }, [activeChat]);
 
+  useEffect(() => {
+    const architectAgent = agents.find(a => a.type === 'architect');
+    if (architectAgent && architectAgent.status === 'working') {
+      const interval = setInterval(() => {
+        queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      }, 15000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [agents, queryClient]);
+
   return (
     <div className="flex flex-col md:flex-row h-[calc(100vh-73px)]">
-      {/* Mobile header */}
       <div className="md:hidden flex items-center justify-between p-3 border-b">
         <div className="flex items-center">
           <Button
@@ -154,7 +177,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         )}
       </div>
       
-      {/* Left sidebar with agents */}
       <div 
         className={`
           ${sidebarOpen ? 'block' : 'hidden'} 
@@ -219,7 +241,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* Main content */}
       <div className={`flex-1 flex flex-col ${sidebarOpen ? 'hidden md:flex' : 'flex'}`}>
         {isMobile ? (
           <Tabs 
@@ -238,7 +259,6 @@ const Dashboard: React.FC<DashboardProps> = ({
             </TabsList>
             
             <TabsContent value="chat" className="flex-1 flex flex-col p-0 m-0 data-[state=active]:flex data-[state=inactive]:hidden">
-              {/* Chat content for mobile */}
               <div className="flex-1 overflow-hidden">
                 <ScrollArea className="h-[calc(100vh-180px)] md:h-[calc(100vh-220px)]">
                   <div className="space-y-4 p-4">
@@ -302,8 +322,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             </TabsContent>
             
             <TabsContent value="tasks" className="flex-1 p-4 overflow-auto m-0 data-[state=active]:flex data-[state=inactive]:hidden">
-              {/* Tasks content for mobile */}
-              {isLoading.tasks ? (
+              {isLoading.tasks || refreshingTasks ? (
                 <div className="flex justify-center py-8">
                   <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
                 </div>
@@ -311,20 +330,24 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <div className="text-center py-8 text-gray-500 bg-white rounded-md border p-4">
                   <p>No tasks available</p>
                   <p className="text-xs mt-2">Tasks will appear here when agents create them.</p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={handleRefreshTasks}>
+                    <RefreshCw className="h-4 w-4 mr-1" />
+                    Refresh
+                  </Button>
                 </div>
               ) : (
                 <TaskList 
                   tasks={tasks}
                   agents={agents}
                   onExecuteTask={onExecuteTask}
+                  onRefreshTasks={handleRefreshTasks}
+                  isLoading={refreshingTasks}
                 />
               )}
             </TabsContent>
           </Tabs>
         ) : (
-          // Desktop view - no tabs, side by side layout
           <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-0">
-            {/* Chat section */}
             <div className="border-r flex flex-col h-full overflow-hidden">
               <div className="border-b p-4 hidden md:block">
                 <h2 className="text-lg font-semibold">
@@ -397,9 +420,8 @@ const Dashboard: React.FC<DashboardProps> = ({
               </div>
             </div>
             
-            {/* Tasks section - Always visible on desktop */}
             <div className="hidden md:block p-4 bg-gray-50 overflow-auto h-[calc(100vh-73px)]">
-              {isLoading.tasks ? (
+              {isLoading.tasks || refreshingTasks ? (
                 <div className="flex justify-center py-8">
                   <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
                 </div>
@@ -407,12 +429,18 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <div className="text-center py-8 text-gray-500 bg-white rounded-md border p-4">
                   <p>No tasks available</p>
                   <p className="text-xs mt-2">Tasks will appear here when agents create them.</p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={handleRefreshTasks}>
+                    <RefreshCw className="h-4 w-4 mr-1" />
+                    Refresh
+                  </Button>
                 </div>
               ) : (
                 <TaskList 
                   tasks={tasks}
                   agents={agents}
                   onExecuteTask={onExecuteTask}
+                  onRefreshTasks={handleRefreshTasks}
+                  isLoading={refreshingTasks}
                 />
               )}
             </div>
