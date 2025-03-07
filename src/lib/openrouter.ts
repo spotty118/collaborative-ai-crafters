@@ -1,4 +1,3 @@
-
 import { Agent, Project, Task, TaskPriority, CodeFile } from '@/lib/types';
 import { createMessage, createTask, createCodeFile } from '@/lib/api';
 import { broadcastMessage } from './agent/messageBroker';
@@ -10,14 +9,49 @@ export const sendAgentPrompt = async (
   agent: Agent,
   prompt: string,
   project: Project,
-  model: string = "google/gemini-2.0-flash-thinking-exp:free"
+  model: string = "google/gemini-2.0-flash-thinking-exp:free",
+  multipartContent = null
 ): Promise<string> => {
   try {
-    console.log(`Sending prompt to ${agent.name}: ${prompt.substring(0, 50)}...`);
+    console.log(`Sending prompt to ${agent.name}`);
+    if (multipartContent) {
+      console.log("Using multimodal content (e.g., text+image)");
+    } else {
+      console.log(`Prompt excerpt: ${prompt.substring(0, 50)}...`);
+    }
     console.log(`Using model: ${model}`);
     
     // Add timestamp for debugging
     console.log(`Request started at: ${new Date().toISOString()}`);
+    
+    // Prepare the request body based on whether we have multipart content
+    const requestBody = multipartContent 
+      ? {
+          agentType: agent.type,
+          model: model,
+          multipartContent: multipartContent,
+          projectContext: {
+            name: project.name,
+            description: project.description,
+            sourceUrl: project.sourceUrl,
+            sourceType: project.sourceType,
+            id: project.id,
+            created_at: project.created_at
+          }
+        }
+      : {
+          prompt,
+          agentType: agent.type,
+          model: model,
+          projectContext: {
+            name: project.name,
+            description: project.description,
+            sourceUrl: project.sourceUrl,
+            sourceType: project.sourceType,
+            id: project.id,
+            created_at: project.created_at
+          }
+        };
     
     // Send the request to our Supabase Edge Function for OpenRouter
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openrouter`, {
@@ -25,19 +59,7 @@ export const sendAgentPrompt = async (
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        prompt,
-        agentType: agent.type,
-        model: model, // Explicitly pass the model parameter
-        projectContext: {
-          name: project.name,
-          description: project.description,
-          sourceUrl: project.sourceUrl,
-          sourceType: project.sourceType,
-          id: project.id,
-          created_at: project.created_at
-        }
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     console.log(`Response received at: ${new Date().toISOString()}`);
@@ -61,6 +83,27 @@ export const sendAgentPrompt = async (
     console.log('Response type:', typeof responseData);
     console.log('Response structure:', Object.keys(responseData).join(', '));
     
+    // Handle direct responses from multimodal requests differently
+    if (multipartContent) {
+      if (!responseData.choices || !responseData.choices[0]) {
+        console.error('Unexpected multimodal response format:', responseData);
+        throw new Error('Received an invalid response format from OpenRouter');
+      }
+      
+      const agentResponse = responseData.choices[0].message.content;
+      
+      // Create a message with the response
+      await createMessage({
+        project_id: project.id,
+        content: agentResponse,
+        sender: agent.name,
+        type: "text"
+      });
+      
+      return agentResponse;
+    }
+    
+    // Standard response processing
     if (!responseData.choices || !responseData.choices[0]) {
       console.error('Unexpected response format:', responseData);
       throw new Error('Received an invalid response format from OpenRouter');
@@ -236,6 +279,29 @@ export const sendAgentPrompt = async (
     
     throw error;
   }
+};
+
+/**
+ * Send a multimodal prompt to the agent (text + images)
+ */
+export const sendMultimodalPrompt = async (
+  agent: Agent,
+  messages: any[],
+  project: Project,
+  model: string = "google/gemini-2.0-flash"
+): Promise<string> => {
+  // Validate that the messages format is correct for multimodal
+  const isValidMultimodal = messages.some(msg => 
+    msg.content && Array.isArray(msg.content) && 
+    msg.content.some(item => item.type === 'image_url')
+  );
+  
+  if (!isValidMultimodal) {
+    throw new Error("Invalid multimodal format. Must include at least one image.");
+  }
+  
+  // Use the sendAgentPrompt function but with multipartContent
+  return sendAgentPrompt(agent, "", project, model, messages);
 };
 
 /**
@@ -445,7 +511,7 @@ PRIORITY: [high/medium/low]`;
         body: JSON.stringify({
           prompt: enhancedPrompt,
           agentType: agent.type,
-          model: model, // Explicitly pass the model parameter
+          model: model,
           projectContext: {
             name: project.name,
             description: project.description,

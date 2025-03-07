@@ -16,11 +16,23 @@ serve(async (req) => {
   }
 
   try {
-    const { prompt, agentType, projectContext, model = "anthropic/claude-3-opus:beta" } = await req.json();
+    const requestData = await req.json();
+    const { 
+      prompt, 
+      agentType, 
+      projectContext, 
+      model = "anthropic/claude-3-opus:beta", 
+      multipartContent = null 
+    } = requestData;
     
     // Log the received request for debugging
     console.log(`Processing ${agentType} agent request with model: ${model || 'default'}`);
-    console.log('Prompt excerpt:', prompt.substring(0, 100) + '...');
+    
+    if (multipartContent) {
+      console.log('Multipart content detected (e.g., text+image)');
+    } else {
+      console.log('Prompt excerpt:', prompt.substring(0, 100) + '...');
+    }
     
     // Verify API key is available
     if (!OPENROUTER_API_KEY) {
@@ -29,6 +41,11 @@ serve(async (req) => {
         JSON.stringify({ error: 'OpenRouter API key is not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // Handle multimodal content (text + images)
+    if (multipartContent) {
+      return await handleMultimodalRequest(multipartContent, model, req, corsHeaders);
     }
 
     // If using the gemini thinking model, use that specific implementation
@@ -190,6 +207,66 @@ serve(async (req) => {
     );
   }
 });
+
+// Handle multimodal requests (text + images)
+async function handleMultimodalRequest(multipartContent, model, req, corsHeaders) {
+  console.log('Processing multimodal request with model:', model);
+  
+  try {
+    // Prepare the request to OpenRouter with multipart content
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+        'HTTP-Referer': 'https://example.com',
+        'X-Title': 'Agent Collaboration System'
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: multipartContent,
+        temperature: 0.3,
+        max_tokens: 4000
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('OpenRouter multimodal API error response:', errorText);
+      try {
+        const errorData = JSON.parse(errorText);
+        console.error('OpenRouter multimodal API error details:', errorData);
+        return new Response(
+          JSON.stringify({ error: `OpenRouter API returned status ${response.status}: ${errorData.error?.message || errorData.error || 'Unknown error'}` }),
+          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } catch (parseError) {
+        console.error('Failed to parse OpenRouter multimodal error response:', parseError);
+        return new Response(
+          JSON.stringify({ error: `OpenRouter API returned status ${response.status}: ${errorText}` }),
+          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    const data = await response.json();
+    console.log('OpenRouter multimodal response received successfully');
+    console.log('Response status:', response.status);
+    console.log('Response data excerpt:', JSON.stringify(data).substring(0, 200) + '...');
+    
+    // Return the response directly for multimodal content
+    return new Response(
+      JSON.stringify(data),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    console.error('Error in multimodal request:', error);
+    return new Response(
+      JSON.stringify({ error: `Error processing multimodal request: ${error.message}` }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+}
 
 // Special handler for the Gemini thinking model
 async function handleGeminiThinkingModel(prompt, agentType, projectContext, req, corsHeaders) {
