@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { MessageType, AgentIdentity } from "@/lib/types";
@@ -188,7 +187,7 @@ class AgentMessageBus {
       // Clear polling timer
       const timer = this.pollingTimers.get(agentId);
       if (timer) {
-        clearInterval(timer);
+        clearTimeout(timer);
         this.pollingTimers.delete(agentId);
       }
     } else {
@@ -267,7 +266,7 @@ class AgentMessageBus {
         console.warn(`Max retries exceeded for agent ${agentId}, pausing status updates`);
         const timer = this.pollingTimers.get(agentId);
         if (timer) {
-          clearInterval(timer);
+          clearTimeout(timer);
           this.pollingTimers.delete(agentId);
         }
       }

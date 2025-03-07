@@ -123,6 +123,8 @@ export interface Message {
   code_language?: string;
   created_at?: string;
   timestamp?: string;
+  to?: AgentIdentity;
+  from?: AgentIdentity;
 }
 
 export interface MessageDB {

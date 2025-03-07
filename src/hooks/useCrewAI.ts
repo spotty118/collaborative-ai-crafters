@@ -71,18 +71,21 @@ export function useCrewAI(options?: UseCrewAIOptions) {
     }
   }, [options]);
   
-  const completeTask = useCallback(async (agent: Agent, taskId: string, project: Project) => {
-    if (!agent.id || !project.id || !taskId) {
+  const completeTask = useCallback(async (agent: Agent, taskId: string) => {
+    if (!agent.id || !agent.project_id || !taskId) {
       toast.error('Missing required information to complete task');
       return false;
     }
     
     try {
-      // Pass project.id, taskId, and any result object instead of agent, taskId, project
-      const result = { agentId: agent.id, agentName: agent.name };
-      await handleCrewTaskCompletion(project.id, taskId, result);
-      toast.success(`Task completed by ${agent.name}`);
-      return true;
+      // Pass project_id and taskId to handleCrewTaskCompletion
+      const result = await handleCrewTaskCompletion(agent.project_id, taskId);
+      if (result) {
+        toast.success(`Task completed by ${agent.name}`);
+      } else {
+        toast.error(`Failed to complete task by ${agent.name}`);
+      }
+      return result;
     } catch (error) {
       console.error('Error completing task with CrewAI:', error);
       toast.error('Error completing task');
