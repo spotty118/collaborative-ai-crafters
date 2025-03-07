@@ -5,8 +5,31 @@
  * Manages the collection of tools available to the agent.
  * Provides interfaces for registering, discovering, and accessing tools.
  */
+
+export interface ToolParameter {
+  name: string;
+  type: string;
+  description: string;
+  required?: boolean;
+  default?: any;
+}
+
+export interface ToolExample {
+  description: string;
+  params: Record<string, any>;
+}
+
+export interface Tool {
+  name: string;
+  description: string;
+  category?: string;
+  parameters?: ToolParameter[];
+  examples?: ToolExample[];
+  execute: (params: any, userId: string) => Promise<any>;
+}
+
 class ToolRegistry {
-  private tools: Map<string, any>;
+  private tools: Map<string, Tool>;
   private categories: Map<string, string[]>;
   
   constructor() {
@@ -16,28 +39,29 @@ class ToolRegistry {
 
   /**
    * Register a new tool with the registry
-   * @param name - Unique tool identifier
    * @param tool - Tool implementation object
    * @param category - Optional category for organization
    * @returns boolean - Success indicator
    */
-  registerTool(name: string, tool: any, category: string = 'general'): boolean {
-    if (!tool || typeof tool.execute !== 'function') {
+  registerTool(tool: Tool, category: string = 'general'): boolean {
+    if (!tool || !tool.name || typeof tool.execute !== 'function') {
       console.error('Invalid tool registration attempt:', tool);
       return false;
     }
 
     // Store the tool
-    this.tools.set(name, tool);
+    this.tools.set(tool.name, tool);
 
     // Categorize the tool
-    if (!this.categories.has(category)) {
-      this.categories.set(category, []);
+    const toolCategory = category || tool.category || 'general';
+    
+    if (!this.categories.has(toolCategory)) {
+      this.categories.set(toolCategory, []);
     }
     
-    const categoryTools = this.categories.get(category);
-    if (categoryTools && !categoryTools.includes(name)) {
-      categoryTools.push(name);
+    const categoryTools = this.categories.get(toolCategory);
+    if (categoryTools && !categoryTools.includes(tool.name)) {
+      categoryTools.push(tool.name);
     }
     
     return true;
@@ -78,14 +102,14 @@ class ToolRegistry {
   /**
    * Get a tool by name
    * @param name - Tool identifier
-   * @returns object - Tool instance
+   * @returns Tool - Tool instance
    */
-  getTool(name: string): any {
+  getTool(name: string): Tool {
     if (!this.tools.has(name)) {
       throw new Error(`Tool "${name}" not found in registry`);
     }
     
-    return this.tools.get(name);
+    return this.tools.get(name)!;
   }
 
   /**
@@ -117,7 +141,7 @@ class ToolRegistry {
         name,
         description: tool.description || "No description provided",
         category: this.getToolCategory(name),
-        parameters: tool.parameters || {},
+        parameters: tool.parameters || [],
         examples: tool.examples || []
       });
     }
@@ -137,7 +161,7 @@ class ToolRegistry {
       return {
         name,
         description: tool.description || "No description provided",
-        parameters: tool.parameters || {},
+        parameters: tool.parameters || [],
         examples: tool.examples || []
       };
     });
@@ -177,6 +201,35 @@ class ToolRegistry {
       console.error(`Error executing tool ${toolName}:`, error);
       throw new Error(`Failed to execute tool ${toolName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  /**
+   * Validate parameters against tool requirements
+   * @param toolName - Name of the tool
+   * @param params - Parameters to validate
+   * @returns object - Validation result
+   */
+  validateParameters(toolName: string, params: Record<string, any>): { valid: boolean; errors?: string[] } {
+    const tool = this.getTool(toolName);
+    if (!tool || !tool.parameters) {
+      return { valid: true }; // No parameters to validate
+    }
+    
+    const errors: string[] = [];
+    
+    // Check required parameters
+    for (const param of tool.parameters) {
+      if (param.required && (params[param.name] === undefined || params[param.name] === null)) {
+        errors.push(`Required parameter '${param.name}' is missing`);
+      }
+    }
+    
+    // No need for type validation in TypeScript implementation as it's less commonly used at runtime
+    
+    return { 
+      valid: errors.length === 0,
+      errors: errors.length > 0 ? errors : undefined
+    };
   }
 }
 
