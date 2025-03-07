@@ -282,7 +282,7 @@ class AgentMessageBus {
     
     // Set up polling as fallback mechanism
     const timerId = setInterval(() => this.fetchMessages(agentId), this.pollingInterval);
-    this.pollingTimers.set(agentId, timerId);
+    this.pollingTimers.set(agentId, timerId as unknown as NodeJS.Timeout);
   }
 
   /**
