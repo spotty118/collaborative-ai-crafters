@@ -333,18 +333,21 @@ export const initializeAgentOrchestration = async (
     
     // Ensure we properly call broadcastMessage with all required arguments
     if (data && data.success) {
-      const architect = agents.find(agent => agent.agent_type === 'architect');
-      const project = await supabase
+      const architect = agents.find(agent => agent.type === 'architect');
+      const { data: projectData, error: projectError } = await supabase
         .from('projects')
         .select('*')
         .eq('id', projectId)
         .single();
         
-      if (project && architect) {
+      if (projectData && architect && !projectError) {
         await broadcastMessage(
-          architect,
-          `The Architect Agent has been initialized for project ${project.name}. I'll be leading the team to design and build ${project.description}.`,
-          project
+          projectId,
+          {
+            sender: architect.name,
+            content: `The Architect Agent has been initialized for project ${projectData.name}. I'll be leading the team to design and build ${projectData.description}.`,
+            type: "text"
+          }
         );
       }
     }
