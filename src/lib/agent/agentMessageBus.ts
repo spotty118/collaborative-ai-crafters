@@ -63,8 +63,8 @@ class AgentMessageBus {
     }
     
     try {
-      // Store message in the database
-      const { error } = await supabase.functions.invoke('crew-orchestrator', {
+      // Store message in the database with proper error handling
+      const { data, error } = await supabase.functions.invoke('crew-orchestrator', {
         body: {
           action: 'send_message',
           projectId: message.projectId,
@@ -168,12 +168,10 @@ class AgentMessageBus {
   }
   
   /**
-   * Setup realtime listener for agent messages
+   * Setup realtime listener for agent messages with better error handling
    */
   private setupRealtimeListener(agentId: string): void {
-    // This would ideally use Supabase realtime subscriptions
-    // For demonstration, we'll poll for new messages periodically
-    const intervalId = setInterval(async () => {
+    const poll = async () => {
       try {
         const { data, error } = await supabase.functions.invoke('crew-orchestrator', {
           body: {
@@ -188,13 +186,14 @@ class AgentMessageBus {
         }
         
         if (data?.messages && Array.isArray(data.messages)) {
-          data.messages.forEach((msg: any) => {
-            if (msg.status === 'pending' || msg.status === 'delivered') {
+          data.messages
+            .filter(msg => msg.status === 'pending' || msg.status === 'delivered')
+            .forEach(msg => {
               const message: AgentMessage = {
                 id: msg.id,
                 from: {
                   id: msg.fromAgentId,
-                  name: 'Unknown', // We'd fetch this in a real implementation
+                  name: 'Unknown',
                   type: 'unknown'
                 },
                 to: {
@@ -208,14 +207,15 @@ class AgentMessageBus {
               };
               
               this.notifySubscribers(agentId, message);
-            }
-          });
+            });
         }
       } catch (error) {
-        console.error('Error in message polling:', error);
+        console.error('Error fetching agent messages:', error);
       }
-    }, 5000); // Poll every 5 seconds
-    
+    };
+
+    // Poll every 5 seconds
+    const intervalId = setInterval(poll, 5000);
     this.channels.set(agentId, intervalId);
   }
   

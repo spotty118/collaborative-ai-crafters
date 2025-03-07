@@ -6,6 +6,8 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Max-Age': '86400',
 };
 
 // Get necessary environment variables
@@ -42,7 +44,10 @@ const messageQueue = new Map<string, AgentMessage[]>();
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { 
+      status: 204,
+      headers: corsHeaders 
+    });
   }
   
   // Add request logging
@@ -70,7 +75,7 @@ serve(async (req) => {
       verbose = true 
     } = JSON.parse(rawBody);
     
-    if (!projectId) {
+    if (!projectId && action !== 'get_messages') {
       return new Response(
         JSON.stringify({ error: 'Missing projectId parameter' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -1110,7 +1115,7 @@ function extractTasksFromPlan(plan: string): Array<{
   // Try different patterns for task extraction
   const taskPattern1 = /Task\s*(?:[\d#]+)?[:.\-]\s*([^\n]+)[\n\s]*Agent\s*[:.\-]\s*([^\n]+)[\n\s]*Description\s*[:.\-]\s*([^\n]+)(?:[\n\s]*Priority\s*[:.\-]\s*([^\n]+))?/gi;
   const taskPattern2 = /Task\s*(?:for)?\s*([^:]+?):\s*([^\n]+?)[\n\s]*Description\s*[:.\-]\s*([^\n]+))?(?:[\n\s]*Priority\s*[:.\-]\s*([^\n]+))?/gi;
-  const taskPattern3 = /\-\s*\*\*([^:]+?):\*\*\s*([^\n]+?)(?:[\n\s]*([^\n]+))?(?:[\n\s]*Priority\s*[:.\-]\s*([^\n]+))?/gi;
+  const taskPattern3 = /\-\s*\*\*([^:]+?):*\*\*\s*([^\n]+?)(?:[\n\s]*([^\n]+))?(?:[\n\s]*Priority\s*[:.\-]\s*([^\n]+))?/gi;
   
   let match;
   
