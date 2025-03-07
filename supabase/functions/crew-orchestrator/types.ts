@@ -1,4 +1,6 @@
 // Deno and Request types
+/// <reference lib="dom" />
+
 declare global {
   interface DenoNamespace {
     serve(handler: (request: Request) => Promise<Response> | Response): void;
@@ -66,11 +68,14 @@ export interface RequestBody {
   projectId: string;
   agentId?: string;
   taskId?: string;
-  action?: 'start' | 'stop' | 'team_collaborate';
+  action?: 'start' | 'stop' | 'team_collaborate' | 'initialize' | 'update' | 'complete_task';
   agents?: AgentData[];
   projectContext?: Record<string, unknown>;
   autostart?: boolean;
   verbose?: boolean;
+  temperature?: number;
+  updates?: unknown;
+  result?: unknown;
 }
 
 // Export to make the file a module

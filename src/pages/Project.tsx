@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import Dashboard from "@/components/layout/Dashboard";
 import { sendAgentPrompt } from "@/lib/openrouter";
 import { startAgentOrchestration, stopAgentOrchestration } from "@/lib/agent/orchestrator";
+import { useCrewAIAgentBridge } from "@/hooks/useCrewAIAgentBridge";
 import { CodeFile, Message, Project as ProjectType, Agent, Task } from "@/lib/types";
 import { useGitHubContext } from "@/contexts/GitHubContext";
 import { FileEditor } from "@/components/FileEditor";
