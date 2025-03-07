@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -343,14 +344,16 @@ const Project: React.FC = () => {
       return;
     }
     
-    const loadingToastId = toast.loading(`Starting task execution...`);
+    const loadingToastId = toast.loading(`Starting task execution for ${agent.name}...`);
     
     try {
+      // Update agent status before the call to show something is happening
       await updateAgentMutation.mutate({ 
         id: agentId, 
-        updates: { status: "working", progress: 10 } 
+        updates: { status: "working", progress: 5 } 
       });
       
+      // Create a message to show we're starting work
       await createMessageMutation.mutate({
         project_id: id,
         content: `I'm starting work on the task: ${task.title}`,
@@ -358,22 +361,56 @@ const Project: React.FC = () => {
         type: "text"
       });
       
-      await startAgentOrchestration(id, agentId, taskId);
+      console.log(`Starting task execution for ${agent.name} on task ${task.title}`);
       
-      toast.dismiss(loadingToastId);
-      toast.success(`Task execution started: ${task.title}`);
+      // Execute the task via the orchestrator
+      const result = await startAgentOrchestration(id, agentId, taskId);
       
-      queryClient.invalidateQueries({ queryKey: ['agents', id] });
-      queryClient.invalidateQueries({ queryKey: ['tasks', id] });
+      if (result.success) {
+        toast.dismiss(loadingToastId);
+        toast.success(`${agent.name} is now working on: ${task.title}`);
+        
+        // Immediately refetch to get updated data
+        queryClient.invalidateQueries({ queryKey: ['agents', id] });
+        queryClient.invalidateQueries({ queryKey: ['tasks', id] });
+        queryClient.invalidateQueries({ queryKey: ['messages', id] });
+      } else {
+        console.error("Error executing task:", result.message);
+        toast.dismiss(loadingToastId);
+        toast.error(`Failed to execute task: ${result.message}`);
+        
+        // Reset agent status on failure
+        await updateAgentMutation.mutate({ 
+          id: agentId, 
+          updates: { status: "idle", progress: 0 } 
+        });
+        
+        // Add error message
+        await createMessageMutation.mutate({
+          project_id: id,
+          content: `I encountered an error trying to start work on this task: ${result.message}`,
+          sender: agent.name,
+          type: "error"
+        });
+      }
     } catch (error) {
       console.error("Error executing task:", error);
       
       toast.dismiss(loadingToastId);
       toast.error(`Failed to execute task: ${error instanceof Error ? error.message : 'Unknown error'}`);
       
+      // Reset agent status on exception
       await updateAgentMutation.mutate({ 
         id: agentId, 
         updates: { status: "idle", progress: 0 } 
+      });
+      
+      // Add error message
+      await createMessageMutation.mutate({
+        project_id: id,
+        content: `I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        sender: agent.name,
+        type: "error"
       });
     }
   };

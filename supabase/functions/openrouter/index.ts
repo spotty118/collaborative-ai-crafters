@@ -15,6 +15,12 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // For debugging - log request details
+  console.log(`OpenRouter request received at ${new Date().toISOString()}`);
+  console.log(`Request URL: ${req.url}`);
+  console.log(`Request method: ${req.method}`);
+  console.log('Request headers:', Object.fromEntries(req.headers.entries()));
+
   try {
     const requestData = await req.json();
     const { 
@@ -32,14 +38,14 @@ serve(async (req) => {
     if (multipartContent) {
       console.log('Multipart content detected (e.g., text+image)');
     } else {
-      console.log('Prompt excerpt:', prompt?.substring(0, 100) + '...');
+      console.log(`Prompt excerpt: ${prompt?.substring(0, 100) + '...'}`);
     }
     
     // Verify API key is available
     if (!OPENROUTER_API_KEY) {
-      console.error('OpenRouter API key is not set');
+      console.error('OpenRouter API key is not set in environment variables');
       return new Response(
-        JSON.stringify({ error: 'OpenRouter API key is not configured' }),
+        JSON.stringify({ error: 'OpenRouter API key is not configured. Please set OPENROUTER_API_KEY in Supabase.' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -153,9 +159,22 @@ IMPORTANT INSTRUCTIONS:
 1. ALWAYS THINK THROUGH THE PROBLEM STEP BY STEP
 2. CONSIDER MULTIPLE APPROACHES BEFORE DECIDING ON A SOLUTION
 3. BE DETAILED AND SPECIFIC IN YOUR EXPLANATIONS
-4. ALWAYS PROVIDE FULLY FUNCTIONAL, COMPLETE CODE IMPLEMENTATIONS`;
+4. ALWAYS PROVIDE FULLY FUNCTIONAL, COMPLETE CODE IMPLEMENTATIONS
+
+If you need to create code, ALWAYS use this format:
+\`\`\`filepath:/path/to/file.ext
+// code here
+\`\`\`
+
+If you identify tasks that need to be completed, use this format:
+TASK: [Task name]
+ASSIGNED TO: [Agent type, e.g. Frontend]
+DESCRIPTION: [Detailed description]
+PRIORITY: [high/medium/low]`;
     
   console.log('Sending request to OpenRouter API with model: google/gemini-2.0-flash-thinking-exp:free');
+  console.log(`OpenRouter API Key available: ${OPENROUTER_API_KEY ? 'Yes' : 'No'}`);
+  console.log(`API Key prefix: ${OPENROUTER_API_KEY?.substring(0, 5)}...`);
   
   // Log more details about the request
   console.log('Request details:', {
@@ -228,11 +247,29 @@ IMPORTANT INSTRUCTIONS:
     let content = data.choices[0].message.content;
     let thinkingContent = data.choices[0].thinking || "";
     
+    console.log('Response content excerpt:', content.substring(0, 200) + '...');
+    if (thinkingContent) {
+      console.log('Thinking content excerpt:', thinkingContent.substring(0, 200) + '...');
+    }
+    
     // Extract code snippets from the content
     const codeSnippets = extractCodeSnippets(content);
+    console.log(`Extracted ${codeSnippets.length} code snippets`);
+    if (codeSnippets.length > 0) {
+      codeSnippets.forEach((snippet, i) => {
+        console.log(`Snippet ${i+1} path: ${snippet.filePath}`);
+        console.log(`Snippet ${i+1} code (excerpt): ${snippet.code.substring(0, 100)}...`);
+      });
+    }
     
     // Extract tasks information from the content
     const tasksInfo = extractTasksInfo(content);
+    console.log(`Extracted ${tasksInfo.length} tasks`);
+    if (tasksInfo.length > 0) {
+      tasksInfo.forEach((task, i) => {
+        console.log(`Task ${i+1}: ${task.title}, assigned to: ${task.assignedTo}, priority: ${task.priority}`);
+      });
+    }
     
     return new Response(
       JSON.stringify({

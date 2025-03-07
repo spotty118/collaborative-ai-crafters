@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.33.1';
 
@@ -13,6 +12,9 @@ const corsHeaders = {
 const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
 const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// OpenRouter API key from environment
+const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -46,6 +48,58 @@ serve(async (req) => {
 
     // Handle different actions
     if (action === 'start') {
+      // Get agent details
+      const { data: agentData, error: agentFetchError } = await supabase
+        .from('agent_statuses')
+        .select('*')
+        .eq('id', agentId)
+        .single();
+
+      if (agentFetchError) {
+        throw new Error(`Failed to fetch agent details: ${agentFetchError.message}`);
+      }
+
+      // Get project details
+      const { data: projectData, error: projectFetchError } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('id', projectId)
+        .single();
+
+      if (projectFetchError) {
+        throw new Error(`Failed to fetch project details: ${projectFetchError.message}`);
+      }
+
+      // Get task details if taskId is provided
+      let taskData = null;
+      if (taskId) {
+        const { data, error: taskError } = await supabase
+          .from('tasks')
+          .select('*')
+          .eq('id', taskId)
+          .single();
+
+        if (taskError) {
+          throw new Error(`Failed to fetch task details: ${taskError.message}`);
+        }
+        
+        taskData = data;
+        
+        // Update task status
+        const { error: updateTaskError } = await supabase
+          .from('tasks')
+          .update({ 
+            status: 'in_progress',
+            assigned_to: agentId, // Ensure task is assigned to this agent
+            updated_at: new Date().toISOString() 
+          })
+          .eq('id', taskId);
+
+        if (updateTaskError) {
+          throw new Error(`Failed to update task status: ${updateTaskError.message}`);
+        }
+      }
+
       // Update agent status to working
       const { error: agentError } = await supabase
         .from('agent_statuses')
@@ -60,44 +114,136 @@ serve(async (req) => {
         throw new Error(`Failed to update agent status: ${agentError.message}`);
       }
 
-      // If taskId is provided, update task status
-      if (taskId) {
-        const { error: taskError } = await supabase
-          .from('tasks')
-          .update({ 
-            status: 'in_progress',
-            assigned_to: agentId, // Ensure task is assigned to this agent
-            updated_at: new Date().toISOString() 
-          })
-          .eq('id', taskId);
-
-        if (taskError) {
-          throw new Error(`Failed to update task status: ${taskError.message}`);
-        }
-      }
-
-      // Get agent name for notification
-      const { data: agentData, error: agentFetchError } = await supabase
-        .from('agent_statuses')
-        .select('name')
-        .eq('id', agentId)
-        .single();
-
-      if (agentFetchError) {
-        throw new Error(`Failed to fetch agent details: ${agentFetchError.message}`);
-      }
-
       // Create chat message
       await supabase
         .from('chat_messages')
         .insert([{
           project_id: projectId,
           content: taskId 
-            ? `I'm now working on the assigned task.` 
+            ? `I'm now working on the assigned task: "${taskData?.title || 'Unknown task'}"` 
             : `I'm now active and ready to work on tasks for this project.`,
           sender: agentData?.name || 'Agent',
           type: 'text'
         }]);
+
+      // Call OpenRouter directly to process the task
+      if (taskId && OPENROUTER_API_KEY) {
+        console.log(`Sending task to OpenRouter for processing: ${taskData?.title}`);
+        
+        try {
+          // Prepare prompt for the agent based on task
+          const prompt = `
+You are the ${agentData.name}, a ${agentData.agent_type} agent working on the project: ${projectData.name}.
+
+TASK DETAILS:
+Title: ${taskData.title}
+Description: ${taskData.description || 'No detailed description provided'}
+Priority: ${taskData.priority || 'medium'}
+
+PROJECT CONTEXT:
+${projectData.description || 'No detailed description provided'}
+${projectData.requirements ? `Requirements: ${projectData.requirements}` : ''}
+${projectData.tech_stack ? `Technology Stack: ${projectData.tech_stack.join(', ')}` : ''}
+
+YOUR OBJECTIVE:
+Please analyze this task and create a detailed implementation for it. Focus on your role as a ${agentData.agent_type} agent.
+
+If your implementation requires creating code, please format it as follows:
+\`\`\`filepath:/path/to/file.ext
+// code goes here
+\`\`\`
+
+If you identify additional tasks that need to be done, list them in this format:
+TASK: [Task name]
+ASSIGNED TO: [Agent type, e.g. Frontend]
+DESCRIPTION: [Detailed description]
+PRIORITY: [high/medium/low]
+`;
+
+          console.log(`Sending prompt to OpenRouter (excerpt): ${prompt.substring(0, 100)}...`);
+          
+          // Send request to OpenRouter via our edge function
+          const openRouterResponse = await fetch(`${supabaseUrl}/functions/v1/openrouter`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseAnonKey}`
+            },
+            body: JSON.stringify({
+              prompt,
+              agentType: agentData.agent_type,
+              model: "google/gemini-2.0-flash-thinking-exp:free",
+              projectContext: {
+                name: projectData.name,
+                description: projectData.description,
+                sourceUrl: projectData.sourceUrl,
+                sourceType: projectData.sourceType,
+                id: projectData.id,
+                created_at: projectData.created_at
+              }
+            }),
+          });
+
+          if (!openRouterResponse.ok) {
+            const errorResponse = await openRouterResponse.text();
+            console.error('Error from OpenRouter:', errorResponse);
+            throw new Error(`OpenRouter responded with status ${openRouterResponse.status}: ${errorResponse}`);
+          }
+
+          const responseData = await openRouterResponse.json();
+          console.log('OpenRouter response received:', JSON.stringify(responseData).substring(0, 200) + '...');
+          
+          // Now we have the AI response, update the progress
+          await supabase
+            .from('agent_statuses')
+            .update({ 
+              progress: 30, // Increase progress after getting AI response
+              updated_at: new Date().toISOString() 
+            })
+            .eq('id', agentId);
+            
+          console.log('Agent progress updated to 30% after receiving OpenRouter response');
+
+          // Add the AI's response as a message
+          const aiContent = responseData.choices[0].message.content;
+          await supabase
+            .from('chat_messages')
+            .insert([{
+              project_id: projectId,
+              content: `Task analysis complete. I'll now implement: "${taskData.title}"`,
+              sender: agentData.name,
+              type: 'text'
+            }]);
+            
+          // Add the detailed response as a separate message
+          await supabase
+            .from('chat_messages')
+            .insert([{
+              project_id: projectId,
+              content: aiContent,
+              sender: agentData.name,
+              type: 'text'
+            }]);
+            
+          console.log('Added AI response as chat messages');
+
+        } catch (openRouterError) {
+          console.error('Error calling OpenRouter:', openRouterError);
+          
+          // Add error message to chat
+          await supabase
+            .from('chat_messages')
+            .insert([{
+              project_id: projectId,
+              content: `I encountered an error while working on the task: ${openRouterError.message}`,
+              sender: agentData.name,
+              type: 'error'
+            }]);
+            
+          // Continue execution despite OpenRouter error
+          console.log('Added error message and continuing execution');
+        }
+      }
 
       return new Response(
         JSON.stringify({ 
@@ -107,7 +253,7 @@ serve(async (req) => {
         }),
         { headers: responseHeaders }
       );
-    } 
+    }
     else if (action === 'stop') {
       // Update agent status to idle
       const { error: agentError } = await supabase

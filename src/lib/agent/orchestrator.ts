@@ -95,6 +95,8 @@ export const startAgentOrchestration = async (projectId: string, agentId: string
         return { success: false, message: "Task not found" };
       }
       
+      console.log(`Found task: ${JSON.stringify(taskData)}`);
+      
       // If task is not assigned to this agent, assign it
       if (taskData.assigned_to !== agentId) {
         console.log(`Task ${taskId} not assigned to agent ${agentId}, updating assignment`);
@@ -134,6 +136,8 @@ export const startAgentOrchestration = async (projectId: string, agentId: string
       }
     }
     
+    console.log(`Invoking crew-orchestrator edge function with: projectId=${projectId}, agentId=${agentId}, taskId=${taskId || 'none'}`);
+    
     // Now invoke the edge function to start agent orchestration
     const { data, error } = await supabase.functions.invoke('crew-orchestrator', {
       body: { 
@@ -143,6 +147,8 @@ export const startAgentOrchestration = async (projectId: string, agentId: string
         taskId
       }
     });
+    
+    console.log(`Crew-orchestrator response: ${JSON.stringify(data)}`);
     
     if (error) {
       console.error("Error starting agent orchestration:", error);
