@@ -504,15 +504,6 @@ export const updateCodeFile = async (id: string, updates: Partial<CodeFileDB>): 
   };
 };
 
-export const deleteAllCodeFiles = async (projectId: string): Promise<void> => {
-  const { error } = await supabase
-    .from('code_files')
-    .delete()
-    .eq('project_id', projectId);
-  
-  if (error) throw error;
-};
-
 // Utility functions
 function getAgentAvatar(agentType: AgentType): string {
   switch (agentType) {

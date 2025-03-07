@@ -1,61 +1,69 @@
-# CrewAI API Integration
+# Welcome to your Lovable project
 
-This project integrates with an external CrewAI API to replace the original agents with more powerful AI agents provided by [CrewAI](https://crewai.com).
+## Project info
 
-## Features
+**URL**: https://lovable.dev/projects/08bc104b-48c8-423c-a44a-29734c57f996
 
-- ✅ External CrewAI API integration
-- ✅ React hooks for managing CrewAI agents
-- ✅ Fallback to mock data when API is unavailable
-- ✅ TypeScript support for type-safe API interactions
-- ✅ Comprehensive error handling
+## How can I edit this code?
 
-## API Endpoints
+There are several ways of editing your application.
 
-The CrewAI API is available at:
+**Use Lovable**
 
-```
-https://could-you-clarify-if-this-chat-is-intended--fc133f12.crewai.com
-```
+Simply visit the [Lovable Project](https://lovable.dev/projects/08bc104b-48c8-423c-a44a-29734c57f996) and start prompting.
 
-It offers three main endpoints:
+Changes made via Lovable will be committed automatically to this repo.
 
-- `GET /inputs` - Retrieve required inputs for the CrewAI agents
-- `POST /kickoff` - Start a new CrewAI task
-- `GET /status/{task_id}` - Check execution status of a running task
+**Use your preferred IDE**
 
-## Setup
+If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
 
-To use the CrewAI API integration:
+The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
 
-1. Browse to the `/external-crewai` route to see a demo of the integration
-2. In production, set `USE_MOCK` to `false` in `src/hooks/useCrewAIApi.ts`
+Follow these steps:
 
-## Integration Components
+```sh
+# Step 1: Clone the repository using the project's Git URL.
+git clone <YOUR_GIT_URL>
 
-The integration consists of several key components:
+# Step 2: Navigate to the project directory.
+cd <YOUR_PROJECT_NAME>
 
-### Hooks
+# Step 3: Install the necessary dependencies.
+npm i
 
-- `useCrewAIApi` - Low-level hook for direct API interaction
-- `useCrewAIAgentBridge` - Bridge between existing agent system and CrewAI API
-
-### UI Components
-
-- `CrewAIConnector` - UI component for interacting with the CrewAI API
-
-### Utilities
-
-- `crewAIApi.ts` - API client utilities
-- `mockCrewAIData.ts` - Mock data for development and testing
-
-## Push to GitHub
-
-To push changes to GitHub, run the included shell script:
-
-```bash
-chmod +x push-to-github.sh
-./push-to-github.sh
+# Step 4: Start the development server with auto-reloading and an instant preview.
+npm run dev
 ```
 
-Follow the prompts to provide your GitHub repository URL and optional commit message.
+**Edit a file directly in GitHub**
+
+- Navigate to the desired file(s).
+- Click the "Edit" button (pencil icon) at the top right of the file view.
+- Make your changes and commit the changes.
+
+**Use GitHub Codespaces**
+
+- Navigate to the main page of your repository.
+- Click on the "Code" button (green button) near the top right.
+- Select the "Codespaces" tab.
+- Click on "New codespace" to launch a new Codespace environment.
+- Edit files directly within the Codespace and commit and push your changes once you're done.
+
+## What technologies are used for this project?
+
+This project is built with .
+
+- Vite
+- TypeScript
+- React
+- shadcn-ui
+- Tailwind CSS
+
+## How can I deploy this project?
+
+Simply open [Lovable](https://lovable.dev/projects/08bc104b-48c8-423c-a44a-29734c57f996) and click on Share -> Publish.
+
+## I want to use a custom domain - is that possible?
+
+We don't support custom domains (yet). If you want to deploy your project under your own domain then we recommend using Netlify. Visit our docs for more details: [Custom domains](https://docs.lovable.dev/tips-tricks/custom-domain/)

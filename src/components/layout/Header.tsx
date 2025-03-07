@@ -1,9 +1,9 @@
 
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Plus, GitBranch, Cpu, Download, Menu, ExternalLink } from "lucide-react";
+import { Plus, GitBranch, Cpu, Download, Menu } from "lucide-react";
 import { toast } from "sonner";
-import { useParams, useLocation, Link } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 
 interface HeaderProps {
@@ -116,13 +116,6 @@ const Header: React.FC<HeaderProps> = ({
                 <Plus className="mr-2 h-4 w-4" />
                 New Project
               </Button>
-              <Link 
-                to="/external-crewai" 
-                className="flex items-center px-4 py-2 text-sm hover:bg-gray-100 text-gray-700"
-              >
-                <ExternalLink className="mr-2 h-4 w-4" />
-                External CrewAI
-              </Link>
             </div>
           )}
         </div>
@@ -156,19 +149,6 @@ const Header: React.FC<HeaderProps> = ({
             <Plus className="mr-2 h-4 w-4" />
             New Project
           </Button>
-          <Link 
-            to="/external-crewai" 
-            className="flex items-center text-sm text-gray-700 hover:text-gray-900"
-          >
-            <Button
-              variant="ghost"
-              size="sm"
-              className="flex items-center"
-            >
-              <ExternalLink className="mr-2 h-4 w-4" />
-              External CrewAI
-            </Button>
-          </Link>
         </div>
       </div>
     </header>
