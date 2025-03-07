@@ -303,3 +303,55 @@ export const handleCrewTaskCompletion = async (
     throw error;
   }
 };
+
+/**
+ * Initialize agent orchestration for a project
+ * @param projectId The project ID
+ * @param agents The agents to initialize
+ */
+export const initializeAgentOrchestration = async (
+  projectId: string,
+  agents: Agent[]
+): Promise<boolean> => {
+  try {
+    console.log(`Initializing agent orchestration for project ${projectId}`);
+    
+    const { data, error } = await supabase.functions.invoke('crew-orchestrator', {
+      body: {
+        projectId,
+        agents,
+        action: 'initialize'
+      }
+    });
+    
+    if (error) {
+      console.error('Initialization error:', error);
+      throw new Error(`Failed to initialize agent orchestration: ${error.message}`);
+    }
+    
+    console.log('Initialization response:', data);
+    
+    // Ensure we properly call broadcastMessage with all required arguments
+    if (data && data.success) {
+      const architect = agents.find(agent => agent.agent_type === 'architect');
+      const project = await supabase
+        .from('projects')
+        .select('*')
+        .eq('id', projectId)
+        .single();
+        
+      if (project && architect) {
+        await broadcastMessage(
+          architect,
+          `The Architect Agent has been initialized for project ${project.name}. I'll be leading the team to design and build ${project.description}.`,
+          project
+        );
+      }
+    }
+    
+    return data.success;
+  } catch (error) {
+    console.error('Error in agent orchestration initialization:', error);
+    return false;
+  }
+};
