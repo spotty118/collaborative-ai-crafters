@@ -5,7 +5,7 @@ import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress";
 import AgentStatus from "./AgentStatus";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, PlayCircle, PauseCircle, RefreshCw, Users, Loader2 } from "lucide-react";
+import { MessageSquare, PlayCircle, PauseCircle, RefreshCw, Users, Loader2, Brain } from "lucide-react";
 import { toast } from "sonner";
 
 interface AgentCardProps {
@@ -30,6 +30,7 @@ const AgentCard: React.FC<AgentCardProps> = ({
   const [isHovered, setIsHovered] = useState(false);
   const [progressValue, setProgressValue] = useState(agent.progress || 0);
   const [animating, setAnimating] = useState(false);
+  const [thinking, setThinking] = useState(false);
   
   // Only update progress value when it significantly changes
   useEffect(() => {
@@ -45,6 +46,19 @@ const AgentCard: React.FC<AgentCardProps> = ({
       }
     }
   }, [agent.progress, progressValue]);
+  
+  // Simulate agent "thinking" state for UI feedback
+  useEffect(() => {
+    if (agent.status === "working") {
+      const thinkingInterval = setInterval(() => {
+        setThinking(prev => !prev);
+      }, 3000);
+      
+      return () => clearInterval(thinkingInterval);
+    } else {
+      setThinking(false);
+    }
+  }, [agent.status]);
 
   const getAgentColorClass = () => {
     switch (agent.type) {
@@ -106,6 +120,38 @@ const AgentCard: React.FC<AgentCardProps> = ({
   
   // Is the agent currently working?
   const isWorking = agent.status === "working";
+  
+  // Get agent thinking status message
+  const getThinkingStatusMessage = () => {
+    if (!isWorking) return null;
+    
+    if (isArchitect) {
+      return thinking ? 
+        "Planning system architecture and task allocation..." : 
+        "Reasoning about project requirements...";
+    }
+    
+    switch (agent.type) {
+      case "frontend":
+        return thinking ? 
+          "Planning UI component structure..." : 
+          "Reasoning about user interactions...";
+      case "backend":
+        return thinking ? 
+          "Planning data model and API design..." : 
+          "Reasoning about system logic...";
+      case "testing":
+        return thinking ? 
+          "Planning test coverage strategy..." : 
+          "Reasoning about edge cases...";
+      case "devops":
+        return thinking ? 
+          "Planning deployment pipeline..." : 
+          "Reasoning about infrastructure requirements...";
+      default:
+        return "Working on assigned tasks...";
+    }
+  };
 
   return (
     <Card 
@@ -127,7 +173,17 @@ const AgentCard: React.FC<AgentCardProps> = ({
             </h3>
             <div className="flex items-center mt-1">
               <AgentStatus status={agent.status} className="" />
-              {isWorking && <Loader2 className="ml-2 h-3 w-3 animate-spin text-blue-500" />}
+              {isWorking && (
+                <>
+                  <Loader2 className="ml-2 h-3 w-3 animate-spin text-blue-500" />
+                  {thinking && (
+                    <span className="ml-2 text-xs text-blue-600 flex items-center">
+                      <Brain className="h-3 w-3 mr-1" />
+                      Thinking
+                    </span>
+                  )}
+                </>
+              )}
             </div>
           </div>
           <div className="text-3xl">{agent.avatar}</div>
@@ -135,11 +191,7 @@ const AgentCard: React.FC<AgentCardProps> = ({
       </CardHeader>
       <CardContent className="p-4">
         <p className="text-sm text-gray-600 min-h-[40px]">
-          {agent.status === "working" && isArchitect 
-            ? "Generating tasks and coordinating with the team..." 
-            : agent.status === "working"
-            ? "Working on assigned tasks..."
-            : agent.description}
+          {isWorking ? getThinkingStatusMessage() : agent.description}
         </p>
         <div className="mt-3">
           <div className="flex justify-between mb-1 text-xs">

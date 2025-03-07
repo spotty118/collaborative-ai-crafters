@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { broadcastMessage } from "./messageBroker";
@@ -71,7 +70,7 @@ export const startAgentOrchestration = async (
 };
 
 /**
- * Initiate team collaboration for a project
+ * Initiate team collaboration for a project with enhanced planning capabilities
  */
 const initiateTeamCollaboration = async (projectId: string, project: any) => {
   try {
@@ -100,7 +99,7 @@ const initiateTeamCollaboration = async (projectId: string, project: any) => {
       .from('chat_messages')
       .insert([{
         project_id: projectId,
-        content: `Team collaboration has been initiated for project "${project.name}". Agents will now collaborate automatically on tasks.`,
+        content: `Team collaboration has been initiated for project "${project.name}". Agents will now collaborate automatically on tasks following the planning, reasoning, execution framework.`,
         sender: "System",
         type: "text"
       }]);
@@ -122,7 +121,8 @@ const initiateTeamCollaboration = async (projectId: string, project: any) => {
         action: 'team_collaborate',
         agents: agents.map(a => ({ id: a.id, type: a.agent_type, name: a.name })),
         projectContext: project,
-        autostart: true // Explicit flag to auto-start all agents
+        autostart: true, // Explicit flag to auto-start all agents
+        useEnhancedPlanning: true // Enable new planning capabilities
       }
     });
     
@@ -133,6 +133,14 @@ const initiateTeamCollaboration = async (projectId: string, project: any) => {
     }
     
     console.log('Team collaboration initiated:', data);
+    
+    // Broadcast a message to inform about the collaborative process
+    broadcastMessage(projectId, {
+      sender: "System",
+      content: "Team is now collaborating using enhanced planning & reasoning capabilities. The Architect will coordinate task distribution.",
+      type: "text"
+    });
+    
   } catch (error) {
     console.error('Error initiating team collaboration:', error);
     toast.error(`Failed to initiate team collaboration: ${(error as Error).message}`);
