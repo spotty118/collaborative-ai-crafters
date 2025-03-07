@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
@@ -71,7 +70,11 @@ TECHNICAL EXPERTISE:
 - Performance optimization
 
 WHEN CREATING CODE:
-IMPORTANT: You must always provide REAL, PRODUCTION-GRADE code. DO NOT describe what the code should do - implement it fully.
+YOU MUST IMPLEMENT ACTUAL REAL CODE, NOT DESCRIPTIONS OR PLACEHOLDERS.
+CRITICAL INSTRUCTION: WRITE REAL, EXECUTABLE CODE, NOT EXPLANATIONS ABOUT CODE.
+I need you to provide actual, working code with concrete implementations, not examples, suggestions, or "something like this" explanations.
+DO NOT USE PLACEHOLDERS or TODOs in your code. Write fully implemented, production-ready code.
+
 Always provide complete, functional code snippets with clear file paths using this format:
 \`\`\`filepath:src/components/Example.tsx
 import React from 'react';
@@ -118,7 +121,11 @@ TECHNICAL EXPERTISE:
 - Accessibility (a11y) best practices
 
 WHEN CREATING CODE:
-IMPORTANT: You must always provide REAL, PRODUCTION-GRADE code. DO NOT describe what the code should do - implement it fully.
+YOU MUST IMPLEMENT ACTUAL REAL CODE, NOT DESCRIPTIONS OR PLACEHOLDERS.
+CRITICAL INSTRUCTION: WRITE REAL, EXECUTABLE CODE, NOT EXPLANATIONS ABOUT CODE.
+I need you to provide actual, working code with concrete implementations, not examples, suggestions, or "something like this" explanations.
+DO NOT USE PLACEHOLDERS or TODOs in your code. Write fully implemented, production-ready code.
+
 Always provide complete, functional code snippets with clear file paths using this format:
 \`\`\`filepath:src/components/Example.tsx
 import React from 'react';
@@ -166,7 +173,11 @@ TECHNICAL EXPERTISE:
 - Security best practices
 
 WHEN CREATING CODE:
-IMPORTANT: You must always provide REAL, PRODUCTION-GRADE code. DO NOT describe what the code should do - implement it fully.
+YOU MUST IMPLEMENT ACTUAL REAL CODE, NOT DESCRIPTIONS OR PLACEHOLDERS.
+CRITICAL INSTRUCTION: WRITE REAL, EXECUTABLE CODE, NOT EXPLANATIONS ABOUT CODE.
+I need you to provide actual, working code with concrete implementations, not examples, suggestions, or "something like this" explanations.
+DO NOT USE PLACEHOLDERS or TODOs in your code. Write fully implemented, production-ready code.
+
 Always provide complete, functional code snippets with clear file paths using this format:
 \`\`\`filepath:src/server/routes/example.ts
 import express from 'express';
@@ -214,7 +225,11 @@ TECHNICAL EXPERTISE:
 - Bug reporting and tracking
 
 WHEN CREATING CODE:
-IMPORTANT: You must always provide REAL, PRODUCTION-GRADE code. DO NOT describe what the code should do - implement it fully.
+YOU MUST IMPLEMENT ACTUAL REAL CODE, NOT DESCRIPTIONS OR PLACEHOLDERS.
+CRITICAL INSTRUCTION: WRITE REAL, EXECUTABLE CODE, NOT EXPLANATIONS ABOUT CODE.
+I need you to provide actual, working code with concrete implementations, not examples, suggestions, or "something like this" explanations.
+DO NOT USE PLACEHOLDERS or TODOs in your code. Write fully implemented, production-ready code.
+
 Always provide complete, functional code snippets with clear file paths using this format:
 \`\`\`filepath:src/tests/Example.test.tsx
 import { render, screen } from '@testing-library/react';
@@ -264,7 +279,11 @@ TECHNICAL EXPERTISE:
 - Disaster recovery planning
 
 WHEN CREATING CODE:
-IMPORTANT: You must always provide REAL, PRODUCTION-GRADE code. DO NOT describe what the code should do - implement it fully.
+YOU MUST IMPLEMENT ACTUAL REAL CODE, NOT DESCRIPTIONS OR PLACEHOLDERS.
+CRITICAL INSTRUCTION: WRITE REAL, EXECUTABLE CODE, NOT EXPLANATIONS ABOUT CODE.
+I need you to provide actual, working code with concrete implementations, not examples, suggestions, or "something like this" explanations.
+DO NOT USE PLACEHOLDERS or TODOs in your code. Write fully implemented, production-ready code.
+
 Always provide complete, functional code snippets with clear file paths using this format:
 \`\`\`filepath:docker-compose.yml
 version: '3'
@@ -312,7 +331,15 @@ Focus on creating reliable, scalable infrastructure and deployment processes tha
       fullSystemPrompt += `\nYou are currently working on a specific task. Provide a detailed, step-by-step solution that demonstrates your expertise as the ${agentType} specialist. Consider how your work interfaces with other team members.`;
       fullSystemPrompt += `\n\nCRITICAL INSTRUCTION: YOU MUST ALWAYS WRITE REAL, PRODUCTION-GRADE CODE. DO NOT DESCRIBE OR EXPLAIN WHAT THE CODE SHOULD DO - IMPLEMENT IT FULLY. YOUR JOB IS TO WRITE ACTUAL CODE, NOT DESCRIBE CODE.`;
       fullSystemPrompt += `\n\nINCLUDE REAL CODE IMPLEMENTATION. Your response should include actual code that can be implemented directly into the project.`;
+      fullSystemPrompt += `\n\nNEVER RESPOND WITH "LET ME IMPLEMENT" OR "I'LL WRITE" - JUST WRITE THE ACTUAL CODE DIRECTLY`;
     }
+    
+    // Always add a final instruction to ensure code generation
+    fullSystemPrompt += `\n\nFINAL INSTRUCTIONS:
+1. WRITE ACTUAL CODE, NOT DESCRIPTIONS ABOUT CODE
+2. NEVER USE PLACEHOLDERS OR TODOS
+3. NEVER SAY "HERE'S HOW I WOULD IMPLEMENT THIS" - JUST IMPLEMENT IT
+4. ALWAYS PROVIDE FULLY FUNCTIONAL, COMPLETE CODE IMPLEMENTATIONS`;
     
     console.log('Sending request to OpenRouter API with model: google/gemini-2.0-flash-thinking-exp:free');
     
@@ -422,9 +449,23 @@ function filterOutDescriptiveCode(content) {
        codeContent.includes("we'll") ||
        codeContent.includes("I'll") ||
        codeContent.includes("i'll") ||
+       codeContent.includes("I would") ||
+       codeContent.includes("we would") ||
+       codeContent.includes("We would") ||
+       codeContent.includes("we could") ||
+       codeContent.includes("We could") ||
+       codeContent.includes("first step") ||
+       codeContent.includes("next step") ||
+       codeContent.includes("First step") ||
+       codeContent.includes("Next step") ||
        // Or if it's describing what code would do instead of showing code
        codeContent.includes("would look something like") ||
+       codeContent.includes("would be implemented") ||
        codeContent.includes("might look like") ||
+       codeContent.includes("would involve") ||
+       codeContent.includes("would need to") ||
+       codeContent.includes("example of how") ||
+       codeContent.includes("Example of how") ||
        // Or if it doesn't contain typical code syntax
        (!codeContent.includes(";") && !codeContent.includes("=") && !codeContent.includes("{") && 
         !codeContent.includes("}") && !codeContent.includes("import") && !codeContent.includes("export") &&
