@@ -1,3 +1,4 @@
+
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
@@ -25,7 +26,8 @@ serve(async (req) => {
     } = requestData;
     
     // Log the received request for debugging
-    console.log(`Processing ${agentType} agent request with model: ${model || 'default'}`);
+    console.log(`Processing ${agentType} agent request with model: ${model}`);
+    console.log("Project context:", JSON.stringify(projectContext).substring(0, 200) + "...");
     
     if (multipartContent) {
       console.log('Multipart content detected (e.g., text+image)');
@@ -47,14 +49,8 @@ serve(async (req) => {
       return await handleMultimodalRequest(multipartContent, model, req, corsHeaders);
     }
 
-    // For all models, use the gemini thinking implementation which supports the thinking parameter
-    if (model.includes("gemini") && model.includes("thinking")) {
-      return await handleGeminiThinkingModel(prompt, agentType, projectContext, req, corsHeaders);
-    } else {
-      // If not using thinking model, default to thinking model anyway for consistency
-      console.log(`Model ${model} is not a thinking model, using default thinking model instead`);
-      return await handleGeminiThinkingModel(prompt, agentType, projectContext, req, corsHeaders);
-    }
+    // Always use the gemini thinking implementation for consistency
+    return await handleGeminiThinkingModel(prompt, agentType, projectContext, req, corsHeaders);
   } catch (error) {
     console.error('Error in OpenRouter function:', error);
     console.error('Error stack:', error.stack);
@@ -78,6 +74,10 @@ async function handleMultimodalRequest(multipartContent, model, req, corsHeaders
         'string content'
     }))));
     
+    // Force the correct model
+    const modelToUse = "google/gemini-2.0-flash-thinking-exp:free";
+    console.log(`Using model: ${modelToUse} (overriding ${model} if different)`);
+    
     // Prepare the request to OpenRouter with multipart content
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -88,12 +88,16 @@ async function handleMultimodalRequest(multipartContent, model, req, corsHeaders
         'X-Title': 'Agent Collaboration System'
       },
       body: JSON.stringify({
-        model: model,
+        model: modelToUse,
         messages: multipartContent,
         temperature: 0.3,
-        max_tokens: 4000
+        max_tokens: 4000,
+        thinking: true
       })
     });
+
+    // Log response status
+    console.log(`OpenRouter multimodal response status: ${response.status}`);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -119,7 +123,6 @@ async function handleMultimodalRequest(multipartContent, model, req, corsHeaders
 
     const data = await response.json();
     console.log('OpenRouter multimodal response received successfully');
-    console.log('Response status:', response.status);
     console.log('Response data excerpt:', JSON.stringify(data).substring(0, 200) + '...');
     
     // Return the response directly for multimodal content
@@ -144,7 +147,7 @@ async function handleGeminiThinkingModel(prompt, agentType, projectContext, req,
     
 As the ${agentType}, your job includes analyzing problems, planning solutions, and implementing high-quality code.
 
-Project Context: ${projectContext.name} - ${projectContext.description || 'No description provided'}.
+Project Context: ${projectContext.name || 'No name'} - ${projectContext.description || 'No description provided'}.
 
 IMPORTANT INSTRUCTIONS:
 1. ALWAYS THINK THROUGH THE PROBLEM STEP BY STEP
@@ -164,6 +167,25 @@ IMPORTANT INSTRUCTIONS:
   
   try {
     // For Gemini Flash with thinking enabled
+    const requestBody = {
+      model: 'google/gemini-2.0-flash-thinking-exp:free',
+      messages: [
+        {
+          role: 'system',
+          content: systemInstruction
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 4000,
+      thinking: true
+    };
+    
+    console.log('Request body:', JSON.stringify(requestBody).substring(0, 500) + '...');
+    
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -172,32 +194,15 @@ IMPORTANT INSTRUCTIONS:
         'HTTP-Referer': 'https://example.com',
         'X-Title': 'Agent Collaboration System'
       },
-      body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-thinking-exp:free',
-        messages: [
-          {
-            role: 'system',
-            content: systemInstruction
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.3,
-        max_tokens: 4000,
-        thinking: true,
-        extra_body: {
-          thinking: true
-        }
-      })
+      body: JSON.stringify(requestBody)
     });
+
+    console.log(`OpenRouter response status: ${response.status}`);
+    console.log('Response headers:', Object.fromEntries(response.headers.entries()));
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error('OpenRouter API error response:', errorText);
-      console.error('Response status:', response.status);
-      console.error('Response headers:', Object.fromEntries(response.headers.entries()));
       
       try {
         const errorData = JSON.parse(errorText);
@@ -217,9 +222,7 @@ IMPORTANT INSTRUCTIONS:
 
     const data = await response.json();
     console.log('OpenRouter response received successfully');
-    console.log('Response status:', response.status);
-    console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-    console.log('Full response data:', JSON.stringify(data));
+    console.log('Response data excerpt:', JSON.stringify(data).substring(0, 200) + '...');
     
     // Enhanced response processing with better code extraction
     let content = data.choices[0].message.content;
@@ -302,5 +305,23 @@ function extractTasksInfo(content) {
     }
   }
   
+  // Third fallback - look for tasks in a more flexible way
+  if (tasks.length === 0) {
+    // Look for any combination of "task", "assigned", "description", "priority" in flexible order
+    const flexRegex = /(?:task|todo|to-do|task name|title)[\s\:]+([^\n]+)(?:[\s\n]+(?:assigned|agent|assigned to|for)[\s\:]+([^\n]+))?(?:[\s\n]+(?:description|details|task description)[\s\:]+([^\n]+))?(?:[\s\n]+(?:priority|importance)[\s\:]+([^\n]+))?/gis;
+    while ((match = flexRegex.exec(content)) !== null) {
+      // Only add if we can extract at minimum a title
+      if (match[1] && match[1].trim().length > 0) {
+        tasks.push({
+          title: match[1].trim(),
+          assignedTo: (match[2] || 'Architect Agent').trim(),
+          description: (match[3] || match[1]).trim(), // Use title as description if missing
+          priority: (match[4] || 'medium').trim().toLowerCase()
+        });
+      }
+    }
+  }
+  
+  console.log(`Extracted ${tasks.length} tasks from agent response`);
   return tasks;
 }
