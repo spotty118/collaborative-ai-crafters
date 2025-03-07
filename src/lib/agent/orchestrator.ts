@@ -20,3 +20,9 @@ export {
 export {
   handleCrewTaskCompletion
 } from './taskManagement';
+
+// Export new agent system components
+export { default as AgentCore } from './agentCore';
+export { default as MemorySystem } from './memorySystem';
+export { default as ToolRegistry } from './toolRegistry';
+export { default as agentSystem } from './agentSystem';
