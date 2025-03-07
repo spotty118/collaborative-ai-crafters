@@ -15,7 +15,7 @@ const Toaster = memo(({ ...props }: ToasterProps) => {
       className="toaster group"
       // Reduce visible toasts to minimize performance impact
       visibleToasts={2}
-      // Increase closeButton duration to reduce rapid render cycles
+      // Increase closeButton duration to reduce render cycles
       closeButton={true}
       // Simplified rich colors to reduce rendering complexity
       richColors={true}
@@ -27,8 +27,6 @@ const Toaster = memo(({ ...props }: ToasterProps) => {
       invert={false}
       // Use position that requires less calculations
       position="top-right"
-      // Optimize rendering with a higher throttle value
-      throttleMs={500}
       toastOptions={{
         classNames: {
           toast:
