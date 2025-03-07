@@ -95,14 +95,14 @@ const initiateTeamCollaboration = async (projectId: string, project: any) => {
     }
     
     // Create a team message in chat
-    await supabase
-      .from('chat_messages')
-      .insert([{
-        project_id: projectId,
-        content: `Team collaboration has been initiated for project "${project.name}". Agents will now collaborate automatically on tasks following the planning, reasoning, execution framework.`,
+    await broadcastMessage(
+      projectId,
+      {
         sender: "System",
+        content: `Team collaboration has been initiated for project "${project.name}". Agents will now collaborate automatically on tasks following the planning, reasoning, execution framework.`,
         type: "text"
-      }]);
+      }
+    );
     
     // Update all agents to be in working state
     const agentIds = agents.map(agent => agent.id);
@@ -135,11 +135,14 @@ const initiateTeamCollaboration = async (projectId: string, project: any) => {
     console.log('Team collaboration initiated:', data);
     
     // Broadcast a message to inform about the collaborative process
-    broadcastMessage(projectId, {
-      sender: "System",
-      content: "Team is now collaborating using enhanced planning & reasoning capabilities. The Architect will coordinate task distribution.",
-      type: "text"
-    });
+    await broadcastMessage(
+      projectId,
+      {
+        sender: "System",
+        content: "Team is now collaborating using enhanced planning & reasoning capabilities. The Architect will coordinate task distribution.",
+        type: "text"
+      }
+    );
     
   } catch (error) {
     console.error('Error initiating team collaboration:', error);
