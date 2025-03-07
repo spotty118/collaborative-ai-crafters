@@ -1,9 +1,17 @@
+
 import React, { useEffect, useState } from "react";
 import { Task, Agent } from "@/lib/types";
-import { CheckCircle2, Circle, Clock, AlertCircle, RotateCw, Play, RefreshCw } from "lucide-react";
+import { CheckCircle2, Circle, Clock, AlertCircle, RotateCw, Play, RefreshCw, UserCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { assignTask } from "@/lib/agent/orchestrator";
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu";
 
 interface TaskListProps {
   tasks: Task[];
@@ -12,6 +20,7 @@ interface TaskListProps {
   onRefreshTasks?: () => void;
   isLoading?: boolean;
   className?: string;
+  projectId?: string;
 }
 
 const TaskList: React.FC<TaskListProps> = ({ 
@@ -20,10 +29,12 @@ const TaskList: React.FC<TaskListProps> = ({
   onExecuteTask, 
   onRefreshTasks,
   isLoading = false,
-  className 
+  className,
+  projectId
 }) => {
   const [displayedTaskMap, setDisplayedTaskMap] = useState<Map<string, Set<string>>>(new Map());
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [assigningTask, setAssigningTask] = useState<string | null>(null);
   
   // Reset the task map when tasks change significantly or when component loads
   useEffect(() => {
@@ -125,6 +136,33 @@ const TaskList: React.FC<TaskListProps> = ({
     }
   };
 
+  const handleAssignTask = async (taskId: string, agentId: string) => {
+    if (!projectId) {
+      toast.error("Project ID is required to assign tasks");
+      return;
+    }
+
+    setAssigningTask(taskId);
+    
+    try {
+      const result = await assignTask(projectId, taskId, agentId);
+      
+      if (result.success) {
+        toast.success(`Task assigned to ${getAgentNameById(agentId)}`);
+        if (onRefreshTasks) {
+          onRefreshTasks();
+        }
+      } else {
+        toast.error(`Failed to assign task: ${result.message}`);
+      }
+    } catch (error) {
+      console.error("Error assigning task:", error);
+      toast.error(`Assignment failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setAssigningTask(null);
+    }
+  };
+
   return (
     <div className={cn("space-y-4", className)}>
       <div className="flex justify-between items-center">
@@ -165,6 +203,7 @@ const TaskList: React.FC<TaskListProps> = ({
           processedTasks.map((task) => {
             const agentPrefix = getAgentPrefixFromTitle(task.title);
             const cleanTitle = cleanTaskTitle(task.title);
+            const isAssigning = assigningTask === task.id;
             
             return (
               <div
@@ -193,9 +232,14 @@ const TaskList: React.FC<TaskListProps> = ({
                       {formatTaskDescription(task.description || '')}
                     </p>
                     
-                    {task.assigned_to && (
-                      <div className="mt-2 text-xs text-gray-600">
+                    {task.assigned_to ? (
+                      <div className="mt-2 text-xs text-gray-600 flex items-center">
+                        <UserCircle2 className="h-3 w-3 mr-1" /> 
                         Assigned to: {getAgentNameById(task.assigned_to)}
+                      </div>
+                    ) : (
+                      <div className="mt-2 text-xs text-gray-400 italic">
+                        Not assigned
                       </div>
                     )}
                     
@@ -204,17 +248,47 @@ const TaskList: React.FC<TaskListProps> = ({
                         Updated: {formatDate(task.updated_at)}
                       </span>
                       
-                      {task.status === 'pending' && task.assigned_to && onExecuteTask && (
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          className="h-7 gap-1 text-xs"
-                          onClick={() => onExecuteTask(task.id, task.assigned_to as string)}
-                        >
-                          <Play className="h-3 w-3" />
-                          Execute
-                        </Button>
-                      )}
+                      <div className="flex gap-2">
+                        {/* Assignment dropdown for all tasks */}
+                        {projectId && agents.length > 0 && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                className="h-7 gap-1 text-xs"
+                                disabled={isAssigning}
+                              >
+                                <UserCircle2 className="h-3 w-3" />
+                                {isAssigning ? 'Assigning...' : 'Assign'}
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {agents.map(agent => (
+                                <DropdownMenuItem 
+                                  key={agent.id}
+                                  onClick={() => handleAssignTask(task.id, agent.id)}
+                                >
+                                  {agent.name}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                        
+                        {/* Execute button for pending assigned tasks */}
+                        {task.status === 'pending' && task.assigned_to && onExecuteTask && (
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            className="h-7 gap-1 text-xs"
+                            onClick={() => onExecuteTask(task.id, task.assigned_to as string)}
+                          >
+                            <Play className="h-3 w-3" />
+                            Execute
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

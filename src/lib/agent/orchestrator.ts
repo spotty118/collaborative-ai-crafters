@@ -2,6 +2,7 @@
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import agentMessageBus from "./agentMessageBus";
+import { MessageType } from "../types";
 
 // Function signatures needed by useCrewAI hook
 export const initializeCrewAI = async (projectId: string): Promise<boolean> => {
@@ -97,15 +98,36 @@ export const startAgentOrchestration = async (projectId: string, agentId: string
       // If task is not assigned to this agent, assign it
       if (taskData.assigned_to !== agentId) {
         console.log(`Task ${taskId} not assigned to agent ${agentId}, updating assignment`);
+        
+        // First update the database directly
         const { error: updateError } = await supabase
           .from('tasks')
-          .update({ assigned_to: agentId, status: 'in_progress' })
+          .update({ 
+            assigned_to: agentId, 
+            status: 'in_progress',
+            updated_at: new Date().toISOString()
+          })
           .eq('id', taskId);
           
         if (updateError) {
           console.error("Error updating task assignment:", updateError);
           toast.error("Failed to assign task to agent");
           return { success: false, message: "Failed to assign task" };
+        }
+        
+        // Then inform the orchestrator about the assignment
+        const { error: assignError } = await supabase.functions.invoke('crew-orchestrator', {
+          body: { 
+            action: 'assign_task',
+            projectId,
+            agentId,
+            taskId
+          }
+        });
+
+        if (assignError) {
+          console.error("Error in task assignment orchestration:", assignError);
+          // Continue anyway since DB update succeeded
         }
         
         console.log(`Successfully assigned task ${taskId} to agent ${agentId}`);
@@ -205,7 +227,7 @@ export const updateAgentProgress = async (
       projectId,
       agentId,
       `Progress updated to ${progress}%`,
-      'progress',
+      'progress' as MessageType,
       { progress, status }
     );
     
@@ -258,7 +280,26 @@ export const assignTask = async (projectId: string, taskId: string, agentId: str
   try {
     console.log(`Manually assigning task ${taskId} to agent ${agentId} in project ${projectId}`);
     
-    // First, update the task in the database
+    // First, get task details to log what's being assigned
+    const { data: taskData, error: taskFetchError } = await supabase
+      .from('tasks')
+      .select('title, status, assigned_to')
+      .eq('id', taskId)
+      .single();
+      
+    if (taskFetchError) {
+      console.error("Error fetching task details:", taskFetchError);
+      toast.error("Failed to fetch task details");
+      return { success: false, message: taskFetchError.message };
+    }
+
+    console.log(`Task ${taskId} details:`, {
+      title: taskData.title,
+      currentStatus: taskData.status,
+      currentAssignment: taskData.assigned_to || 'None'
+    });
+    
+    // Update the task in the database
     const { error: updateError } = await supabase
       .from('tasks')
       .update({ 
@@ -273,6 +314,8 @@ export const assignTask = async (projectId: string, taskId: string, agentId: str
       toast.error("Failed to assign task to agent");
       return { success: false, message: updateError.message };
     }
+    
+    console.log(`Successfully updated task assignment in database`);
     
     // Now invoke the edge function to handle the assignment
     const { data, error } = await supabase.functions.invoke('crew-orchestrator', {
