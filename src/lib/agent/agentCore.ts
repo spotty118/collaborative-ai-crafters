@@ -1,3 +1,4 @@
+
 /**
  * Agent Core Module
  * 
@@ -143,16 +144,16 @@ Keep your response professional and focused on the task.
       });
       
       // Send response back to task assigner
-      await this.sendAgentMessage({
-        to: message.from,
-        content: response,
-        type: 'response',
-        project_id: message.project_id,
-        metadata: {
+      await this.sendMessage(
+        message.project_id,
+        message.from?.id || "",
+        response,
+        "response",
+        {
           inResponseTo: message.id,
           taskId: message.metadata?.taskId
         }
-      });
+      );
       
     } catch (error) {
       console.error(`Error generating task response for agent ${this.agentName}:`, error);
@@ -200,15 +201,15 @@ ${relevantMemories.length > 0 ? `Relevant context from your memory:\n${relevantM
       });
       
       // Send response back
-      await this.sendAgentMessage({
-        to: message.from,
-        content: response,
-        type: 'response',
-        project_id: message.project_id,
-        metadata: {
+      await this.sendMessage(
+        message.project_id,
+        message.from?.id || "",
+        response,
+        "response",
+        {
           inResponseTo: message.id
         }
-      });
+      );
       
     } catch (error) {
       console.error(`Error generating request response for agent ${this.agentName}:`, error);
@@ -230,9 +231,23 @@ ${relevantMemories.length > 0 ? `Relevant context from your memory:\n${relevantM
   }
   
   /**
-   * Send a message to another agent
+   * Send a message to another agent using an easier interface that matches agentMessageBus.send
    */
-  async sendAgentMessage(message: Omit<AgentMessage, 'id' | 'timestamp' | 'from'>): Promise<boolean> {
+  async sendMessage(
+    projectId: string,
+    toAgentId: string,
+    content: string,
+    type: string,
+    metadata: Record<string, any> = {}
+  ): Promise<boolean> {
+    return agentMessageBus.send(projectId, toAgentId, content, type, metadata);
+  }
+  
+  /**
+   * Send a message to another agent
+   * @deprecated Use sendMessage instead
+   */
+  async sendAgentMessage(message: Omit<AgentMessage, 'id' | 'created_at' | 'from'>): Promise<boolean> {
     if (!this.agentId || !this.agentName || !this.agentType) {
       throw new Error('Agent identity not configured');
     }
