@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Use environment variable or fallback to a direct key - this ensures we have a key one way or another
+// Use environment variable or fallback to a direct key
 const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY') || "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";
 
 console.log("OpenRouter function loaded");
@@ -15,12 +15,6 @@ console.log(`OpenRouter API Key available: ${OPENROUTER_API_KEY ? 'Yes' : 'No'}`
 console.log(`API Key prefix: ${OPENROUTER_API_KEY?.substring(0, 8)}...`);
 
 serve(async (req) => {
-  // For debugging on every request
-  console.log(`OpenRouter request received at ${new Date().toISOString()}`);
-  console.log(`Request URL: ${req.url}`);
-  console.log(`Request method: ${req.method}`);
-  console.log('Request headers:', Object.fromEntries(req.headers.entries()));
-
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     console.log("Handling CORS preflight request");
@@ -30,145 +24,27 @@ serve(async (req) => {
   try {
     console.log("Parsing request body");
     const requestData = await req.json();
-    console.log("Request data:", JSON.stringify(requestData).substring(0, 500) + "...");
     
     const { 
       prompt, 
       agentType, 
       projectContext, 
-      model = "anthropic/claude-3.7-sonnet:thinking", 
-      multipartContent = null 
+      model = "anthropic/claude-3.7-sonnet:thinking"
     } = requestData;
     
-    // Log the received request for debugging
-    console.log(`Processing ${agentType} agent request with model: ${model}`);
-    if (projectContext) {
-      console.log("Project context:", JSON.stringify(projectContext).substring(0, 200) + "...");
-    } else {
-      console.log("No project context provided");
-    }
+    console.log(`Processing ${agentType || 'unknown'} agent request with model: ${model}`);
     
-    if (multipartContent) {
-      console.log('Multipart content detected (e.g., text+image)');
-    } else {
-      console.log(`Prompt excerpt: ${prompt?.substring(0, 100) + '...'}`);
-    }
-    
-    // Verify API key is available
     if (!OPENROUTER_API_KEY) {
-      console.error('OpenRouter API key is not set in environment variables or fallback');
+      console.error('OpenRouter API key is not configured');
       return new Response(
-        JSON.stringify({ error: 'OpenRouter API key is not configured. Please set OPENROUTER_API_KEY in Supabase.' }),
+        JSON.stringify({ error: 'OpenRouter API key is not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log(`OpenRouter API Key available: ${OPENROUTER_API_KEY ? 'Yes' : 'No'}`);
-    console.log(`API Key prefix: ${OPENROUTER_API_KEY?.substring(0, 8)}...`);
-
-    // Handle multimodal content (text + images)
-    if (multipartContent) {
-      return await handleMultimodalRequest(multipartContent, model, req, corsHeaders);
-    }
-
-    // Use Claude thinking model for all requests
-    return await handleClaudeThinkingModel(prompt, agentType, projectContext, req, corsHeaders);
-  } catch (error) {
-    console.error('Error in OpenRouter function:', error);
-    console.error('Error stack:', error.stack);
-    return new Response(
-      JSON.stringify({ error: `Internal server error: ${error.message}`, stack: error.stack }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-  }
-});
-
-// Handle multimodal requests (text + images)
-async function handleMultimodalRequest(multipartContent, model, req, corsHeaders) {
-  console.log('Processing multimodal request with model:', model);
-  
-  try {
-    // Log detailed request information
-    console.log('Multipart content structure:', JSON.stringify(multipartContent.map(msg => ({
-      role: msg.role,
-      content: Array.isArray(msg.content) ? 
-        msg.content.map(item => item.type === 'text' ? {type: 'text', excerpt: item.text?.substring(0, 50) + '...'} : {type: item.type}) : 
-        'string content'
-    }))));
-    
-    // Force the correct model
-    const modelToUse = "anthropic/claude-3.7-sonnet:thinking";
-    console.log(`Using model: ${modelToUse} (overriding ${model} if different)`);
-    
-    // Prepare the request to OpenRouter with multipart content
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-        'HTTP-Referer': 'https://example.com',
-        'X-Title': 'Agent Collaboration System'
-      },
-      body: JSON.stringify({
-        model: modelToUse,
-        messages: multipartContent,
-        temperature: 0.3,
-        max_tokens: 4000,
-        thinking: true
-      })
-    });
-
-    // Log response status
-    console.log(`OpenRouter multimodal response status: ${response.status}`);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('OpenRouter multimodal API error response:', errorText);
-      console.error('Response status:', response.status);
-      console.error('Response headers:', Object.fromEntries(response.headers.entries()));
+    // Prepare system instruction
+    const systemInstruction = `You are an AI agent specialized in ${agentType || 'software development'} work.
       
-      try {
-        const errorData = JSON.parse(errorText);
-        console.error('OpenRouter multimodal API error details:', errorData);
-        return new Response(
-          JSON.stringify({ error: `OpenRouter API returned status ${response.status}: ${errorData.error?.message || errorData.error || 'Unknown error'}` }),
-          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      } catch (parseError) {
-        console.error('Failed to parse OpenRouter multimodal error response:', parseError);
-        return new Response(
-          JSON.stringify({ error: `OpenRouter API returned status ${response.status}: ${errorText}` }),
-          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-    }
-
-    const data = await response.json();
-    console.log('OpenRouter multimodal response received successfully');
-    console.log('Response data excerpt:', JSON.stringify(data).substring(0, 200) + '...');
-    
-    // Return the response directly for multimodal content
-    return new Response(
-      JSON.stringify(data),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-  } catch (error) {
-    console.error('Error in multimodal request:', error);
-    console.error('Error stack:', error.stack);
-    return new Response(
-      JSON.stringify({ error: `Error processing multimodal request: ${error.message}`, stack: error.stack }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-  }
-}
-
-// Special handler for the Claude thinking model
-async function handleClaudeThinkingModel(prompt, agentType, projectContext, req, corsHeaders) {
-  // The system instruction tailored for the "thinking" model
-  const systemInstruction = `You are an AI agent specialized in ${agentType} work for a software development project.
-    
-As the ${agentType}, your job includes analyzing problems, planning solutions, and implementing high-quality code.
-
 Project Context: ${projectContext?.name || 'No name'} - ${projectContext?.description || 'No description provided'}.
 
 IMPORTANT INSTRUCTIONS:
@@ -187,21 +63,10 @@ TASK: [Task name]
 ASSIGNED TO: [Agent type, e.g. Frontend]
 DESCRIPTION: [Detailed description]
 PRIORITY: [high/medium/low]`;
+
+    console.log('Sending request to OpenRouter API');
     
-  console.log('Sending request to OpenRouter API with model: anthropic/claude-3.7-sonnet:thinking');
-  console.log(`OpenRouter API Key available: ${OPENROUTER_API_KEY ? 'Yes' : 'No'}`);
-  console.log(`API Key prefix: ${OPENROUTER_API_KEY?.substring(0, 8)}...`);
-  
-  // Log more details about the request
-  console.log('Request details:', {
-    model: 'anthropic/claude-3.7-sonnet:thinking',
-    prompt: prompt?.substring(0, 100) + '...',
-    temperature: 0.3,
-    thinking: true
-  });
-  
-  try {
-    // For Claude with thinking enabled
+    // Prepare request for Claude with thinking enabled
     const requestBody = {
       model: 'anthropic/claude-3.7-sonnet:thinking',
       messages: [
@@ -211,7 +76,7 @@ PRIORITY: [high/medium/low]`;
         },
         {
           role: 'user',
-          content: prompt
+          content: prompt || "Please help with this project."
         }
       ],
       temperature: 0.3,
@@ -219,9 +84,10 @@ PRIORITY: [high/medium/low]`;
       thinking: true
     };
     
-    console.log('Request body:', JSON.stringify(requestBody).substring(0, 500) + '...');
-    console.log('Making request to OpenRouter API at https://openrouter.ai/api/v1/chat/completions');
+    console.log('Request body prepared');
     
+    // Make the API call
+    console.log('Calling OpenRouter API');
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -234,61 +100,29 @@ PRIORITY: [high/medium/low]`;
     });
 
     console.log(`OpenRouter response status: ${response.status}`);
-    console.log('Response headers:', Object.fromEntries(response.headers.entries()));
 
-    const responseText = await response.text();
-    console.log('Raw response from OpenRouter API:', responseText.substring(0, 500) + '...');
-
+    // Handle API errors
     if (!response.ok) {
-      console.error('OpenRouter API error response:', responseText);
+      const errorText = await response.text();
+      console.error('OpenRouter API error response:', errorText);
       
-      try {
-        const errorData = JSON.parse(responseText);
-        console.error('OpenRouter API error details:', errorData);
-        return new Response(
-          JSON.stringify({ error: `OpenRouter API returned status ${response.status}: ${errorData.error?.message || errorData.error || 'Unknown error'}` }),
-          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      } catch (parseError) {
-        console.error('Failed to parse OpenRouter error response:', parseError);
-        return new Response(
-          JSON.stringify({ error: `OpenRouter API returned status ${response.status}: ${responseText}` }),
-          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+      return new Response(
+        JSON.stringify({ error: `OpenRouter API error: ${errorText}` }),
+        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    const data = JSON.parse(responseText);
+    // Process successful response
+    const data = await response.json();
     console.log('OpenRouter response received successfully');
-    console.log('Response data excerpt:', JSON.stringify(data).substring(0, 200) + '...');
     
-    // Enhanced response processing with better code extraction
+    // Extract content and thinking
     let content = data.choices[0].message.content;
     let thinkingContent = data.choices[0].thinking || "";
     
-    console.log('Response content excerpt:', content.substring(0, 200) + '...');
-    if (thinkingContent) {
-      console.log('Thinking content excerpt:', thinkingContent.substring(0, 200) + '...');
-    }
-    
-    // Extract code snippets from the content
+    // Extract code snippets and tasks
     const codeSnippets = extractCodeSnippets(content);
-    console.log(`Extracted ${codeSnippets.length} code snippets`);
-    if (codeSnippets.length > 0) {
-      codeSnippets.forEach((snippet, i) => {
-        console.log(`Snippet ${i+1} path: ${snippet.filePath}`);
-        console.log(`Snippet ${i+1} code (excerpt): ${snippet.code.substring(0, 100)}...`);
-      });
-    }
-    
-    // Extract tasks information from the content
     const tasksInfo = extractTasksInfo(content);
-    console.log(`Extracted ${tasksInfo.length} tasks`);
-    if (tasksInfo.length > 0) {
-      tasksInfo.forEach((task, i) => {
-        console.log(`Task ${i+1}: ${task.title}, assigned to: ${task.assignedTo}, priority: ${task.priority}`);
-      });
-    }
     
     return new Response(
       JSON.stringify({
@@ -306,14 +140,15 @@ PRIORITY: [high/medium/low]`;
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('Error in Claude thinking model request:', error);
+    console.error('Error in OpenRouter function:', error);
     console.error('Error stack:', error.stack);
+    
     return new Response(
-      JSON.stringify({ error: `Error processing Claude thinking model request: ${error.message}`, stack: error.stack }),
+      JSON.stringify({ error: `Internal server error: ${error.message}`, stack: error.stack }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
-}
+});
 
 // Extract code snippets from content
 function extractCodeSnippets(content) {
@@ -335,7 +170,7 @@ function extractCodeSnippets(content) {
 function extractTasksInfo(content) {
   const tasks = [];
   
-  // Match TASK: format (standard format)
+  // Match TASK: format
   const standardRegex = /TASK:\s*(.*?)\nASSIGNED TO:\s*(.*?)\nDESCRIPTION:\s*(.*?)\nPRIORITY:\s*(.*?)(?:\n\n|\n$|$)/gs;
   let match;
   
@@ -348,37 +183,5 @@ function extractTasksInfo(content) {
     });
   }
   
-  // If no tasks found in standard format, try alternative format (for compatibility)
-  if (tasks.length === 0) {
-    const altRegex = /Task:\s*(.*?)\nAssigned to:\s*(.*?)\nDescription:\s*(.*?)\nPriority:\s*(.*?)(?:\n\n|\n$|$)/gis;
-    while ((match = altRegex.exec(content)) !== null) {
-      tasks.push({
-        title: match[1].trim(),
-        assignedTo: match[2].trim(),
-        description: match[3].trim(),
-        priority: match[4].trim().toLowerCase()
-      });
-    }
-  }
-  
-  // Third fallback - look for tasks in a more flexible way
-  if (tasks.length === 0) {
-    // Look for any combination of "task", "assigned", "description", "priority" in flexible order
-    const flexRegex = /(?:task|todo|to-do|task name|title)[\s\:]+([^\n]+)(?:[\s\n]+(?:assigned|agent|assigned to|for)[\s\:]+([^\n]+))?(?:[\s\n]+(?:description|details|task description)[\s\:]+([^\n]+))?(?:[\s\n]+(?:priority|importance)[\s\:]+([^\n]+))?/gis;
-    while ((match = flexRegex.exec(content)) !== null) {
-      // Only add if we can extract at minimum a title
-      if (match[1] && match[1].trim().length > 0) {
-        tasks.push({
-          title: match[1].trim(),
-          assignedTo: (match[2] || 'Architect Agent').trim(),
-          description: (match[3] || match[1]).trim(), // Use title as description if missing
-          priority: (match[4] || 'medium').trim().toLowerCase()
-        });
-      }
-    }
-  }
-  
-  console.log(`Extracted ${tasks.length} tasks from agent response`);
   return tasks;
 }
-

@@ -14,7 +14,7 @@ if (typeof window !== 'undefined') {
   (window as any).OPENROUTER_API_KEY = OPENROUTER_API_KEY;
 }
 
-// Create supabase client once to avoid multiple instances
+// Create a single supabase client instance
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
     persistSession: true,
@@ -28,3 +28,14 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     }
   }
 });
+
+// Add a simple function to check if Supabase is connected
+export const isSupabaseConnected = async (): Promise<boolean> => {
+  try {
+    const { error } = await supabase.from('agent_statuses').select('id').limit(1);
+    return !error;
+  } catch (e) {
+    console.error('Error checking Supabase connection:', e);
+    return false;
+  }
+};
