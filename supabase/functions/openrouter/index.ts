@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
@@ -330,7 +331,7 @@ Focus on creating reliable, scalable infrastructure and deployment processes tha
           { role: 'system', content: fullSystemPrompt },
           { role: 'user', content: prompt }
         ],
-        temperature: 0.7,
+        temperature: 0.3,
         max_tokens: 4096,
         thinking: {
           enabled: true
