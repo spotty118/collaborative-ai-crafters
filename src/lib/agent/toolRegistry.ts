@@ -2,33 +2,35 @@
 /**
  * Tool Registry
  * 
- * Manages the available tools that an agent can use to complete tasks.
- * Provides registration, discovery, and execution interfaces.
+ * Manages the collection of tools available to the agent.
+ * Provides interfaces for registering, discovering, and accessing tools.
  */
 class ToolRegistry {
   private tools: Map<string, any>;
   private categories: Map<string, string[]>;
   
   constructor() {
-    this.tools = new Map();
-    this.categories = new Map();
+    this.tools = new Map(); // Map of tool name to tool instance
+    this.categories = new Map(); // Map of category name to list of tool names
   }
-  
+
   /**
-   * Register a new tool
+   * Register a new tool with the registry
    * @param name - Unique tool identifier
    * @param tool - Tool implementation object
    * @param category - Optional category for organization
    * @returns boolean - Success indicator
    */
   registerTool(name: string, tool: any, category: string = 'general'): boolean {
-    if (this.tools.has(name)) {
-      console.warn(`Tool "${name}" is already registered. Overwriting.`);
+    if (!tool || typeof tool.execute !== 'function') {
+      console.error('Invalid tool registration attempt:', tool);
+      return false;
     }
-    
+
+    // Store the tool
     this.tools.set(name, tool);
-    
-    // Add to category
+
+    // Categorize the tool
     if (!this.categories.has(category)) {
       this.categories.set(category, []);
     }
@@ -40,7 +42,7 @@ class ToolRegistry {
     
     return true;
   }
-  
+
   /**
    * Unregister a tool
    * @param name - Tool identifier to remove
@@ -63,7 +65,7 @@ class ToolRegistry {
     
     return true;
   }
-  
+
   /**
    * Check if a tool exists
    * @param name - Tool identifier
@@ -72,7 +74,7 @@ class ToolRegistry {
   hasTool(name: string): boolean {
     return this.tools.has(name);
   }
-  
+
   /**
    * Get a tool by name
    * @param name - Tool identifier
@@ -85,7 +87,7 @@ class ToolRegistry {
     
     return this.tools.get(name);
   }
-  
+
   /**
    * Get all tools in a category
    * @param category - Category name
@@ -94,7 +96,7 @@ class ToolRegistry {
   getToolsByCategory(category: string): string[] {
     return this.categories.get(category) || [];
   }
-  
+
   /**
    * Get all tool categories
    * @returns Array - List of category names
@@ -102,7 +104,7 @@ class ToolRegistry {
   getCategories(): string[] {
     return Array.from(this.categories.keys());
   }
-  
+
   /**
    * Get descriptions of all registered tools
    * @returns Array - Tool descriptions
@@ -114,12 +116,31 @@ class ToolRegistry {
       descriptions.push({
         name,
         description: tool.description || "No description provided",
+        category: this.getToolCategory(name),
         parameters: tool.parameters || {},
-        category: this.getToolCategory(name)
+        examples: tool.examples || []
       });
     }
     
     return descriptions;
+  }
+
+  /**
+   * Get descriptions of tools by category
+   * @param category - Category name
+   * @returns Array - List of tool descriptions in the category
+   */
+  getToolDescriptionsByCategory(category: string): any[] {
+    const toolNames = this.getToolsByCategory(category);
+    return toolNames.map(name => {
+      const tool = this.getTool(name);
+      return {
+        name,
+        description: tool.description || "No description provided",
+        parameters: tool.parameters || {},
+        examples: tool.examples || []
+      };
+    });
   }
   
   /**
@@ -135,6 +156,27 @@ class ToolRegistry {
     }
     
     return 'uncategorized';
+  }
+
+  /**
+   * Execute a tool by name
+   * @param toolName - Name of the tool to execute
+   * @param params - Parameters for the tool
+   * @param userId - User identifier
+   * @returns Promise<object> - Tool execution result
+   */
+  async executeTool(toolName: string, params: any, userId: string): Promise<any> {
+    const tool = this.getTool(toolName);
+    if (!tool) {
+      throw new Error(`Tool not found: ${toolName}`);
+    }
+
+    try {
+      return await tool.execute(params, userId);
+    } catch (error) {
+      console.error(`Error executing tool ${toolName}:`, error);
+      throw new Error(`Failed to execute tool ${toolName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 }
 
