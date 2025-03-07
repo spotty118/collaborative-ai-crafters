@@ -8,24 +8,54 @@ import {
   ToastTitle,
   ToastViewport,
 } from "@/components/ui/toast"
+import { memo } from "react"
+
+// Memoize individual toast to prevent unnecessary re-renders
+const MemoizedToast = memo(function MemoizedToast({ 
+  id, 
+  title, 
+  description, 
+  action, 
+  ...props 
+}: { 
+  id: string;
+  title?: React.ReactNode;
+  description?: React.ReactNode;
+  action?: React.ReactNode;
+  [key: string]: any;
+}) {
+  return (
+    <Toast key={id} {...props}>
+      <div className="grid gap-1">
+        {title && <ToastTitle>{title}</ToastTitle>}
+        {description && (
+          <ToastDescription>{description}</ToastDescription>
+        )}
+      </div>
+      {action}
+      <ToastClose />
+    </Toast>
+  );
+});
 
 export function Toaster() {
   const { toasts } = useToast()
 
+  // Limit visible toasts to improve performance
+  const visibleToasts = toasts.slice(0, 3);
+
   return (
     <ToastProvider>
-      {toasts.map(function ({ id, title, description, action, ...props }) {
+      {visibleToasts.map(function ({ id, title, description, action, ...props }) {
         return (
-          <Toast key={id} {...props}>
-            <div className="grid gap-1">
-              {title && <ToastTitle>{title}</ToastTitle>}
-              {description && (
-                <ToastDescription>{description}</ToastDescription>
-              )}
-            </div>
-            {action}
-            <ToastClose />
-          </Toast>
+          <MemoizedToast 
+            key={id}
+            id={id}
+            title={title}
+            description={description}
+            action={action}
+            {...props}
+          />
         )
       })}
       <ToastViewport />

@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useCrewAIApi } from '../hooks/useCrewAIApi';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
@@ -15,6 +15,32 @@ interface CrewAIConnectorProps {
 
 export default function CrewAIConnector({ onResultReceived }: CrewAIConnectorProps) {
   const [inputValues, setInputValues] = useState<Record<string, unknown>>({});
+  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastToastTimeRef = useRef<number>(0);
+  
+  // Optimized toast function to prevent spamming
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    const now = Date.now();
+    // Only show a toast if it's been at least 2 seconds since the last one
+    if (now - lastToastTimeRef.current > 2000) {
+      // Clear any pending toasts
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+      
+      // Show the toast based on type
+      if (type === 'success') {
+        toast.success(message);
+      } else if (type === 'error') {
+        toast.error(message);
+      } else {
+        toast(message);
+      }
+      
+      lastToastTimeRef.current = now;
+    }
+  };
+  
   const {
     isLoading,
     requiredInputs,
@@ -31,12 +57,12 @@ export default function CrewAIConnector({ onResultReceived }: CrewAIConnectorPro
       // If we received a task result and it has a result property, call the onResultReceived callback
       if (taskResult && onResultReceived) {
         onResultReceived(taskResult);
-        toast.success("Task completed successfully!");
+        showToast("Task completed successfully!", "success");
       }
     },
     onError: (error) => {
       console.error('API operation failed:', error);
-      toast.error(`API operation failed: ${error.message}`);
+      showToast(`API operation failed: ${error.message}`, "error");
     },
   });
 
@@ -45,16 +71,38 @@ export default function CrewAIConnector({ onResultReceived }: CrewAIConnectorPro
     getRequiredInputs();
   }, [getRequiredInputs]);
 
-  // Poll for task status when taskId changes
+  // Poll for task status when taskId changes, using a more efficient approach
   useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+    
     if (taskId) {
-      const intervalId = setInterval(() => {
+      // Initial check
+      checkTaskStatus();
+      
+      // Set polling with increasing intervals for better performance
+      let interval = 5000; // Start with 5 seconds
+      const maxInterval = 15000; // Max 15 seconds
+      
+      const poll = () => {
         checkTaskStatus();
-      }, 5000); // Check every 5 seconds
-
-      return () => clearInterval(intervalId);
+        
+        // Increase interval if task is progressing to reduce load
+        if (taskStatus?.progress && taskStatus.progress > 50) {
+          interval = Math.min(interval * 1.5, maxInterval);
+        }
+        
+        intervalId = setTimeout(poll, interval);
+      };
+      
+      intervalId = setTimeout(poll, interval);
     }
-  }, [taskId, checkTaskStatus]);
+    
+    return () => {
+      if (intervalId) {
+        clearTimeout(intervalId);
+      }
+    };
+  }, [taskId, checkTaskStatus, taskStatus]);
 
   // Handle input change
   const handleInputChange = (name: string, value: string) => {
@@ -73,16 +121,16 @@ export default function CrewAIConnector({ onResultReceived }: CrewAIConnectorPro
         .map((input) => input.name);
 
       if (missingRequiredInputs.length > 0) {
-        toast.error(`Please provide values for: ${missingRequiredInputs.join(', ')}`);
+        showToast(`Please provide values for: ${missingRequiredInputs.join(', ')}`, "error");
         return;
       }
     }
 
     try {
       await startCrew(inputValues);
-      toast.success("CrewAI task started!");
+      showToast("CrewAI task started!", "success");
     } catch (error) {
-      toast.error("Failed to start CrewAI task. Using mock data instead.");
+      showToast("Failed to start CrewAI task. Using mock data instead.", "error");
     }
   };
 

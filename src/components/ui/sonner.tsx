@@ -1,3 +1,4 @@
+
 import { useTheme } from "next-themes"
 import { Toaster as Sonner } from "sonner"
 
@@ -10,6 +11,15 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      // Limit the number of visible toasts to reduce performance impact
+      visibleToasts={3}
+      // Increase closeButton duration to reduce rapid render cycles
+      closeButton={true}
+      richColors={true}
+      // Add duration to reduce the number of active toasts
+      duration={4000}
+      // Optimize animations
+      expand={false}
       toastOptions={{
         classNames: {
           toast:

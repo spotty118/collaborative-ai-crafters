@@ -18,6 +18,18 @@ const AgentSection = ({
   onStartAgent, 
   onStartAllAgents 
 }: AgentSectionProps) => {
+  // Create a debounced toast function to prevent multiple toasts in rapid succession
+  const debouncedToast = (message: string) => {
+    // Use a simple timestamp-based debounce to prevent toast spam
+    const now = Date.now();
+    if (!debouncedToast.lastToastTime || now - debouncedToast.lastToastTime > 1000) {
+      toast(message);
+      debouncedToast.lastToastTime = now;
+    }
+  };
+  // Add a property to the function to track the last toast time
+  debouncedToast.lastToastTime = 0;
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -25,7 +37,7 @@ const AgentSection = ({
         <Button
           onClick={() => {
             onStartAllAgents();
-            toast("Starting all agents...");
+            debouncedToast("Starting all agents...");
           }}
           disabled={isLoading}
         >
@@ -61,7 +73,7 @@ const AgentSection = ({
               variant="outline"
               onClick={() => {
                 onStartAgent(agent);
-                toast(`Starting ${agent.name}...`);
+                debouncedToast(`Starting ${agent.name}...`);
               }}
               disabled={agent.status === 'working' || isLoading}
             >
