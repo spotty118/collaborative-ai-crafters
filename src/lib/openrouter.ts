@@ -67,6 +67,19 @@ export const sendAgentPrompt = async (
     }
     
     const agentResponse = responseData.choices[0].message.content;
+    const thinkingResponse = responseData.choices[0].thinking || '';
+    
+    if (thinkingResponse) {
+      console.log(`Agent ${agent.name} thinking:`, thinkingResponse.substring(0, 100) + '...');
+      
+      // Create a message with the thinking process (if you want to show it in UI)
+      await createMessage({
+        project_id: project.id,
+        content: `Thinking process: ${thinkingResponse}`,
+        sender: `${agent.name} (Thinking)`,
+        type: "thinking"
+      });
+    }
     
     console.log(`Agent ${agent.name} response:`, agentResponse.substring(0, 100) + '...');
     

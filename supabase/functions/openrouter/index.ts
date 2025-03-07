@@ -1,4 +1,5 @@
 
+import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
@@ -238,7 +239,10 @@ IMPORTANT INSTRUCTIONS:
       ],
       temperature: 0.3,
       max_tokens: 4000,
-      thinking: true
+      thinking: true,
+      extra_body: {
+        thinking: true
+      }
     })
   });
 
@@ -265,7 +269,7 @@ IMPORTANT INSTRUCTIONS:
   console.log('OpenRouter response received successfully');
   console.log('Response status:', response.status);
   console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-  console.log('Response data:', JSON.stringify(data).substring(0, 200) + '...');
+  console.log('Full response data:', JSON.stringify(data));
   
   // Enhanced response processing with better code extraction
   let content = data.choices[0].message.content;
