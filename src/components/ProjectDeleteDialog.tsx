@@ -16,6 +16,9 @@ interface ProjectDeleteDialogProps {
   onClose: () => void;
   onConfirm: () => void;
   isDeleting: boolean;
+  title?: string;
+  description?: string;
+  confirmButtonText?: string;
 }
 
 const ProjectDeleteDialog: React.FC<ProjectDeleteDialogProps> = ({
@@ -24,14 +27,21 @@ const ProjectDeleteDialog: React.FC<ProjectDeleteDialogProps> = ({
   onClose,
   onConfirm,
   isDeleting,
+  title = "Delete Project",
+  description,
+  confirmButtonText = "Delete Project"
 }) => {
+  // Use the provided description or fall back to the default
+  const dialogDescription = description || 
+    `Are you sure you want to delete the project "${projectName}"? This action cannot be undone.`;
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Delete Project</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete the project "{projectName}"? This action cannot be undone.
+            {dialogDescription}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="flex flex-row justify-end gap-2 mt-4">
@@ -43,7 +53,7 @@ const ProjectDeleteDialog: React.FC<ProjectDeleteDialogProps> = ({
             onClick={onConfirm}
             disabled={isDeleting}
           >
-            {isDeleting ? "Deleting..." : "Delete Project"}
+            {isDeleting ? "Deleting..." : confirmButtonText}
           </Button>
         </DialogFooter>
       </DialogContent>
