@@ -1,8 +1,10 @@
+
 // Import necessary dependencies
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { supabase } from "../_shared/supabase-client.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
+// Define proper CORS headers
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -45,7 +47,7 @@ serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { 
-      status: 204,
+      status: 204, // No content for preflight
       headers: corsHeaders 
     });
   }
@@ -85,7 +87,7 @@ serve(async (req) => {
     console.log(`Processing ${action} request for project ${projectId}, agent ${agentId || 'all'}, verbose=${verbose}`);
     
     // Handle different action types
-    let responseData;
+    let responseData = {};
     
     switch (action) {
       case 'start':
@@ -133,17 +135,23 @@ serve(async (req) => {
         throw new Error(`Unknown action: ${action}`);
     }
     
+    // Return success response with proper CORS headers
     return new Response(
       JSON.stringify(responseData),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { 
+        status: 200, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
     );
     
   } catch (error) {
     console.error('Error in CrewAI Orchestrator function:', error);
     
+    // Return error response with proper CORS headers
     return new Response(
       JSON.stringify({ 
-        error: `Failed to process request: ${error.message}` 
+        error: `Failed to process request: ${error.message}`,
+        details: error.stack
       }),
       { 
         status: 500, 
@@ -685,7 +693,7 @@ async function handleGetMessages(projectId: string, agentId: string) {
   return {
     success: true,
     agentId,
-    messages: messages.filter(m => m.projectId === projectId)
+    messages: messages.filter(m => m.projectId === projectId || !projectId)
   };
 }
 
@@ -1114,7 +1122,7 @@ function extractTasksFromPlan(plan: string): Array<{
   
   // Try different patterns for task extraction
   const taskPattern1 = /Task\s*(?:[\d#]+)?[:.\-]\s*([^\n]+)[\n\s]*Agent\s*[:.\-]\s*([^\n]+)[\n\s]*Description\s*[:.\-]\s*([^\n]+)(?:[\n\s]*Priority\s*[:.\-]\s*([^\n]+))?/gi;
-  const taskPattern2 = /Task\s*(?:for)?\s*([^:]+?):\s*([^\n]+?)[\n\s]*Description\s*[:.\-]\s*([^\n]+))?(?:[\n\s]*Priority\s*[:.\-]\s*([^\n]+))?/gi;
+  const taskPattern2 = /Task\s*(?:for)?\s*([^:]+?):\s*([^\n]+?)[\n\s]*Description\s*[:.\-]\s*([^\n]+)?(?:[\n\s]*Priority\s*[:.\-]\s*([^\n]+))?/gi;
   const taskPattern3 = /\-\s*\*\*([^:]+?):*\*\*\s*([^\n]+?)(?:[\n\s]*([^\n]+))?(?:[\n\s]*Priority\s*[:.\-]\s*([^\n]+))?/gi;
   
   let match;

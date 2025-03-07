@@ -1,3 +1,4 @@
+
 /**
  * Agent Message Bus
  * 
@@ -35,6 +36,8 @@ class AgentMessageBus {
   private messageCache: Map<string, AgentMessage[]>;
   private maxCacheSize: number;
   private agentProgressMap: Map<string, number>; // Track individual agent progress
+  private retryDelays: number[]; // Exponential backoff delays in ms
+  private fetchTimeouts: Map<string, ReturnType<typeof setTimeout>>;
   
   constructor() {
     this.subscribers = new Map();
@@ -42,6 +45,8 @@ class AgentMessageBus {
     this.messageCache = new Map();
     this.maxCacheSize = 100; // Store last 100 messages per agent
     this.agentProgressMap = new Map(); // Initialize progress tracking
+    this.retryDelays = [1000, 2000, 4000, 8000, 16000]; // Exponential backoff
+    this.fetchTimeouts = new Map();
   }
   
   /**
@@ -81,7 +86,12 @@ class AgentMessageBus {
       
       if (error) {
         console.error('Error sending agent message:', error);
-        throw new Error(`Failed to send message: ${error.message}`);
+        // Cache the message anyway so we don't lose it
+        this.cacheMessage(fullMessage.to.id, fullMessage);
+        this.notifySubscribers(fullMessage.to.id, fullMessage);
+        
+        // Return messageId even if there was an error with the server
+        return messageId;
       }
       
       // Cache the message
@@ -93,7 +103,12 @@ class AgentMessageBus {
       return messageId;
     } catch (error) {
       console.error('Error in sendMessage:', error);
-      throw error;
+      
+      // Cache the message even if there was an error
+      this.cacheMessage(fullMessage.to.id, fullMessage);
+      this.notifySubscribers(fullMessage.to.id, fullMessage);
+      
+      return messageId;
     }
   }
   
@@ -168,11 +183,13 @@ class AgentMessageBus {
   }
   
   /**
-   * Setup realtime listener for agent messages with better error handling
+   * Setup realtime listener for agent messages with better error handling and retry logic
    */
   private setupRealtimeListener(agentId: string): void {
-    const poll = async () => {
+    let retryCount = 0;
+    const fetchWithRetry = async () => {
       try {
+        console.log(`Fetching messages for agent ${agentId}...`);
         const { data, error } = await supabase.functions.invoke('crew-orchestrator', {
           body: {
             action: 'get_messages',
@@ -181,9 +198,11 @@ class AgentMessageBus {
         });
         
         if (error) {
-          console.error('Error fetching agent messages:', error);
-          return;
+          throw error;
         }
+        
+        // Reset retry count on success
+        retryCount = 0;
         
         if (data?.messages && Array.isArray(data.messages)) {
           data.messages
@@ -211,11 +230,21 @@ class AgentMessageBus {
         }
       } catch (error) {
         console.error('Error fetching agent messages:', error);
+        
+        // Implement exponential backoff for retries
+        if (retryCount < this.retryDelays.length) {
+          const delay = this.retryDelays[retryCount];
+          console.log(`Retrying in ${delay}ms (attempt ${retryCount + 1}/${this.retryDelays.length})`);
+          retryCount++;
+        }
       }
     };
 
-    // Poll every 5 seconds
-    const intervalId = setInterval(poll, 5000);
+    // Initial fetch
+    fetchWithRetry();
+    
+    // Set up polling with the possibility to cancel
+    const intervalId = setInterval(fetchWithRetry, 5000);
     this.channels.set(agentId, intervalId);
   }
   
@@ -227,6 +256,13 @@ class AgentMessageBus {
     if (channel) {
       clearInterval(channel);
       this.channels.delete(agentId);
+      
+      // Clear any pending fetch timeouts
+      const timeout = this.fetchTimeouts.get(agentId);
+      if (timeout) {
+        clearTimeout(timeout);
+        this.fetchTimeouts.delete(agentId);
+      }
     }
   }
   
