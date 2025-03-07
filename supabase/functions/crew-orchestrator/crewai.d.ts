@@ -1,4 +1,5 @@
-declare module "https://esm.sh/crewai@1.0.1" {
+
+declare module "crewai" {
   export class Agent {
     name: string;
     role: string;
@@ -71,7 +72,7 @@ declare module "https://esm.sh/crewai@1.0.1" {
   }
 }
 
-declare module "https://esm.sh/@langchain/openai@0.4.4" {
+declare module "@langchain/openai" {
   export class OpenAI {
     constructor(options: {
       modelName?: string;

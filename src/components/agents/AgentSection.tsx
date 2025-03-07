@@ -20,7 +20,7 @@ const AgentSection = ({
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold">CrewAI Agents</h2>
+        <h2 className="text-xl font-bold">AI Agents</h2>
         <Button
           onClick={onStartAllAgents}
           disabled={isLoading}
