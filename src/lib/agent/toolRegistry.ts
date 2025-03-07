@@ -1,4 +1,3 @@
-
 /**
  * Tool Registry
  * 
@@ -40,10 +39,9 @@ class ToolRegistry {
   /**
    * Register a new tool with the registry
    * @param tool - Tool implementation object
-   * @param category - Optional category for organization
    * @returns boolean - Success indicator
    */
-  registerTool(tool: Tool, category: string = 'general'): boolean {
+  registerTool(tool: Tool): boolean {
     if (!tool || !tool.name || typeof tool.execute !== 'function') {
       console.error('Invalid tool registration attempt:', tool);
       return false;
@@ -53,7 +51,7 @@ class ToolRegistry {
     this.tools.set(tool.name, tool);
 
     // Categorize the tool
-    const toolCategory = category || tool.category || 'general';
+    const toolCategory = tool.category || 'general';
     
     if (!this.categories.has(toolCategory)) {
       this.categories.set(toolCategory, []);

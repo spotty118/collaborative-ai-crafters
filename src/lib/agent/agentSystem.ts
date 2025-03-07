@@ -1,7 +1,7 @@
 
 import AgentCore from './agentCore';
 import MemorySystem from './memorySystem';
-import ToolRegistry from './toolRegistry';
+import ToolRegistry, { Tool } from './toolRegistry';
 import { generateCompletion } from '../agent-llm';
 
 /**
@@ -42,20 +42,25 @@ class AgentSystem {
    */
   private registerDefaultTools(): void {
     // Register a search tool
-    this.tools.registerTool('search', {
+    const searchTool: Tool = {
       name: 'search',
       description: 'Search for information on a topic',
-      parameters: {
-        query: {
+      category: 'information',
+      parameters: [
+        {
+          name: 'query',
           type: 'string',
-          description: 'The search query'
+          description: 'The search query',
+          required: true
         },
-        num_results: {
+        {
+          name: 'num_results',
           type: 'number',
           description: 'Number of results to return',
+          required: false,
           default: 5
         }
-      },
+      ],
       examples: [
         {
           description: 'Search for weather in San Francisco',
@@ -65,7 +70,7 @@ class AgentSystem {
           }
         }
       ],
-      execute: async (input: any) => {
+      execute: async (input: any, userId: string) => {
         console.log('Executing search with query:', input.query);
         return {
           success: true,
@@ -83,27 +88,36 @@ class AgentSystem {
           ]
         };
       }
-    }, 'information');
+    };
+    
+    this.tools.registerTool(searchTool);
 
     // Register a code generation tool
-    this.tools.registerTool('generate_code', {
+    const codeGenTool: Tool = {
       name: 'generate_code',
       description: 'Generate code snippets based on requirements',
-      parameters: {
-        language: {
+      category: 'development',
+      parameters: [
+        {
+          name: 'language',
           type: 'string',
-          description: 'Programming language to use'
+          description: 'Programming language to use',
+          required: true
         },
-        requirements: {
+        {
+          name: 'requirements',
           type: 'string',
-          description: 'Detailed description of code requirements'
+          description: 'Detailed description of code requirements',
+          required: true
         },
-        include_comments: {
+        {
+          name: 'include_comments',
           type: 'boolean',
           description: 'Whether to include comments in the code',
+          required: false,
           default: true
         }
-      },
+      ],
       examples: [
         {
           description: 'Generate a TypeScript function to calculate fibonacci numbers',
@@ -114,7 +128,7 @@ class AgentSystem {
           }
         }
       ],
-      execute: async (input: any) => {
+      execute: async (input: any, userId: string) => {
         const { language, requirements, include_comments = true } = input;
         
         if (!language || !requirements) {
@@ -157,18 +171,23 @@ Respond only with the code and necessary comments. Make sure the code is complet
           };
         }
       }
-    }, 'development');
+    };
+    
+    this.tools.registerTool(codeGenTool);
 
     // Register a calculator tool
-    this.tools.registerTool('calculator', {
+    const calculatorTool: Tool = {
       name: 'calculator',
       description: 'Perform calculations',
-      parameters: {
-        expression: {
+      category: 'utilities',
+      parameters: [
+        {
+          name: 'expression',
           type: 'string',
-          description: 'The mathematical expression to evaluate'
+          description: 'The mathematical expression to evaluate',
+          required: true
         }
-      },
+      ],
       examples: [
         {
           description: 'Calculate 2 + 2',
@@ -183,7 +202,7 @@ Respond only with the code and necessary comments. Make sure the code is complet
           }
         }
       ],
-      execute: async (input: any) => {
+      execute: async (input: any, userId: string) => {
         console.log('Executing calculation:', input.expression);
         try {
           // Simple eval for demonstration - in production, use a safe evaluation method
@@ -199,7 +218,9 @@ Respond only with the code and necessary comments. Make sure the code is complet
           };
         }
       }
-    }, 'utilities');
+    };
+    
+    this.tools.registerTool(calculatorTool);
   }
 
   /**
@@ -218,13 +239,11 @@ Respond only with the code and necessary comments. Make sure the code is complet
 
   /**
    * Register a new tool
-   * @param name - Tool name
    * @param tool - Tool implementation
-   * @param category - Tool category
    * @returns - Success indicator
    */
-  registerTool(name: string, tool: any, category: string = 'general'): boolean {
-    return this.tools.registerTool(name, tool, category);
+  registerTool(tool: Tool): boolean {
+    return this.tools.registerTool(tool);
   }
 
   /**
