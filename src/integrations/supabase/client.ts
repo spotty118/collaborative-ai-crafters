@@ -5,11 +5,13 @@ import type { Database } from './types';
 
 const SUPABASE_URL = "https://igzuqirgmwgxfpbtpsdc.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlnenVxaXJnbXdneGZwYnRwc2RjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzgzNjc5OTAsImV4cCI6MjA1Mzk0Mzk5MH0.FgHcJys1LDlJIVbFSOHKb0fepKdKge0Ai5SGMB0vJlg";
+const OPENROUTER_API_KEY = "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";
 
 // Make these available globally for other modules to use directly
 if (typeof window !== 'undefined') {
   (window as any).SUPABASE_URL = SUPABASE_URL;
   (window as any).SUPABASE_KEY = SUPABASE_PUBLISHABLE_KEY;
+  (window as any).OPENROUTER_API_KEY = OPENROUTER_API_KEY;
 }
 
 // Create supabase client once to avoid multiple instances

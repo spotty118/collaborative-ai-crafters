@@ -7,7 +7,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
+// Use environment variable or fallback to a direct key - this ensures we have a key one way or another
+const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY') || "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";
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -43,12 +44,15 @@ serve(async (req) => {
     
     // Verify API key is available
     if (!OPENROUTER_API_KEY) {
-      console.error('OpenRouter API key is not set in environment variables');
+      console.error('OpenRouter API key is not set in environment variables or fallback');
       return new Response(
         JSON.stringify({ error: 'OpenRouter API key is not configured. Please set OPENROUTER_API_KEY in Supabase.' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    console.log(`OpenRouter API Key available: ${OPENROUTER_API_KEY ? 'Yes' : 'No'}`);
+    console.log(`API Key prefix: ${OPENROUTER_API_KEY?.substring(0, 8)}...`);
 
     // Handle multimodal content (text + images)
     if (multipartContent) {
@@ -174,7 +178,7 @@ PRIORITY: [high/medium/low]`;
     
   console.log('Sending request to OpenRouter API with model: google/gemini-2.0-flash-thinking-exp:free');
   console.log(`OpenRouter API Key available: ${OPENROUTER_API_KEY ? 'Yes' : 'No'}`);
-  console.log(`API Key prefix: ${OPENROUTER_API_KEY?.substring(0, 5)}...`);
+  console.log(`API Key prefix: ${OPENROUTER_API_KEY?.substring(0, 8)}...`);
   
   // Log more details about the request
   console.log('Request details:', {
