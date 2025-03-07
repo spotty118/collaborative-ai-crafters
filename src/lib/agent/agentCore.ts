@@ -1,4 +1,3 @@
-
 /**
  * Agent Core Module
  * 
@@ -10,6 +9,7 @@ import MemorySystem from './memorySystem';
 import ToolRegistry from './toolRegistry';
 import { generateCompletion } from '../agent-llm';
 import agentMessageBus, { AgentMessage } from './agentMessageBus';
+import { MessageType } from '../types';
 
 interface AgentCoreConfig {
   memorySystem: MemorySystem;
@@ -237,7 +237,7 @@ ${relevantMemories.length > 0 ? `Relevant context from your memory:\n${relevantM
     projectId: string,
     toAgentId: string,
     content: string,
-    type: string,
+    type: MessageType,
     metadata: Record<string, any> = {}
   ): Promise<boolean> {
     return agentMessageBus.send(projectId, toAgentId, content, type, metadata);
