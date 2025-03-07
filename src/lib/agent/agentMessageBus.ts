@@ -1,507 +1,322 @@
-
-/**
- * Agent Message Bus
- * 
- * Handles real-time communication between different agents.
- * Implements a publish-subscribe pattern for agent messages.
- */
-
 import { supabase } from "@/integrations/supabase/client";
-import { v4 as uuidv4 } from 'uuid';
 import { toast } from "sonner";
 
+/**
+ * Type definitions for agent messages
+ */
 export interface AgentMessage {
   id: string;
-  from: {
-    id: string;
-    name: string;
-    type: string;
-  };
-  to: {
-    id: string;
-    name?: string;
-    type?: string;
-  };
+  project_id: string;
+  agent_id: string;
   content: string;
-  type: 'request' | 'response' | 'update' | 'notification' | 'task' | 'progress';
-  timestamp: number;
-  projectId: string;
+  type: "text" | "code" | "task" | "error" | "progress" | "notification";
+  status: "pending" | "delivered" | "read";
   metadata?: Record<string, any>;
+  created_at: string;
 }
 
-type MessageCallback = (message: AgentMessage) => void | Promise<void>;
+interface Subscriber {
+  id: string;
+  callback: (message: AgentMessage) => void;
+}
 
+interface MessageCache {
+  [agentId: string]: {
+    lastMessageId?: string;
+    messages: AgentMessage[];
+    lastFetched: number;
+  };
+}
+
+/**
+ * Agent Message Bus for handling inter-agent communication
+ */
 class AgentMessageBus {
-  private subscribers: Map<string, Set<MessageCallback>>;
-  private channels: Map<string, any>; // Store Supabase channel subscriptions
-  private messageCache: Map<string, AgentMessage[]>;
-  private maxCacheSize: number;
-  private agentProgressMap: Map<string, number>; // Track individual agent progress
-  private retryDelays: number[]; // Exponential backoff delays in ms
-  private fetchTimeouts: Map<string, ReturnType<typeof setTimeout>>;
-  private useFallbackHttp: boolean = false; // Flag to use direct HTTP when Supabase Functions fail
-  
+  private subscribers: Map<string, Subscriber[]> = new Map();
+  private pollingInterval: number = 5000;
+  private pollingTimers: Map<string, NodeJS.Timer> = new Map();
+  private messageCache: MessageCache = {};
+  private initialized: boolean = false;
+  private retryCount: Map<string, number> = new Map();
+  private MAX_RETRIES = 3;
+  private fallbackToHttp: boolean = false;
+
+  /**
+   * Initialize the message bus
+   */
   constructor() {
-    this.subscribers = new Map();
-    this.channels = new Map();
-    this.messageCache = new Map();
-    this.maxCacheSize = 100; // Store last 100 messages per agent
-    this.agentProgressMap = new Map(); // Initialize progress tracking
-    this.retryDelays = [1000, 2000, 4000, 8000, 16000]; // Exponential backoff
-    this.fetchTimeouts = new Map();
+    // Initialize on first use instead of constructor
   }
-  
+
   /**
-   * Send a message from one agent to another
+   * Initialize the message bus
    */
-  async sendMessage(message: Omit<AgentMessage, 'id' | 'timestamp'>): Promise<string> {
-    const messageId = uuidv4();
-    const timestamp = Date.now();
+  private initialize() {
+    if (this.initialized) return;
+    this.initialized = true;
+    console.log("Initializing agent message bus");
     
-    const fullMessage: AgentMessage = {
-      ...message,
-      id: messageId,
-      timestamp
-    };
-    
-    // Update progress if this is a progress message
-    if (message.type === 'progress' && message.metadata?.progress !== undefined) {
-      this.updateAgentProgress(message.from.id, message.metadata.progress);
-    }
-    
-    try {
-      // Try to store message in the database with proper error handling
-      let success = false;
-      
-      if (!this.useFallbackHttp) {
-        try {
-          const { data, error } = await supabase.functions.invoke('crew-orchestrator', {
-            body: {
-              action: 'send_message',
-              projectId: message.projectId,
-              messageData: {
-                id: messageId,
-                fromAgentId: message.from.id,
-                toAgentId: message.to.id,
-                content: message.content,
-                type: message.type,
-                metadata: message.metadata
-              }
-            }
-          });
-          
-          if (error) {
-            console.error('Error sending agent message via Supabase Edge Function:', error);
-            // Fall back to direct HTTP if Supabase Functions fail
-            this.useFallbackHttp = true;
-          } else {
-            success = true;
-          }
-        } catch (error) {
-          console.error('Exception in sendMessage via Supabase Edge Function:', error);
-          // Enable fallback mode after error
-          this.useFallbackHttp = true;
-        }
+    // Test the connection to the Edge Function
+    this.testEdgeFunction().then((result) => {
+      this.fallbackToHttp = !result;
+      if (this.fallbackToHttp) {
+        console.info("Fallback HTTP mode enabled");
       }
-      
-      // If Supabase Function failed or fallback is already enabled, use direct API
-      if (!success && this.useFallbackHttp) {
-        try {
-          // Store message directly in the agent_messages table
-          const { error } = await supabase
-            .from('agent_messages')
-            .insert([{
-              id: messageId,
-              from_agent_id: message.from.id,
-              to_agent_id: message.to.id,
-              project_id: message.projectId,
-              content: message.content,
-              type: message.type,
-              status: 'pending',
-              metadata: message.metadata
-            }]);
-            
-          if (error) {
-            console.error('Error sending agent message via direct API:', error);
-            toast.error('Failed to send agent message');
-          } else {
-            success = true;
-          }
-        } catch (directError) {
-          console.error('Exception in sendMessage via direct API:', directError);
-        }
-      }
-      
-      // Cache the message regardless of delivery status
-      this.cacheMessage(fullMessage.to.id, fullMessage);
-      
-      // Notify subscribers
-      this.notifySubscribers(fullMessage.to.id, fullMessage);
-      
-      return messageId;
-    } catch (error) {
-      console.error('Error in sendMessage:', error);
-      
-      // Cache the message even if there was an error
-      this.cacheMessage(fullMessage.to.id, fullMessage);
-      this.notifySubscribers(fullMessage.to.id, fullMessage);
-      
-      return messageId;
-    }
-  }
-  
-  /**
-   * Send a progress update for an agent
-   */
-  async updateProgress(
-    fromAgent: { id: string, name: string, type: string },
-    progress: number,
-    projectId: string
-  ): Promise<string> {
-    // Update local progress tracking
-    this.updateAgentProgress(fromAgent.id, progress);
-    
-    // Persist to database
-    try {
-      await supabase
-        .from('agent_statuses')
-        .update({ progress })
-        .eq('id', fromAgent.id);
-    } catch (error) {
-      console.error('Error updating agent progress in database:', error);
-    }
-    
-    // Create and send progress update message
-    return this.sendMessage({
-      from: fromAgent,
-      to: { id: 'system' }, // Send to system
-      content: `Agent progress updated to ${progress}%`,
-      type: 'progress',
-      projectId,
-      metadata: { progress }
     });
   }
-  
+
   /**
-   * Get current progress for an agent
+   * Test the Edge Function connectivity
    */
-  getAgentProgress(agentId: string): number {
-    return this.agentProgressMap.get(agentId) || 0;
+  private async testEdgeFunction(): Promise<boolean> {
+    try {
+      const { data, error } = await supabase.functions.invoke('crew-orchestrator', {
+        body: { action: 'ping' }
+      });
+      
+      return !error && data?.success;
+    } catch (error) {
+      console.error("Edge function test failed:", error);
+      return false;
+    }
   }
-  
+
   /**
-   * Update agent progress locally
+   * Send a message to an agent
    */
-  private updateAgentProgress(agentId: string, progress: number): void {
-    this.agentProgressMap.set(agentId, progress);
+  async send(
+    projectId: string, 
+    toAgentId: string, 
+    content: string, 
+    type: AgentMessage["type"] = "text",
+    metadata: Record<string, any> = {}
+  ): Promise<boolean> {
+    if (!this.initialized) this.initialize();
+    
+    try {
+      // Create a chat message for the UI to see
+      await supabase
+        .from('chat_messages')
+        .insert([{
+          project_id: projectId,
+          content,
+          sender: metadata.sender || "System",
+          type
+        }]);
+      
+      // Update agent progress if this is a progress message
+      if (type === "progress" && metadata.progress !== undefined) {
+        const progress = Number(metadata.progress);
+        if (!isNaN(progress)) {
+          await supabase
+            .from('agent_statuses')
+            .update({ progress })
+            .eq('id', toAgentId);
+            
+          console.log(`Updated agent ${toAgentId} progress to ${progress}%`);
+        }
+      }
+      
+      return true;
+    } catch (error) {
+      console.error("Error sending message:", error);
+      return false;
+    }
   }
-  
+
   /**
-   * Subscribe to messages for a specific agent
+   * Subscribe to messages for an agent
    */
-  subscribe(agentId: string, callback: MessageCallback): () => void {
+  subscribe(agentId: string, callback: (message: AgentMessage) => void): () => void {
+    if (!this.initialized) this.initialize();
+    
+    const subscriberId = Math.random().toString(36).substring(2, 15);
+    
     if (!this.subscribers.has(agentId)) {
-      this.subscribers.set(agentId, new Set());
+      this.subscribers.set(agentId, []);
       this.setupRealtimeListener(agentId);
     }
     
-    this.subscribers.get(agentId)?.add(callback);
+    this.subscribers.get(agentId)!.push({ id: subscriberId, callback });
     
-    // Return unsubscribe function
+    // Initialize cache for this agent if not exists
+    if (!this.messageCache[agentId]) {
+      this.messageCache[agentId] = {
+        messages: [],
+        lastFetched: 0
+      };
+    }
+    
+    // Initial fetch of messages
+    this.fetchMessages(agentId);
+    
     return () => {
-      const callbacks = this.subscribers.get(agentId);
-      if (callbacks) {
-        callbacks.delete(callback);
-        if (callbacks.size === 0) {
-          this.subscribers.delete(agentId);
-          this.removeRealtimeListener(agentId);
-        }
-      }
+      this.unsubscribe(agentId, subscriberId);
     };
   }
-  
+
   /**
-   * Setup realtime listener for agent messages with better error handling and retry logic
+   * Unsubscribe from messages
+   */
+  private unsubscribe(agentId: string, subscriberId: string): void {
+    const agentSubscribers = this.subscribers.get(agentId);
+    
+    if (!agentSubscribers) return;
+    
+    const updatedSubscribers = agentSubscribers.filter(sub => sub.id !== subscriberId);
+    
+    if (updatedSubscribers.length === 0) {
+      this.subscribers.delete(agentId);
+      
+      // Clear polling timer
+      const timer = this.pollingTimers.get(agentId);
+      if (timer) {
+        clearInterval(timer);
+        this.pollingTimers.delete(agentId);
+      }
+    } else {
+      this.subscribers.set(agentId, updatedSubscribers);
+    }
+  }
+
+  /**
+   * Get progress for an agent
+   */
+  getAgentProgress(agentId: string): number {
+    const cache = this.messageCache[agentId];
+    
+    if (!cache || !cache.messages) return 0;
+    
+    // Find latest progress message
+    const progressMessages = cache.messages
+      .filter(msg => msg.type === "progress" && msg.metadata?.progress !== undefined)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      
+    if (progressMessages.length > 0 && progressMessages[0].metadata?.progress !== undefined) {
+      return Number(progressMessages[0].metadata.progress);
+    }
+    
+    return 0;
+  }
+
+  /**
+   * Fetch messages for an agent
+   */
+  private async fetchMessages(agentId: string): Promise<void> {
+    try {
+      console.info(`Fetching messages for agent ${agentId}...`);
+      
+      // In production, we'd fetch from messages table
+      // For now, we'll just get the agent status to show progress
+      const { data, error } = await supabase
+        .from('agent_statuses')
+        .select('progress, status')
+        .eq('id', agentId)
+        .single();
+        
+      if (error) {
+        throw error;
+      }
+      
+      if (data) {
+        // Create a synthetic progress message
+        const progressMessage: AgentMessage = {
+          id: `progress-${Date.now()}`,
+          project_id: '',
+          agent_id: agentId,
+          content: `Agent progress updated to ${data.progress}%`,
+          type: 'progress',
+          status: 'delivered',
+          metadata: { progress: data.progress, status: data.status },
+          created_at: new Date().toISOString()
+        };
+        
+        // Update cache and notify subscribers
+        this.updateCache(agentId, [progressMessage]);
+        this.notifySubscribers(agentId, progressMessage);
+      }
+      
+      // Reset retry count on success
+      this.retryCount.set(agentId, 0);
+    } catch (error) {
+      console.error("Error fetching agent status:", error);
+      
+      // Increment retry count
+      const currentRetries = this.retryCount.get(agentId) || 0;
+      this.retryCount.set(agentId, currentRetries + 1);
+      
+      // If we've exceeded max retries, stop trying to avoid overwhelming the server
+      if (currentRetries >= this.MAX_RETRIES) {
+        console.warn(`Max retries exceeded for agent ${agentId}, pausing status updates`);
+        const timer = this.pollingTimers.get(agentId);
+        if (timer) {
+          clearInterval(timer);
+          this.pollingTimers.delete(agentId);
+        }
+      }
+    }
+  }
+
+  /**
+   * Set up realtime listener for an agent
    */
   private setupRealtimeListener(agentId: string): void {
-    let retryCount = 0;
+    // Already have a polling timer for this agent
+    if (this.pollingTimers.has(agentId)) return;
     
-    // Function to poll for messages
-    const poll = async () => {
-      try {
-        console.log(`Fetching messages for agent ${agentId}...`);
-        
-        let data;
-        let error;
-        
-        if (!this.useFallbackHttp) {
-          // Try Edge Function first
-          try {
-            const response = await supabase.functions.invoke('crew-orchestrator', {
-              body: {
-                action: 'get_messages',
-                agentId
-              }
-            });
-            
-            data = response.data;
-            error = response.error;
-            
-            if (error) {
-              console.error('Error in Edge Function, switching to direct API:', error);
-              this.useFallbackHttp = true;
-            }
-          } catch (fnError) {
-            console.error('Edge Function exception, switching to direct API:', fnError);
-            this.useFallbackHttp = true;
-            error = fnError;
-          }
-        }
-        
-        // If Edge Function failed or fallback is enabled, use direct API
-        if (this.useFallbackHttp || error) {
-          try {
-            const { data: messages, error: apiError } = await supabase
-              .from('agent_messages')
-              .select('*')
-              .eq('to_agent_id', agentId)
-              .in('status', ['pending', 'delivered'])
-              .order('created_at', { ascending: true });
-              
-            if (apiError) {
-              throw apiError;
-            }
-            
-            data = { messages, success: true };
-          } catch (directError) {
-            console.error('Error fetching messages via direct API:', directError);
-            error = directError;
-          }
-        }
-        
-        // Reset retry count on success
-        if (!error) {
-          retryCount = 0;
-        }
-        
-        if (data?.messages && Array.isArray(data.messages)) {
-          data.messages
-            .filter(msg => msg.status === 'pending' || msg.status === 'delivered')
-            .forEach(msg => {
-              const message: AgentMessage = {
-                id: msg.id,
-                from: {
-                  id: msg.from_agent_id || msg.fromAgentId,
-                  name: 'Unknown',
-                  type: 'unknown'
-                },
-                to: {
-                  id: msg.to_agent_id || msg.toAgentId
-                },
-                content: msg.content,
-                type: msg.type as any,
-                timestamp: new Date(msg.created_at || Date.now()).getTime(),
-                projectId: msg.project_id || msg.projectId,
-                metadata: msg.metadata
-              };
-              
-              this.notifySubscribers(agentId, message);
-              
-              // Mark message as delivered if using direct API
-              if (this.useFallbackHttp) {
-                supabase
-                  .from('agent_messages')
-                  .update({ status: 'delivered' })
-                  .eq('id', msg.id)
-                  .then(() => {
-                    console.log(`Marked message ${msg.id} as delivered`);
-                  })
-                  .catch(updateError => {
-                    console.error('Error updating message status:', updateError);
-                  });
-              }
-            });
-        }
-      } catch (error) {
-        console.error('Error fetching agent messages:', error);
-        
-        // Implement exponential backoff for retries
-        if (retryCount < this.retryDelays.length) {
-          const delay = this.retryDelays[retryCount];
-          console.log(`Retrying in ${delay}ms (attempt ${retryCount + 1}/${this.retryDelays.length})`);
-          retryCount++;
-        }
-      }
-    };
+    // Set up polling as fallback mechanism
+    const timerId = setInterval(() => this.fetchMessages(agentId), this.pollingInterval);
+    this.pollingTimers.set(agentId, timerId);
+  }
 
-    // Initial fetch
-    poll();
-    
-    // Set up polling with the possibility to cancel
-    const intervalId = setInterval(poll, 5000);
-    this.channels.set(agentId, intervalId);
-  }
-  
   /**
-   * Remove realtime listener
+   * Update the message cache
    */
-  private removeRealtimeListener(agentId: string): void {
-    const channel = this.channels.get(agentId);
-    if (channel) {
-      clearInterval(channel);
-      this.channels.delete(agentId);
-      
-      // Clear any pending fetch timeouts
-      const timeout = this.fetchTimeouts.get(agentId);
-      if (timeout) {
-        clearTimeout(timeout);
-        this.fetchTimeouts.delete(agentId);
-      }
-    }
-  }
-  
-  /**
-   * Cache a message for later retrieval
-   */
-  private cacheMessage(agentId: string, message: AgentMessage): void {
-    if (!this.messageCache.has(agentId)) {
-      this.messageCache.set(agentId, []);
+  private updateCache(agentId: string, messages: AgentMessage[]): void {
+    if (!this.messageCache[agentId]) {
+      this.messageCache[agentId] = {
+        messages: [],
+        lastFetched: Date.now()
+      };
     }
     
-    const cache = this.messageCache.get(agentId)!;
-    cache.push(message);
+    // Update the cache with new messages
+    const cache = this.messageCache[agentId];
+    const existingIds = new Set(cache.messages.map(m => m.id));
     
-    // Trim cache if it exceeds max size
-    if (cache.length > this.maxCacheSize) {
-      cache.shift();
+    // Add only new messages to avoid duplicates
+    const newMessages = messages.filter(m => !existingIds.has(m.id));
+    
+    cache.messages = [...cache.messages, ...newMessages];
+    cache.lastFetched = Date.now();
+    
+    // Sort messages by creation time
+    cache.messages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    
+    // Keep only last 100 messages to avoid memory issues
+    if (cache.messages.length > 100) {
+      cache.messages = cache.messages.slice(-100);
     }
   }
-  
+
   /**
    * Notify subscribers of a new message
    */
   private notifySubscribers(agentId: string, message: AgentMessage): void {
-    const callbacks = this.subscribers.get(agentId);
-    if (callbacks) {
-      callbacks.forEach(callback => {
-        try {
-          callback(message);
-        } catch (error) {
-          console.error('Error in message subscriber callback:', error);
-        }
-      });
-    }
+    const subscribers = this.subscribers.get(agentId);
     
-    // If this is a progress message, also notify any system subscribers
-    if (message.type === 'progress') {
-      const systemCallbacks = this.subscribers.get('system');
-      if (systemCallbacks) {
-        systemCallbacks.forEach(callback => {
-          try {
-            callback(message);
-          } catch (error) {
-            console.error('Error in system subscriber callback:', error);
-          }
-        });
+    if (!subscribers) return;
+    
+    subscribers.forEach(subscriber => {
+      try {
+        subscriber.callback(message);
+      } catch (error) {
+        console.error(`Error notifying subscriber ${subscriber.id}:`, error);
       }
-    }
-  }
-  
-  /**
-   * Get cached messages for an agent
-   */
-  getCachedMessages(agentId: string): AgentMessage[] {
-    return this.messageCache.get(agentId) || [];
-  }
-  
-  /**
-   * Broadcast a message to all agents of a specific type
-   */
-  async broadcastToType(
-    fromAgent: { id: string, name: string, type: string },
-    targetType: string,
-    content: string,
-    projectId: string,
-    metadata?: Record<string, any>
-  ): Promise<number> {
-    try {
-      // Fetch all agents of the target type
-      const { data: agents, error } = await supabase
-        .from('agent_statuses')
-        .select('id, name, agent_type')
-        .eq('project_id', projectId)
-        .eq('agent_type', targetType);
-        
-      if (error) {
-        console.error('Error fetching agents for broadcast:', error);
-        throw error;
-      }
-      
-      if (!agents || agents.length === 0) {
-        return 0;
-      }
-      
-      // Send message to each agent
-      const sendPromises = agents.map(agent => 
-        this.sendMessage({
-          from: fromAgent,
-          to: {
-            id: agent.id,
-            name: agent.name,
-            type: agent.agent_type
-          },
-          content,
-          type: 'notification',
-          projectId,
-          metadata
-        })
-      );
-      
-      await Promise.all(sendPromises);
-      
-      return agents.length;
-    } catch (error) {
-      console.error('Error in broadcastToType:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Force fallback to direct HTTP API (for testing or when Edge Function is known to be down)
-   */
-  forceFallbackMode(enabled: boolean = true): void {
-    this.useFallbackHttp = enabled;
-    console.log(`Fallback HTTP mode ${enabled ? 'enabled' : 'disabled'}`);
-    
-    if (enabled) {
-      toast.info('Using direct API for agent communication');
-    }
-  }
-  
-  /**
-   * Reset all communication channels and reconnect
-   */
-  resetAndReconnect(): void {
-    // Clear all intervals
-    for (const [agentId, interval] of this.channels.entries()) {
-      clearInterval(interval);
-    }
-    
-    this.channels.clear();
-    
-    // Re-establish all connections
-    for (const agentId of this.subscribers.keys()) {
-      this.setupRealtimeListener(agentId);
-    }
-    
-    toast.success('Agent communication channels reset');
+    });
   }
 }
 
-// Export singleton instance
+// Export a singleton instance
 const agentMessageBus = new AgentMessageBus();
-
-// Initialize in fallback mode since Edge Function has issues
-agentMessageBus.forceFallbackMode(true);
-
 export default agentMessageBus;

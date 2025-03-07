@@ -84,6 +84,19 @@ export const startAgentOrchestration = async (
         sender: agentData?.name || 'Agent',
         type: 'text'
       }]);
+    
+    // Notify through message bus system
+    await agentMessageBus.send(
+      projectId,
+      agentId,
+      `Agent ${agentData?.name || 'Unknown'} status updated to working`,
+      'progress',
+      { 
+        progress: 10, 
+        status: 'working',
+        sender: 'System'
+      }
+    );
       
     return { 
       success: true, 
@@ -178,6 +191,19 @@ export const stopAgentOrchestration = async (
         sender: agentData?.name || 'Agent',
         type: 'text'
       }]);
+    
+    // Notify through message bus system
+    await agentMessageBus.send(
+      projectId,
+      agentId,
+      `Agent ${agentData?.name || 'Unknown'} status updated to idle`,
+      'progress',
+      { 
+        progress: 0, 
+        status: 'idle',
+        sender: 'System'
+      }
+    );
       
     return { 
       success: true, 
@@ -192,132 +218,165 @@ export const stopAgentOrchestration = async (
 };
 
 /**
- * Simulate an agent making progress by updating its status and progress periodically
- * This is a temporary function until the actual agent system is fully working
+ * Update agent progress
  */
-export const simulateAgentProgress = async (
+export const updateAgentProgress = async (
   projectId: string,
   agentId: string,
-  taskId?: string,
-  totalSteps: number = 5
-): Promise<void> => {
-  let currentStep = 0;
+  progress: number,
+  status: string = 'working'
+): Promise<{ success: boolean; message: string }> => {
+  console.log(`Updating agent progress: Project ${projectId}, Agent ${agentId}, Progress ${progress}%, Status ${status}`);
   
-  // Get agent data
-  const { data: agent } = await supabase
-    .from('agent_statuses')
-    .select('name, agent_type')
-    .eq('id', agentId)
-    .single();
-    
-  if (!agent) {
-    console.error('Agent not found');
-    return;
-  }
-  
-  // Get task data if provided
-  let task;
-  if (taskId) {
-    const { data } = await supabase
-      .from('tasks')
-      .select('title, description')
-      .eq('id', taskId)
-      .single();
-      
-    task = data;
-  }
-  
-  // Update progress at regular intervals
-  const interval = setInterval(async () => {
-    currentStep++;
-    const progress = Math.min(Math.floor((currentStep / totalSteps) * 100), 100);
-    
-    // Update agent status
-    await supabase
+  try {
+    // Update agent status in the database
+    const { error: updateError } = await supabase
       .from('agent_statuses')
-      .update({ progress, status: progress < 100 ? 'working' : 'idle' })
+      .update({ 
+        status, 
+        progress,
+        updated_at: new Date().toISOString()
+      })
       .eq('id', agentId);
       
-    // Add a message to indicate progress
-    let message = '';
-    
-    if (currentStep === 1) {
-      message = task
-        ? `I'm starting work on task: "${task.title}". First, I'll analyze what needs to be done.`
-        : `I'm starting my work on this project. Analyzing requirements...`;
-    } else if (currentStep === 2) {
-      message = task
-        ? `I've analyzed the requirements for "${task.title}". Now implementing the solution.`
-        : `Initial analysis complete. Now working on implementation details.`;
-    } else if (currentStep === totalSteps - 1) {
-      message = task
-        ? `Almost done with "${task.title}". Finalizing the implementation.`
-        : `Almost finished with my current tasks. Finalizing the work.`;
-    } else if (currentStep === totalSteps) {
-      message = task
-        ? `I've completed the task "${task.title}".`
-        : `I've completed my assigned work.`;
-        
-      // Update task status if provided
-      if (taskId) {
-        await supabase
-          .from('tasks')
-          .update({ 
-            status: 'completed',
-            completed_at: new Date().toISOString()
-          })
-          .eq('id', taskId);
-      }
-      
-      // Clear the interval when done
-      clearInterval(interval);
-    } else {
-      message = `Making progress on ${task ? `task "${task.title}"` : 'my assigned work'}. Current progress: ${progress}%`;
+    if (updateError) {
+      throw updateError;
     }
     
-    // Add a message to the chat
+    // Get agent details for notification
+    const { data: agentData } = await supabase
+      .from('agent_statuses')
+      .select('name')
+      .eq('id', agentId)
+      .single();
+    
+    // Only create chat message for significant progress updates
+    if (progress % 20 === 0 || progress === 100) {
+      await supabase
+        .from('chat_messages')
+        .insert([{
+          project_id: projectId,
+          content: progress === 100 
+            ? `I've completed my assigned task.` 
+            : `Making progress on my assigned task. Current progress: ${progress}%`,
+          sender: agentData?.name || 'Agent',
+          type: 'text'
+        }]);
+    }
+    
+    // Notify through message bus system
+    await agentMessageBus.send(
+      projectId,
+      agentId,
+      `Agent ${agentData?.name || 'Unknown'} progress update: ${progress}%`,
+      'progress',
+      { 
+        progress, 
+        status,
+        sender: 'System'
+      }
+    );
+    
+    return {
+      success: true,
+      message: `Agent progress updated successfully`
+    };
+    
+  } catch (error) {
+    console.error('Error updating agent progress:', error);
+    
+    return {
+      success: false,
+      message: `Failed to update agent progress: ${error instanceof Error ? error.message : 'Unknown error'}`
+    };
+  }
+};
+
+/**
+ * Complete a task
+ */
+export const completeTask = async (
+  projectId: string,
+  agentId: string,
+  taskId: string
+): Promise<{ success: boolean; message: string }> => {
+  console.log(`Completing task: Project ${projectId}, Agent ${agentId}, Task ${taskId}`);
+  
+  try {
+    // Update task status
+    const { error: taskError } = await supabase
+      .from('tasks')
+      .update({ 
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', taskId);
+      
+    if (taskError) {
+      throw taskError;
+    }
+    
+    // Get agent details
+    const { data: agentData } = await supabase
+      .from('agent_statuses')
+      .select('name')
+      .eq('id', agentId)
+      .single();
+    
+    // Get task details
+    const { data: taskData } = await supabase
+      .from('tasks')
+      .select('title')
+      .eq('id', taskId)
+      .single();
+    
+    // Create a chat message
     await supabase
       .from('chat_messages')
       .insert([{
         project_id: projectId,
-        content: message,
-        sender: agent.name,
+        content: `I have completed the task: "${taskData?.title || 'Unknown task'}"`,
+        sender: agentData?.name || 'Agent',
         type: 'text'
       }]);
-      
-    // If this is the last step, create a code file to demonstrate work
-    if (currentStep === totalSteps && agent.agent_type.toLowerCase() === 'frontend') {
-      await supabase
-        .from('code_files')
-        .insert([{
-          project_id: projectId,
-          name: 'DemoComponent.tsx',
-          path: '/src/components/DemoComponent.tsx',
-          content: `import React from 'react';
-
-const DemoComponent = () => {
-  return (
-    <div className="p-4 bg-white rounded-lg shadow">
-      <h2 className="text-xl font-semibold mb-4">Demo Component</h2>
-      <p className="text-gray-700">
-        This is a demo component created by the ${agent.name}.
-      </p>
-      <button className="mt-4 px-4 py-2 bg-blue-500 text-white rounded">
-        Click me
-      </button>
-    </div>
-  );
-};
-
-export default DemoComponent;`,
-          language: 'tsx',
-          created_by: agent.name,
-          last_modified_by: agent.name
-        }]);
-    }
     
-  }, 10000); // Update every 10 seconds
-  
-  // Store the interval ID for cleanup
-  return () => clearInterval(interval);
+    // Update agent status to idle if it was working
+    await supabase
+      .from('agent_statuses')
+      .update({ 
+        status: 'idle', 
+        progress: 100,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', agentId)
+      .eq('status', 'working');
+    
+    // Notify through message bus system
+    await agentMessageBus.send(
+      projectId,
+      agentId,
+      `Task completion: ${taskData?.title || 'Unknown task'}`,
+      'progress',
+      { 
+        progress: 100, 
+        status: 'idle',
+        taskId,
+        sender: 'System'
+      }
+    );
+    
+    return {
+      success: true,
+      message: `Task completed successfully`
+    };
+    
+  } catch (error) {
+    console.error('Error completing task:', error);
+    
+    return {
+      success: false,
+      message: `Failed to complete task: ${error instanceof Error ? error.message : 'Unknown error'}`
+    };
+  }
 };
