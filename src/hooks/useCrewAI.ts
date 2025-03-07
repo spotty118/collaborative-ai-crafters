@@ -1,6 +1,6 @@
 
 import { useState, useCallback } from 'react';
-import { Project, Agent, Task } from '@/lib/types';
+import { Project, Agent } from '@/lib/types';
 import { toast } from 'sonner';
 import { 
   initializeCrewAI, 

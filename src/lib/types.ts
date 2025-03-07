@@ -1,9 +1,9 @@
-
 export type ProjectMode = "new" | "existing";
 
 export type AgentStatus = "idle" | "working" | "completed" | "failed" | "waiting" | "running";
 export type TaskStatus = "pending" | "in_progress" | "completed" | "failed";
 export type TaskPriority = "low" | "medium" | "high";
+export type MessageType = "text" | "code" | "task" | "error" | "progress" | "notification" | "request" | "response";
 
 export interface TechStack {
   frontend: string;
@@ -111,7 +111,7 @@ export interface Message {
   project_id: string;
   content: string;
   sender: string;
-  type: string;
+  type: MessageType;
   code_language?: string;
   created_at?: string;
   timestamp?: string;
@@ -121,7 +121,7 @@ export interface MessageDB {
   project_id: string;
   content: string;
   sender: string;
-  type: string;
+  type: MessageType;
   code_language?: string;
 }
 

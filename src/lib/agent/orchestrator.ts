@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import agentMessageBus from "./agentMessageBus";
 import { toast } from "sonner";
@@ -378,5 +377,95 @@ export const completeTask = async (
       success: false,
       message: `Failed to complete task: ${error instanceof Error ? error.message : 'Unknown error'}`
     };
+  }
+};
+
+/**
+ * Initialize CrewAI orchestration for a project
+ */
+export const initializeCrewAI = async (
+  projectId: string
+): Promise<boolean> => {
+  console.log(`Initializing CrewAI orchestration for project ${projectId}`);
+  
+  try {
+    // This is a placeholder implementation that just returns success
+    // In a real implementation, you would initialize CrewAI here
+    
+    // For now, we'll just create a chat message to indicate initialization
+    await supabase
+      .from('chat_messages')
+      .insert([{
+        project_id: projectId,
+        content: `CrewAI orchestration initialized for project`,
+        sender: 'System',
+        type: 'text'
+      }]);
+      
+    return true;
+    
+  } catch (error) {
+    console.error('Error initializing CrewAI:', error);
+    return false;
+  }
+};
+
+/**
+ * Update CrewAI orchestration for a project
+ */
+export const updateCrewAIOrchestration = async (
+  projectId: string,
+  updates: any
+): Promise<boolean> => {
+  console.log(`Updating CrewAI orchestration for project ${projectId}`, updates);
+  
+  try {
+    // This is a placeholder implementation that just returns success
+    // In a real implementation, you would update CrewAI orchestration here
+    
+    // For now, we'll just create a chat message to indicate update
+    await supabase
+      .from('chat_messages')
+      .insert([{
+        project_id: projectId,
+        content: `CrewAI orchestration updated for project`,
+        sender: 'System',
+        type: 'text'
+      }]);
+      
+    return true;
+    
+  } catch (error) {
+    console.error('Error updating CrewAI orchestration:', error);
+    return false;
+  }
+};
+
+/**
+ * Handle CrewAI task completion
+ */
+export const handleCrewTaskCompletion = async (
+  projectId: string,
+  taskId: string,
+  result: any
+): Promise<boolean> => {
+  console.log(`Handling CrewAI task completion for project ${projectId}, task ${taskId}`, result);
+  
+  try {
+    // Get agent information
+    const agentId = result.agentId;
+    
+    if (!agentId) {
+      throw new Error('No agent ID provided in result');
+    }
+    
+    // Complete the task using the existing completeTask function
+    const completionResult = await completeTask(projectId, agentId, taskId);
+    
+    return completionResult.success;
+    
+  } catch (error) {
+    console.error('Error handling CrewAI task completion:', error);
+    return false;
   }
 };

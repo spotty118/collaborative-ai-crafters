@@ -1,3 +1,4 @@
+
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -9,10 +10,11 @@ export interface AgentMessage {
   project_id: string;
   agent_id: string;
   content: string;
-  type: "text" | "code" | "task" | "error" | "progress" | "notification";
+  type: "text" | "code" | "task" | "error" | "progress" | "notification" | "request" | "response";
   status: "pending" | "delivered" | "read";
   metadata?: Record<string, any>;
   created_at: string;
+  from?: string; // Adding the 'from' property that was missing
 }
 
 interface Subscriber {
@@ -34,7 +36,7 @@ interface MessageCache {
 class AgentMessageBus {
   private subscribers: Map<string, Subscriber[]> = new Map();
   private pollingInterval: number = 5000;
-  private pollingTimers: Map<string, NodeJS.Timer> = new Map();
+  private pollingTimers: Map<string, NodeJS.Timeout> = new Map(); // Changed Timer to Timeout
   private messageCache: MessageCache = {};
   private initialized: boolean = false;
   private retryCount: Map<string, number> = new Map();
@@ -122,6 +124,19 @@ class AgentMessageBus {
       console.error("Error sending message:", error);
       return false;
     }
+  }
+
+  /**
+   * Alias for send method to match agentCore expectations
+   */
+  async sendMessage(
+    projectId: string, 
+    toAgentId: string, 
+    content: string, 
+    type: AgentMessage["type"] = "text",
+    metadata: Record<string, any> = {}
+  ): Promise<boolean> {
+    return this.send(projectId, toAgentId, content, type, metadata);
   }
 
   /**
