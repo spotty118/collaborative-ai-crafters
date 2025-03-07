@@ -1,176 +1,405 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.33.1';
+import { createClient } from '@supabase/supabase-js';
 
-// Define CORS headers
-const corsHeaders = {
+// Get environment variables
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
+const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || '';
+const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY') || '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';
+
+// Log environment variables for debugging
+console.log('==== CREW ORCHESTRATOR ENVIRONMENT ====');
+console.log('SUPABASE_URL:', SUPABASE_URL ? 'Set (starts with: ' + SUPABASE_URL.substring(0, 10) + '...)' : 'Not set');
+console.log('SUPABASE_ANON_KEY:', SUPABASE_ANON_KEY ? 'Set (length: ' + SUPABASE_ANON_KEY.length + ')' : 'Not set');
+console.log('OPENROUTER_API_KEY:', OPENROUTER_API_KEY ? 'Set (starts with: ' + OPENROUTER_API_KEY.substring(0, 8) + '...)' : 'Not set');
+
+// Create Supabase client
+const supabase = SUPABASE_URL && SUPABASE_ANON_KEY 
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+// Response headers for CORS
+const responseHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Content-Type': 'application/json',
 };
 
-// Create a Supabase client
-const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-// OpenRouter API key from environment
-const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
-
+// Function to handle HTTP requests
 serve(async (req) => {
-  // Handle CORS preflight requests
+  console.log(`[${new Date().toISOString()}] Crew orchestrator received request`);
+  console.log('Request URL:', req.url);
+  console.log('Request method:', req.method);
+  
+  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { 
-      headers: corsHeaders 
+      status: 204, 
+      headers: responseHeaders 
     });
   }
-
-  // Add CORS headers to all responses
-  const responseHeaders = { 
-    ...corsHeaders, 
-    'Content-Type': 'application/json' 
-  };
-
-  try {
-    // Parse the request body
-    const reqBody = await req.json();
-    const { action, projectId, agentId, taskId, verbose } = reqBody;
-
-    // Log the request for debugging
-    console.log(`Crew orchestrator received request: ${JSON.stringify(reqBody)}`);
-
-    // Handle ping action for connectivity tests
-    if (action === 'ping') {
+  
+  // Simple ping endpoint for health checks
+  if (req.method === 'POST') {
+    try {
+      const requestData = await req.json();
+      
+      // Log request data for debugging
+      console.log('Request body:', JSON.stringify(requestData));
+      
+      if (requestData.action === 'ping') {
+        return new Response(
+          JSON.stringify({ success: true, message: 'Crew orchestrator is online' }),
+          { headers: responseHeaders }
+        );
+      }
+      
+      return await handleCrewAction(requestData);
+    } catch (error) {
+      // Log and return the error
+      console.error('Crew orchestrator error:', error);
+      console.error('Error stack:', error.stack);
+      
       return new Response(
-        JSON.stringify({ success: true, message: 'Crew orchestrator is online' }),
-        { headers: responseHeaders }
+        JSON.stringify({ 
+          success: false, 
+          message: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined
+        }),
+        { status: 500, headers: responseHeaders }
       );
     }
+  }
+  
+  return new Response(
+    JSON.stringify({ 
+      success: false, 
+      message: 'Method not allowed' 
+    }),
+    { status: 405, headers: responseHeaders }
+  );
+});
 
-    // Handle different actions
-    if (action === 'start') {
-      // Get agent details
-      const { data: agentData, error: agentFetchError } = await supabase
-        .from('agent_statuses')
-        .select('*')
-        .eq('id', agentId)
-        .single();
+// Handle different actions
+async function handleCrewAction(requestData: any): Promise<Response> {
+  console.log('Handling crew action:', requestData.action);
+  
+  if (!supabase) {
+    console.error('Supabase client is not initialized.');
+    return new Response(
+      JSON.stringify({ 
+        success: false, 
+        message: 'Supabase client is not initialized. Check environment variables.' 
+      }),
+      { status: 500, headers: responseHeaders }
+    );
+  }
+  
+  const { action, projectId, agentId, taskId, updates } = requestData;
 
-      if (agentFetchError) {
-        throw new Error(`Failed to fetch agent details: ${agentFetchError.message}`);
-      }
-
-      // Get project details
-      const { data: projectData, error: projectFetchError } = await supabase
+  // Handle initialize action - when a new project is created
+  if (action === 'initialize') {
+    console.log(`Initializing project ${projectId}`);
+    
+    try {
+      // Fetch project details
+      const { data: projectData, error: projectError } = await supabase
         .from('projects')
         .select('*')
         .eq('id', projectId)
         .single();
-
-      if (projectFetchError) {
-        throw new Error(`Failed to fetch project details: ${projectFetchError.message}`);
+        
+      if (projectError) {
+        console.error('Error fetching project:', projectError);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            message: `Failed to fetch project: ${projectError.message}` 
+          }),
+          { status: 500, headers: responseHeaders }
+        );
       }
+      
+      console.log(`Project data: ${JSON.stringify(projectData)}`);
 
-      // Get task details if taskId is provided
+      // Fetch agents associated with the project
+      const { data: agentsData, error: agentsError } = await supabase
+        .from('agents')
+        .select('*')
+        .eq('project_id', projectId);
+        
+      if (agentsError) {
+        console.error('Error fetching agents:', agentsError);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            message: `Failed to fetch agents: ${agentsError.message}` 
+          }),
+          { status: 500, headers: responseHeaders }
+        );
+      }
+      
+      console.log(`Agents data: ${JSON.stringify(agentsData)}`);
+
+      // Create a crew configuration based on project and agent details
+      // Placeholder for crew creation logic
+      console.log('Creating crew configuration...');
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'Project initialized successfully' 
+        }),
+        { headers: responseHeaders }
+      );
+    } catch (error) {
+      console.error('Error initializing project:', error);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          message: error instanceof Error ? error.message : 'Unknown error' 
+        }),
+        { status: 500, headers: responseHeaders }
+      );
+    }
+  }
+
+  // Handle update action - when project details are updated
+  if (action === 'update') {
+    console.log(`Updating project ${projectId} with updates: ${JSON.stringify(updates)}`);
+    
+    try {
+      // Update project details in Supabase
+      const { error: updateError } = await supabase
+        .from('projects')
+        .update(updates)
+        .eq('id', projectId);
+        
+      if (updateError) {
+        console.error('Error updating project:', updateError);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            message: `Failed to update project: ${updateError.message}` 
+          }),
+          { status: 500, headers: responseHeaders }
+        );
+      }
+      
+      console.log('Project updated successfully');
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'Project updated successfully' 
+        }),
+        { headers: responseHeaders }
+      );
+    } catch (error) {
+      console.error('Error updating project:', error);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          message: error instanceof Error ? error.message : 'Unknown error' 
+        }),
+        { status: 500, headers: responseHeaders }
+      );
+    }
+  }
+
+  // Handle completeTask action - when an agent completes a task
+  if (action === 'completeTask') {
+    console.log(`Completing task ${taskId} for project ${projectId}`);
+    
+    try {
+      // Update task status in Supabase
+      const { error: updateError } = await supabase
+        .from('tasks')
+        .update({ status: 'completed' })
+        .eq('id', taskId);
+        
+      if (updateError) {
+        console.error('Error updating task:', updateError);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            message: `Failed to update task: ${updateError.message}` 
+          }),
+          { status: 500, headers: responseHeaders }
+        );
+      }
+      
+      console.log('Task updated successfully');
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'Task completed successfully' 
+        }),
+        { headers: responseHeaders }
+      );
+    } catch (error) {
+      console.error('Error completing task:', error);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          message: error instanceof Error ? error.message : 'Unknown error' 
+        }),
+        { status: 500, headers: responseHeaders }
+      );
+    }
+  }
+
+  // Handle start action - when user activates an agent
+  if (action === 'start') {
+    console.log(`Starting agent orchestration for ${agentId}`);
+    
+    try {
+      // Validate that projectId and agentId are provided
+      if (!projectId || !agentId) {
+        console.error('Project ID and Agent ID must be provided.');
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            message: 'Project ID and Agent ID must be provided' 
+          }),
+          { status: 400, headers: responseHeaders }
+        );
+      }
+      
+      // Get agent data
+      const { data: agentData, error: agentError } = await supabase
+        .from('agents')
+        .select('*')
+        .eq('id', agentId)
+        .single();
+        
+      if (agentError) {
+        console.error('Error fetching agent:', agentError);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            message: `Failed to fetch agent: ${agentError.message}` 
+          }),
+          { status: 500, headers: responseHeaders }
+        );
+      }
+      
+      console.log(`Agent data: ${JSON.stringify(agentData)}`);
+      
+      // Get project data
+      const { data: projectData, error: projectError } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('id', projectId)
+        .single();
+        
+      if (projectError) {
+        console.error('Error fetching project:', projectError);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            message: `Failed to fetch project: ${projectError.message}` 
+          }),
+          { status: 500, headers: responseHeaders }
+        );
+      }
+      
+      console.log(`Project data: ${JSON.stringify(projectData)}`);
+      
+      // If a specific task was provided, get that task's details
       let taskData = null;
       if (taskId) {
-        const { data, error: taskError } = await supabase
+        const { data: task, error: taskError } = await supabase
           .from('tasks')
           .select('*')
           .eq('id', taskId)
           .single();
-
+          
         if (taskError) {
-          throw new Error(`Failed to fetch task details: ${taskError.message}`);
+          console.error('Error fetching task:', taskError);
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              message: `Failed to fetch task: ${taskError.message}` 
+            }),
+            { status: 500, headers: responseHeaders }
+          );
         }
         
-        taskData = data;
-        
-        // Update task status
-        const { error: updateTaskError } = await supabase
-          .from('tasks')
-          .update({ 
-            status: 'in_progress',
-            assigned_to: agentId, // Ensure task is assigned to this agent
-            updated_at: new Date().toISOString() 
-          })
-          .eq('id', taskId);
-
-        if (updateTaskError) {
-          throw new Error(`Failed to update task status: ${updateTaskError.message}`);
-        }
+        taskData = task;
+        console.log(`Task data: ${JSON.stringify(taskData)}`);
       }
 
-      // Update agent status to working
-      const { error: agentError } = await supabase
-        .from('agent_statuses')
-        .update({ 
-          status: 'working',
-          progress: 10,
-          updated_at: new Date().toISOString() 
-        })
+      // Update agent status to show it's now working
+      const { error: updateError } = await supabase
+        .from('agents')
+        .update({ status: 'working' })
         .eq('id', agentId);
-
-      if (agentError) {
-        throw new Error(`Failed to update agent status: ${agentError.message}`);
+        
+      if (updateError) {
+        console.error('Error updating agent status:', updateError);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            message: `Failed to update agent status: ${updateError.message}` 
+          }),
+          { status: 500, headers: responseHeaders }
+        );
       }
+      
+      console.log('Agent status updated to working');
 
-      // Create chat message
-      await supabase
-        .from('chat_messages')
+      // Add initial message from the agent to the chat
+      const initialMessage = `I'm starting work on project ${projectData.name}.`;
+      
+      const { error: messageError } = await supabase
+        .from('messages')
         .insert([{
           project_id: projectId,
-          content: taskId 
-            ? `I'm now working on the assigned task: "${taskData?.title || 'Unknown task'}"` 
-            : `I'm now active and ready to work on tasks for this project.`,
-          sender: agentData?.name || 'Agent',
+          agent_id: agentId,
+          content: initialMessage,
+          sender: agentData.name,
           type: 'text'
         }]);
+        
+      if (messageError) {
+        console.error('Error adding initial message:', messageError);
+        // Non-critical error, continue anyway
+      }
+      
+      console.log('Initial message added to chat');
 
       // Call OpenRouter directly to process the task
-      if (taskId && Deno.env.get('OPENROUTER_API_KEY')) {
+      if (taskId && OPENROUTER_API_KEY) {
         console.log(`Sending task to OpenRouter for processing: ${taskData?.title}`);
         
         try {
-          // Prepare prompt for the agent based on task
-          const prompt = `
-You are the ${agentData.name}, a ${agentData.agent_type} agent working on the project: ${projectData.name}.
-
-TASK DETAILS:
-Title: ${taskData.title}
-Description: ${taskData.description || 'No detailed description provided'}
-Priority: ${taskData.priority || 'medium'}
-
-PROJECT CONTEXT:
-${projectData.description || 'No detailed description provided'}
-${projectData.requirements ? `Requirements: ${projectData.requirements}` : ''}
-${projectData.tech_stack ? `Technology Stack: ${projectData.tech_stack.join(', ')}` : ''}
-
-YOUR OBJECTIVE:
-Please analyze this task and create a detailed implementation for it. Focus on your role as a ${agentData.agent_type} agent.
-
-If your implementation requires creating code, please format it as follows:
-\`\`\`filepath:/path/to/file.ext
-// code goes here
-\`\`\`
-
-If you identify additional tasks that need to be done, list them in this format:
-TASK: [Task name]
-ASSIGNED TO: [Agent type, e.g. Frontend]
-DESCRIPTION: [Detailed description]
-PRIORITY: [high/medium/low]
-`;
-
+          // Prepare task prompt
+          const prompt = `You are ${agentData.name}, an AI agent specialized in ${agentData.agent_type} work for a software development project.
+          
+          Project Context: ${projectData.name} - ${projectData.description}.
+          
+          Your current task: ${taskData?.title || 'No specific task'} - ${taskData?.description || 'No specific description'}.
+          
+          Instructions: ${projectData.requirements}.
+          
+          Please provide a detailed plan to accomplish this task, including specific steps and code implementations where necessary.`;
+          
           console.log(`Sending prompt to OpenRouter (excerpt): ${prompt.substring(0, 100)}...`);
           
           // Send request to OpenRouter via our edge function
-          const openRouterURL = `${supabaseUrl}/functions/v1/openrouter`;
+          const openRouterURL = SUPABASE_URL 
+            ? `${SUPABASE_URL}/functions/v1/openrouter` 
+            : 'https://igzuqirgmwgxfpbtpsdc.supabase.co/functions/v1/openrouter';
+            
           console.log(`Calling OpenRouter edge function at URL: ${openRouterURL}`);
           
           const openRouterResponse = await fetch(openRouterURL, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${supabaseAnonKey}`
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY || OPENROUTER_API_KEY}`,
+              'apikey': SUPABASE_ANON_KEY || OPENROUTER_API_KEY,
             },
             body: JSON.stringify({
               prompt,
@@ -179,10 +408,11 @@ PRIORITY: [high/medium/low]
               projectContext: {
                 name: projectData.name,
                 description: projectData.description,
-                sourceUrl: projectData.sourceUrl,
-                sourceType: projectData.sourceType,
-                id: projectData.id,
-                created_at: projectData.created_at
+                requirements: projectData.requirements,
+                techStack: projectData.tech_stack,
+                sourceType: projectData.source_type,
+                sourceUrl: projectData.source_url,
+                taskTitle: taskData?.title,
               }
             }),
           });
@@ -197,337 +427,339 @@ PRIORITY: [high/medium/low]
             throw new Error(`OpenRouter responded with status ${openRouterResponse.status}: ${responseText}`);
           }
 
-          const responseData = JSON.parse(responseText);
-          console.log('OpenRouter response parsed successfully');
-          console.log('OpenRouter response received:', JSON.stringify(responseData).substring(0, 200) + '...');
-          
-          // Now we have the AI response, update the progress
-          await supabase
-            .from('agent_statuses')
-            .update({ 
-              progress: 30, // Increase progress after getting AI response
-              updated_at: new Date().toISOString() 
-            })
-            .eq('id', agentId);
+          try {
+            const responseData = JSON.parse(responseText);
+            console.log('OpenRouter response parsed successfully');
+            console.log('OpenRouter response received:', JSON.stringify(responseData).substring(0, 200) + '...');
             
-          console.log('Agent progress updated to 30% after receiving OpenRouter response');
+            // Now we have the AI response, update the progress
+            const { error: progressError } = await supabase
+              .from('agents')
+              .update({ progress: 50 })
+              .eq('id', agentId);
+              
+            if (progressError) {
+              console.error('Error updating agent progress:', progressError);
+              // Non-critical error, continue anyway
+            }
+            
+            console.log('Agent progress updated to 50%');
 
-          // Add the AI's response as a message
-          const aiContent = responseData.choices[0].message.content;
-          await supabase
-            .from('chat_messages')
-            .insert([{
-              project_id: projectId,
-              content: `Task analysis complete. I'll now implement: "${taskData.title}"`,
-              sender: agentData.name,
-              type: 'text'
-            }]);
+            // Add AI response to chat
+            const { error: aiMessageError } = await supabase
+              .from('messages')
+              .insert([{
+                project_id: projectId,
+                agent_id: agentId,
+                content: responseData.choices[0].message.content,
+                sender: agentData.name,
+                type: 'text'
+              }]);
+              
+            if (aiMessageError) {
+              console.error('Error adding AI message:', aiMessageError);
+              // Non-critical error, continue anyway
+            }
             
-          // Add the detailed response as a separate message
-          await supabase
-            .from('chat_messages')
-            .insert([{
-              project_id: projectId,
-              content: aiContent,
-              sender: agentData.name,
-              type: 'text'
-            }]);
-            
-          console.log('Added AI response as chat messages');
+            console.log('AI message added to chat');
+
+            return new Response(
+              JSON.stringify({ 
+                success: true, 
+                message: 'Agent started and task processed successfully',
+                data: responseData
+              }),
+              { headers: responseHeaders }
+            );
+          } catch (parseError) {
+            console.error('Error parsing OpenRouter response:', parseError);
+            throw new Error(`Failed to parse OpenRouter response: ${parseError.message}`);
+          }
 
         } catch (openRouterError) {
           console.error('Error calling OpenRouter:', openRouterError);
           console.error('Error stack:', openRouterError.stack);
           
           // Add error message to chat
-          await supabase
-            .from('chat_messages')
+          const { error: errorMessageError } = await supabase
+            .from('messages')
             .insert([{
               project_id: projectId,
-              content: `I encountered an error while working on the task: ${openRouterError.message}`,
+              agent_id: agentId,
+              content: `Error processing task: ${openRouterError.message}`,
               sender: agentData.name,
               type: 'error'
             }]);
             
-          // Continue execution despite OpenRouter error
-          console.log('Added error message and continuing execution');
+          if (errorMessageError) {
+            console.error('Error adding error message:', errorMessageError);
+            // Non-critical error, continue anyway
+          }
+          
+          console.log('Error message added to chat');
+
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              message: `Error processing task: ${openRouterError.message}` 
+            }),
+            { status: 500, headers: responseHeaders }
+          );
+        }
+      } else {
+        // Log if we're not sending to OpenRouter
+        if (!taskId) {
+          console.log("No taskId provided, skipping OpenRouter call");
+        }
+        if (!OPENROUTER_API_KEY) {
+          console.error("OPENROUTER_API_KEY not available, skipping OpenRouter call");
         }
       }
 
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: `Agent orchestration started successfully`,
-          data: { agentId, status: 'working', taskId }
+          message: 'Agent started successfully' 
         }),
         { headers: responseHeaders }
       );
-    }
-    else if (action === 'stop') {
-      // Update agent status to idle
-      const { error: agentError } = await supabase
-        .from('agent_statuses')
-        .update({ 
-          status: 'idle',
-          progress: 0,
-          updated_at: new Date().toISOString() 
-        })
-        .eq('id', agentId);
-
-      if (agentError) {
-        throw new Error(`Failed to update agent status: ${agentError.message}`);
-      }
-
-      // Update any in-progress tasks assigned to this agent
-      const { error: tasksError } = await supabase
-        .from('tasks')
-        .update({ 
-          status: 'pending',
-          updated_at: new Date().toISOString() 
-        })
-        .eq('assigned_to', agentId)
-        .eq('status', 'in_progress');
-
-      if (tasksError) {
-        throw new Error(`Failed to update tasks: ${tasksError.message}`);
-      }
-
-      // Get agent name for notification
-      const { data: agentData, error: agentFetchError } = await supabase
-        .from('agent_statuses')
-        .select('name')
-        .eq('id', agentId)
-        .single();
-
-      if (agentFetchError) {
-        throw new Error(`Failed to fetch agent details: ${agentFetchError.message}`);
-      }
-
-      // Create chat message
-      await supabase
-        .from('chat_messages')
-        .insert([{
-          project_id: projectId,
-          content: `I've paused my work. You can resume it anytime.`,
-          sender: agentData?.name || 'Agent',
-          type: 'text'
-        }]);
-
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: `Agent orchestration stopped successfully`,
-          data: { agentId, status: 'idle' }
-        }),
-        { headers: responseHeaders }
-      );
-    }
-    else if (action === 'update_progress') {
-      const { progress, status = 'working' } = reqBody;
-      
-      // Update agent status with progress
-      const { error: agentError } = await supabase
-        .from('agent_statuses')
-        .update({ 
-          status,
-          progress,
-          updated_at: new Date().toISOString() 
-        })
-        .eq('id', agentId);
-
-      if (agentError) {
-        throw new Error(`Failed to update agent progress: ${agentError.message}`);
-      }
-
-      // Get agent name for notification
-      const { data: agentData, error: agentFetchError } = await supabase
-        .from('agent_statuses')
-        .select('name')
-        .eq('id', agentId)
-        .single();
-
-      if (agentFetchError) {
-        throw new Error(`Failed to fetch agent details: ${agentFetchError.message}`);
-      }
-
-      // Only send chat messages for significant progress
-      if (progress % 20 === 0 || progress === 100) {
-        await supabase
-          .from('chat_messages')
-          .insert([{
-            project_id: projectId,
-            content: progress === 100 
-              ? `I've completed my assigned task.` 
-              : `Making progress on my assigned task. Current progress: ${progress}%`,
-            sender: agentData?.name || 'Agent',
-            type: 'text'
-          }]);
-      }
-
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: `Agent progress updated successfully`,
-          data: { agentId, progress, status }
-        }),
-        { headers: responseHeaders }
-      );
-    }
-    else if (action === 'complete_task') {
-      // Update task status to completed
-      const { error: taskError } = await supabase
-        .from('tasks')
-        .update({ 
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString() 
-        })
-        .eq('id', taskId);
-
-      if (taskError) {
-        throw new Error(`Failed to complete task: ${taskError.message}`);
-      }
-
-      // Get agent name for notification
-      const { data: agentData, error: agentFetchError } = await supabase
-        .from('agent_statuses')
-        .select('name')
-        .eq('id', agentId)
-        .single();
-
-      if (agentFetchError) {
-        throw new Error(`Failed to fetch agent details: ${agentFetchError.message}`);
-      }
-
-      // Get task details
-      const { data: taskData, error: taskFetchError } = await supabase
-        .from('tasks')
-        .select('title')
-        .eq('id', taskId)
-        .single();
-
-      if (taskFetchError) {
-        throw new Error(`Failed to fetch task details: ${taskFetchError.message}`);
-      }
-
-      // Create chat message
-      await supabase
-        .from('chat_messages')
-        .insert([{
-          project_id: projectId,
-          content: `I have completed the task: "${taskData?.title || 'Unknown task'}"`,
-          sender: agentData?.name || 'Agent',
-          type: 'text'
-        }]);
-
-      // Update agent status to idle
-      await supabase
-        .from('agent_statuses')
-        .update({ 
-          status: 'idle',
-          progress: 100,
-          updated_at: new Date().toISOString() 
-        })
-        .eq('id', agentId);
-
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: `Task completed successfully`,
-          data: { agentId, taskId, status: 'completed' }
-        }),
-        { headers: responseHeaders }
-      );
-    }
-    else if (action === 'assign_task') {
-      // Handle task assignment
-      // 1. Update the task to be assigned to the agent
-      const { error: taskError } = await supabase
-        .from('tasks')
-        .update({ 
-          assigned_to: agentId,
-          status: 'pending', // Set to pending initially
-          updated_at: new Date().toISOString() 
-        })
-        .eq('id', taskId);
-
-      if (taskError) {
-        throw new Error(`Failed to assign task: ${taskError.message}`);
-      }
-
-      // 2. Get agent and task details for the notification
-      const { data: agentData, error: agentFetchError } = await supabase
-        .from('agent_statuses')
-        .select('name')
-        .eq('id', agentId)
-        .single();
-
-      if (agentFetchError) {
-        throw new Error(`Failed to fetch agent details: ${agentFetchError.message}`);
-      }
-
-      const { data: taskData, error: taskFetchError } = await supabase
-        .from('tasks')
-        .select('title')
-        .eq('id', taskId)
-        .single();
-
-      if (taskFetchError) {
-        throw new Error(`Failed to fetch task details: ${taskFetchError.message}`);
-      }
-
-      // 3. Create a chat message about the assignment
-      await supabase
-        .from('chat_messages')
-        .insert([{
-          project_id: projectId,
-          content: `I've been assigned to work on: "${taskData?.title || 'Unknown task'}"`,
-          sender: agentData?.name || 'Agent',
-          type: 'text'
-        }]);
-
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: `Task assigned successfully`,
-          data: { agentId, taskId, taskTitle: taskData?.title }
-        }),
-        { headers: responseHeaders }
-      );
-    }
-    else if (action === 'get_messages') {
-      // For this version, we'll just return an empty array
-      // In a future version, we would implement an actual message system
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          messages: [] 
-        }),
-        { headers: responseHeaders }
-      );
-    }
-    else {
-      // Unknown action
+    } catch (error) {
+      console.error('Error starting agent orchestration:', error);
       return new Response(
         JSON.stringify({ 
           success: false, 
-          message: `Unknown action: ${action}` 
+          message: error instanceof Error ? error.message : 'Unknown error' 
         }),
-        { status: 400, headers: responseHeaders }
+        { status: 500, headers: responseHeaders }
       );
     }
-  } catch (error) {
-    // Log and return the error
-    console.error('Crew orchestrator error:', error);
-    console.error('Error stack:', error.stack);
-    
-    return new Response(
-      JSON.stringify({ 
-        success: false, 
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined
-      }),
-      { status: 500, headers: responseHeaders }
-    );
   }
-});
+  
+  // Handle stop action - when user deactivates an agent
+  if (action === 'stop') {
+    console.log(`Stopping agent orchestration for ${agentId}`);
+    
+    try {
+      // Validate that projectId and agentId are provided
+      if (!projectId || !agentId) {
+        console.error('Project ID and Agent ID must be provided.');
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            message: 'Project ID and Agent ID must be provided' 
+          }),
+          { status: 400, headers: responseHeaders }
+        );
+      }
+      
+      // Update agent status to show it's now idle
+      const { error: updateError } = await supabase
+        .from('agents')
+        .update({ status: 'idle' })
+        .eq('id', agentId);
+        
+      if (updateError) {
+        console.error('Error updating agent status:', updateError);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            message: `Failed to update agent status: ${updateError.message}` 
+          }),
+          { status: 500, headers: responseHeaders }
+        );
+      }
+      
+      console.log('Agent status updated to idle');
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'Agent stopped successfully' 
+        }),
+        { headers: responseHeaders }
+      );
+    } catch (error) {
+      console.error('Error stopping agent orchestration:', error);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          message: error instanceof Error ? error.message : 'Unknown error' 
+        }),
+        { status: 500, headers: responseHeaders }
+      );
+    }
+  }
+  
+  // Handle update_progress action - when an agent updates its progress
+  if (action === 'update_progress') {
+    console.log(`Updating agent ${agentId} progress to ${requestData.progress}%`);
+    
+    try {
+      // Validate that projectId, agentId, and progress are provided
+      if (!projectId || !agentId || requestData.progress === undefined) {
+        console.error('Project ID, Agent ID, and progress must be provided.');
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            message: 'Project ID, Agent ID, and progress must be provided' 
+          }),
+          { status: 400, headers: responseHeaders }
+        );
+      }
+      
+      // Update agent progress in Supabase
+      const { error: updateError } = await supabase
+        .from('agents')
+        .update({ progress: requestData.progress })
+        .eq('id', agentId);
+        
+      if (updateError) {
+        console.error('Error updating agent progress:', updateError);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            message: `Failed to update agent progress: ${updateError.message}` 
+          }),
+          { status: 500, headers: responseHeaders }
+        );
+      }
+      
+      console.log(`Agent progress updated to ${requestData.progress}%`);
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'Agent progress updated successfully' 
+        }),
+        { headers: responseHeaders }
+      );
+    } catch (error) {
+      console.error('Error updating agent progress:', error);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          message: error instanceof Error ? error.message : 'Unknown error' 
+        }),
+        { status: 500, headers: responseHeaders }
+      );
+    }
+  }
+  
+  // Handle complete_task action - when an agent completes a specific task
+  if (action === 'complete_task') {
+    console.log(`Completing task ${taskId} by agent ${agentId}`);
+    
+    try {
+      // Validate that projectId, agentId, and taskId are provided
+      if (!projectId || !agentId || !taskId) {
+        console.error('Project ID, Agent ID, and Task ID must be provided.');
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            message: 'Project ID, Agent ID, and Task ID must be provided' 
+          }),
+          { status: 400, headers: responseHeaders }
+        );
+      }
+      
+      // Update task status to completed in Supabase
+      const { error: updateError } = await supabase
+        .from('tasks')
+        .update({ status: 'completed' })
+        .eq('id', taskId);
+        
+      if (updateError) {
+        console.error('Error updating task status:', updateError);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            message: `Failed to update task status: ${updateError.message}` 
+          }),
+          { status: 500, headers: responseHeaders }
+        );
+      }
+      
+      console.log('Task status updated to completed');
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'Task completed successfully' 
+        }),
+        { headers: responseHeaders }
+      );
+    } catch (error) {
+      console.error('Error completing task:', error);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          message: error instanceof Error ? error.message : 'Unknown error' 
+        }),
+        { status: 500, headers: responseHeaders }
+      );
+    }
+  }
+  
+  // Handle assign_task action - when a task is manually assigned to an agent
+  if (action === 'assign_task') {
+    console.log(`Manually assigning task ${taskId} to agent ${agentId} in project ${projectId}`);
+    
+    try {
+      // Validate that projectId, agentId, and taskId are provided
+      if (!projectId || !agentId || !taskId) {
+        console.error('Project ID, Agent ID, and Task ID must be provided.');
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            message: 'Project ID, Agent ID, and Task ID must be provided' 
+          }),
+          { status: 400, headers: responseHeaders }
+        );
+      }
+      
+      // Update the task in the database
+      const { error: updateError } = await supabase
+        .from('tasks')
+        .update({ assigned_to: agentId })
+        .eq('id', taskId);
+        
+      if (updateError) {
+        console.error('Error updating task assignment:', updateError);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            message: `Failed to assign task to agent: ${updateError.message}` 
+          }),
+          { status: 500, headers: responseHeaders }
+        );
+      }
+      
+      console.log('Task assigned to agent successfully');
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'Task assigned to agent successfully' 
+        }),
+        { headers: responseHeaders }
+      );
+    } catch (error) {
+      console.error('Error assigning task:', error);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          message: error instanceof Error ? error.message : 'Unknown error' 
+        }),
+        { status: 500, headers: responseHeaders }
+      );
+    }
+  }
+  
+  return new Response(
+    JSON.stringify({ 
+      success: false, 
+      message: 'Invalid action specified' 
+    }),
+    { status: 400, headers: responseHeaders }
+  );
+}

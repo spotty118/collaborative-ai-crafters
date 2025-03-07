@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -9,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Dashboard from "@/components/layout/Dashboard";
-import { sendAgentPrompt } from "@/lib/openrouter";
+import { sendAgentPrompt, testOpenRouterConnection } from "@/lib/openrouter";
 import { startAgentOrchestration, stopAgentOrchestration } from "@/lib/agent/orchestrator";
 import { CodeFile, Message, Project as ProjectType, Agent, Task } from "@/lib/types";
 import { useGitHubContext } from "@/contexts/GitHubContext";
@@ -25,6 +24,7 @@ const Project: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<CodeFile | null>(null);
   const [githubToken, setGithubToken] = useState<string>("");
   const [chatMessage, setChatMessage] = useState<string>("");
+  const [isTestingOpenRouter, setIsTestingOpenRouter] = useState(false);
 
   const github = useGitHubContext();
   const queryClient = useQueryClient();
@@ -347,13 +347,11 @@ const Project: React.FC = () => {
     const loadingToastId = toast.loading(`Starting task execution for ${agent.name}...`);
     
     try {
-      // Update agent status before the call to show something is happening
       await updateAgentMutation.mutate({ 
         id: agentId, 
         updates: { status: "working", progress: 5 } 
       });
       
-      // Create a message to show we're starting work
       await createMessageMutation.mutate({
         project_id: id,
         content: `I'm starting work on the task: ${task.title}`,
@@ -363,14 +361,12 @@ const Project: React.FC = () => {
       
       console.log(`Starting task execution for ${agent.name} on task ${task.title}`);
       
-      // Execute the task via the orchestrator
       const result = await startAgentOrchestration(id, agentId, taskId);
       
       if (result.success) {
         toast.dismiss(loadingToastId);
         toast.success(`${agent.name} is now working on: ${task.title}`);
         
-        // Immediately refetch to get updated data
         queryClient.invalidateQueries({ queryKey: ['agents', id] });
         queryClient.invalidateQueries({ queryKey: ['tasks', id] });
         queryClient.invalidateQueries({ queryKey: ['messages', id] });
@@ -379,13 +375,11 @@ const Project: React.FC = () => {
         toast.dismiss(loadingToastId);
         toast.error(`Failed to execute task: ${result.message}`);
         
-        // Reset agent status on failure
         await updateAgentMutation.mutate({ 
           id: agentId, 
           updates: { status: "idle", progress: 0 } 
         });
         
-        // Add error message
         await createMessageMutation.mutate({
           project_id: id,
           content: `I encountered an error trying to start work on this task: ${result.message}`,
@@ -399,19 +393,34 @@ const Project: React.FC = () => {
       toast.dismiss(loadingToastId);
       toast.error(`Failed to execute task: ${error instanceof Error ? error.message : 'Unknown error'}`);
       
-      // Reset agent status on exception
       await updateAgentMutation.mutate({ 
         id: agentId, 
         updates: { status: "idle", progress: 0 } 
       });
       
-      // Add error message
       await createMessageMutation.mutate({
         project_id: id,
         content: `I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`,
         sender: agent.name,
         type: "error"
       });
+    }
+  };
+
+  const handleTestOpenRouter = async () => {
+    setIsTestingOpenRouter(true);
+    try {
+      const result = await testOpenRouterConnection();
+      if (result.success) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
+    } catch (error) {
+      console.error("Error testing OpenRouter:", error);
+      toast.error(`Failed to test OpenRouter: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsTestingOpenRouter(false);
     }
   };
 
@@ -559,6 +568,22 @@ const Project: React.FC = () => {
                       <span className="font-medium w-32">Description:</span>
                       <span className="break-words">{project.description || 'No description'}</span>
                     </div>
+                  </div>
+                </div>
+                
+                <div>
+                  <h3 className="text-base font-medium mb-4">OpenRouter Integration</h3>
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-600">
+                      Test the OpenRouter connection to diagnose potential issues with agent communication.
+                    </p>
+                    <Button 
+                      onClick={handleTestOpenRouter} 
+                      disabled={isTestingOpenRouter}
+                      className="mt-2"
+                    >
+                      {isTestingOpenRouter ? 'Testing...' : 'Test OpenRouter Connection'}
+                    </Button>
                   </div>
                 </div>
                 

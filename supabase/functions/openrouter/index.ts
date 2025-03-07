@@ -10,20 +10,28 @@ const corsHeaders = {
 // Use environment variable or fallback to a direct key - this ensures we have a key one way or another
 const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY') || "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";
 
-serve(async (req) => {
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+console.log("OpenRouter function loaded");
+console.log(`OpenRouter API Key available: ${OPENROUTER_API_KEY ? 'Yes' : 'No'}`);
+console.log(`API Key prefix: ${OPENROUTER_API_KEY?.substring(0, 8)}...`);
 
-  // For debugging - log request details
+serve(async (req) => {
+  // For debugging on every request
   console.log(`OpenRouter request received at ${new Date().toISOString()}`);
   console.log(`Request URL: ${req.url}`);
   console.log(`Request method: ${req.method}`);
   console.log('Request headers:', Object.fromEntries(req.headers.entries()));
 
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    console.log("Handling CORS preflight request");
+    return new Response(null, { headers: corsHeaders });
+  }
+
   try {
+    console.log("Parsing request body");
     const requestData = await req.json();
+    console.log("Request data:", JSON.stringify(requestData).substring(0, 500) + "...");
+    
     const { 
       prompt, 
       agentType, 
@@ -34,7 +42,11 @@ serve(async (req) => {
     
     // Log the received request for debugging
     console.log(`Processing ${agentType} agent request with model: ${model}`);
-    console.log("Project context:", JSON.stringify(projectContext).substring(0, 200) + "...");
+    if (projectContext) {
+      console.log("Project context:", JSON.stringify(projectContext).substring(0, 200) + "...");
+    } else {
+      console.log("No project context provided");
+    }
     
     if (multipartContent) {
       console.log('Multipart content detected (e.g., text+image)');
@@ -157,7 +169,7 @@ async function handleClaudeThinkingModel(prompt, agentType, projectContext, req,
     
 As the ${agentType}, your job includes analyzing problems, planning solutions, and implementing high-quality code.
 
-Project Context: ${projectContext.name || 'No name'} - ${projectContext.description || 'No description provided'}.
+Project Context: ${projectContext?.name || 'No name'} - ${projectContext?.description || 'No description provided'}.
 
 IMPORTANT INSTRUCTIONS:
 1. ALWAYS THINK THROUGH THE PROBLEM STEP BY STEP
@@ -208,6 +220,7 @@ PRIORITY: [high/medium/low]`;
     };
     
     console.log('Request body:', JSON.stringify(requestBody).substring(0, 500) + '...');
+    console.log('Making request to OpenRouter API at https://openrouter.ai/api/v1/chat/completions');
     
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -223,12 +236,14 @@ PRIORITY: [high/medium/low]`;
     console.log(`OpenRouter response status: ${response.status}`);
     console.log('Response headers:', Object.fromEntries(response.headers.entries()));
 
+    const responseText = await response.text();
+    console.log('Raw response from OpenRouter API:', responseText.substring(0, 500) + '...');
+
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('OpenRouter API error response:', errorText);
+      console.error('OpenRouter API error response:', responseText);
       
       try {
-        const errorData = JSON.parse(errorText);
+        const errorData = JSON.parse(responseText);
         console.error('OpenRouter API error details:', errorData);
         return new Response(
           JSON.stringify({ error: `OpenRouter API returned status ${response.status}: ${errorData.error?.message || errorData.error || 'Unknown error'}` }),
@@ -237,13 +252,13 @@ PRIORITY: [high/medium/low]`;
       } catch (parseError) {
         console.error('Failed to parse OpenRouter error response:', parseError);
         return new Response(
-          JSON.stringify({ error: `OpenRouter API returned status ${response.status}: ${errorText}` }),
+          JSON.stringify({ error: `OpenRouter API returned status ${response.status}: ${responseText}` }),
           { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
     }
 
-    const data = await response.json();
+    const data = JSON.parse(responseText);
     console.log('OpenRouter response received successfully');
     console.log('Response data excerpt:', JSON.stringify(data).substring(0, 200) + '...');
     

@@ -709,3 +709,44 @@ PRIORITY: [high/medium/low]`;
   }
 };
 
+/**
+ * Add a direct test function to check if OpenRouter is accessible
+ */
+export const testOpenRouterConnection = async (): Promise<{ success: boolean; message: string }> => {
+  try {
+    console.log('Testing OpenRouter connection...');
+    const { supabase } = await import('@/integrations/supabase/client');
+    
+    const { data, error } = await supabase.functions.invoke('openrouter', {
+      body: { 
+        prompt: "This is a test prompt. Please respond with 'OpenRouter is working correctly.'",
+        agentType: "test",
+        projectContext: {
+          name: "Test Project",
+          description: "Testing OpenRouter connection"
+        },
+        model: "anthropic/claude-3.7-sonnet:thinking"
+      }
+    });
+    
+    if (error) {
+      console.error('Error testing OpenRouter:', error);
+      return { 
+        success: false, 
+        message: `OpenRouter test failed: ${error.message}` 
+      };
+    }
+    
+    console.log('OpenRouter test response:', data);
+    return { 
+      success: true, 
+      message: 'OpenRouter is accessible and responding'
+    };
+  } catch (error) {
+    console.error('Exception testing OpenRouter:', error);
+    return { 
+      success: false, 
+      message: `Exception testing OpenRouter: ${error instanceof Error ? error.message : 'Unknown error'}`
+    };
+  }
+};
