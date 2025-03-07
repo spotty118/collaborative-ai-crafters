@@ -1,25 +1,253 @@
+
 /**
  * Agent Core Module
  * 
  * The central reasoning and planning engine for the agentic AI system.
- * Handles task decomposition, reasoning, and action execution.
+ * Handles task decomposition, reasoning, and action execution with multi-agent collaboration.
  */
 
 import MemorySystem from './memorySystem';
 import ToolRegistry from './toolRegistry';
 import { generateCompletion } from '../agent-llm';
+import agentMessageBus, { AgentMessage } from './agentMessageBus';
+
+interface AgentCoreConfig {
+  memorySystem: MemorySystem;
+  toolRegistry: ToolRegistry;
+  agentId?: string;
+  agentName?: string;
+  agentType?: string;
+}
 
 class AgentCore {
   private memory: MemorySystem;
   private tools: ToolRegistry;
   private maxRecursionDepth: number;
   private activeTasks: Map<string, any>;
+  private agentId?: string;
+  private agentName?: string;
+  private agentType?: string;
+  private messageHandlers: Map<string, (message: AgentMessage) => Promise<void>>;
+  private unsubscribeFunction?: () => void;
   
-  constructor({ memorySystem, toolRegistry }: { memorySystem: MemorySystem; toolRegistry: ToolRegistry }) {
+  constructor({ memorySystem, toolRegistry, agentId, agentName, agentType }: AgentCoreConfig) {
     this.memory = memorySystem;
     this.tools = toolRegistry;
     this.activeTasks = new Map();
     this.maxRecursionDepth = 5; // Prevent infinite loops
+    this.agentId = agentId;
+    this.agentName = agentName;
+    this.agentType = agentType;
+    this.messageHandlers = new Map();
+    
+    // Subscribe to messages if agent identity is provided
+    if (agentId) {
+      this.subscribeToMessages();
+    }
+  }
+  
+  /**
+   * Subscribe to agent messages
+   */
+  private subscribeToMessages(): void {
+    if (!this.agentId) return;
+    
+    this.unsubscribeFunction = agentMessageBus.subscribe(
+      this.agentId, 
+      this.handleIncomingMessage.bind(this)
+    );
+    
+    console.log(`Agent ${this.agentName} (${this.agentId}) subscribed to messages`);
+  }
+  
+  /**
+   * Handle incoming messages from other agents
+   */
+  private async handleIncomingMessage(message: AgentMessage): Promise<void> {
+    console.log(`Agent ${this.agentName} received message from ${message.from.name}:`, message);
+    
+    try {
+      // Check if there's a specific handler for this message type
+      const handler = this.messageHandlers.get(message.type);
+      if (handler) {
+        await handler(message);
+        return;
+      }
+      
+      // Default message handling
+      switch (message.type) {
+        case 'task':
+          await this.handleTaskMessage(message);
+          break;
+          
+        case 'request':
+          await this.handleRequestMessage(message);
+          break;
+          
+        case 'notification':
+          // Just acknowledge notifications
+          this.acknowledgeMessage(message);
+          break;
+          
+        default:
+          console.log(`No handler for message type: ${message.type}`);
+      }
+    } catch (error) {
+      console.error(`Error handling message in agent ${this.agentName}:`, error);
+    }
+  }
+  
+  /**
+   * Register a custom message handler
+   */
+  registerMessageHandler(messageType: string, handler: (message: AgentMessage) => Promise<void>): void {
+    this.messageHandlers.set(messageType, handler);
+  }
+  
+  /**
+   * Handle a task message
+   */
+  private async handleTaskMessage(message: AgentMessage): Promise<void> {
+    if (!this.agentId || !this.agentName) return;
+    
+    // Store in memory
+    await this.memory.addToShortTermMemory(this.agentId, {
+      role: 'user',
+      content: `Task from ${message.from.name}: ${message.content}`,
+      timestamp: Date.now()
+    });
+    
+    // Generate a response to the task assignment
+    const taskContext = await this.memory.getConversationContext(this.agentId);
+    const prompt = `
+You are ${this.agentName}, a ${this.agentType} agent that has been assigned the following task:
+
+${message.content}
+
+Provide a thoughtful response that includes:
+1. Your understanding of the task
+2. Any initial questions you might have
+3. How you plan to approach this task
+4. Any resources or information you'll need
+
+Keep your response professional and focused on the task.
+`;
+
+    try {
+      const response = await generateCompletion(prompt);
+      
+      // Store response in memory
+      await this.memory.addToShortTermMemory(this.agentId, {
+        role: 'assistant',
+        content: response,
+        timestamp: Date.now()
+      });
+      
+      // Send response back to task assigner
+      await this.sendAgentMessage({
+        to: message.from,
+        content: response,
+        type: 'response',
+        projectId: message.projectId,
+        metadata: {
+          inResponseTo: message.id,
+          taskId: message.metadata?.taskId
+        }
+      });
+      
+    } catch (error) {
+      console.error(`Error generating task response for agent ${this.agentName}:`, error);
+    }
+  }
+  
+  /**
+   * Handle a request message
+   */
+  private async handleRequestMessage(message: AgentMessage): Promise<void> {
+    if (!this.agentId || !this.agentName) return;
+    
+    // Store in memory
+    await this.memory.addToShortTermMemory(this.agentId, {
+      role: 'user',
+      content: `Request from ${message.from.name}: ${message.content}`,
+      timestamp: Date.now()
+    });
+    
+    // Generate a response to the request
+    const conversationContext = await this.memory.getConversationContext(this.agentId);
+    const relevantMemories = await this.memory.retrieveRelevantMemories(
+      this.agentId, 
+      message.content
+    );
+    
+    const prompt = `
+You are ${this.agentName}, a ${this.agentType} agent that has received the following request:
+
+${message.content}
+
+Based on your expertise as a ${this.agentType} specialist, provide a helpful and detailed response.
+
+${relevantMemories.length > 0 ? `Relevant context from your memory:\n${relevantMemories.map(m => `- ${m.text}`).join('\n')}` : ''}
+`;
+
+    try {
+      const response = await generateCompletion(prompt);
+      
+      // Store response in memory
+      await this.memory.addToShortTermMemory(this.agentId, {
+        role: 'assistant',
+        content: response,
+        timestamp: Date.now()
+      });
+      
+      // Send response back
+      await this.sendAgentMessage({
+        to: message.from,
+        content: response,
+        type: 'response',
+        projectId: message.projectId,
+        metadata: {
+          inResponseTo: message.id
+        }
+      });
+      
+    } catch (error) {
+      console.error(`Error generating request response for agent ${this.agentName}:`, error);
+    }
+  }
+  
+  /**
+   * Acknowledge receipt of a message
+   */
+  private async acknowledgeMessage(message: AgentMessage): Promise<void> {
+    if (!this.agentId || !this.agentName) return;
+    
+    // For notifications, just store in memory
+    await this.memory.addToShortTermMemory(this.agentId, {
+      role: 'user',
+      content: `Notification from ${message.from.name}: ${message.content}`,
+      timestamp: Date.now()
+    });
+  }
+  
+  /**
+   * Send a message to another agent
+   */
+  async sendAgentMessage(message: Omit<AgentMessage, 'id' | 'timestamp' | 'from'>): Promise<string> {
+    if (!this.agentId || !this.agentName || !this.agentType) {
+      throw new Error('Agent identity not configured');
+    }
+    
+    const fullMessage: Omit<AgentMessage, 'id' | 'timestamp'> = {
+      ...message,
+      from: {
+        id: this.agentId,
+        name: this.agentName,
+        type: this.agentType
+      }
+    };
+    
+    return await agentMessageBus.sendMessage(fullMessage);
   }
   
   /**

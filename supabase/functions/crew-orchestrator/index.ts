@@ -12,6 +12,34 @@ const corsHeaders = {
 // Get necessary environment variables
 const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
 
+// Define types for agent collaboration
+interface AgentMessage {
+  id: string;
+  fromAgentId: string;
+  toAgentId: string;
+  projectId: string;
+  content: string;
+  type: 'task' | 'response' | 'update' | 'notification';
+  status: 'pending' | 'delivered' | 'processed';
+  metadata?: Record<string, any>;
+  created_at?: string;
+}
+
+interface AgentState {
+  id: string;
+  name: string;
+  type: string;
+  projectId: string;
+  status: 'idle' | 'thinking' | 'working' | 'waiting';
+  currentTask?: string;
+  progress: number;
+  lastActivity: number;
+  contextMemory: Array<{role: string, content: string}>;
+}
+
+const agentStates = new Map<string, AgentState>();
+const messageQueue = new Map<string, AgentMessage[]>();
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -31,7 +59,17 @@ serve(async (req) => {
     console.log('Request body:', rawBody);
     
     // Parse body again after reading text
-    const { projectId, agentId, taskId, action = 'start', agents, projectContext, autostart = false, verbose = true } = JSON.parse(rawBody);
+    const { 
+      projectId, 
+      agentId, 
+      taskId, 
+      action = 'start', 
+      agents, 
+      projectContext,
+      messageData,
+      autostart = false, 
+      verbose = true 
+    } = JSON.parse(rawBody);
     
     if (!projectId) {
       return new Response(
@@ -42,150 +80,52 @@ serve(async (req) => {
     
     console.log(`Processing ${action} request for project ${projectId}, agent ${agentId || 'all'}, verbose=${verbose}`);
     
-    // Fetch project to send as context
-    const { data: projectData, error: projectError } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('id', projectId)
-      .single();
-      
-    if (projectError) {
-      console.error('Error fetching project:', projectError);
-      return new Response(
-        JSON.stringify({ error: `Failed to fetch project: ${projectError.message}` }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    // Handle different action types
+    let responseData;
+    
+    switch (action) {
+      case 'start':
+        responseData = await handleStartAction(projectId, agentId, taskId, verbose);
+        break;
+        
+      case 'stop':
+        responseData = await handleStopAction(projectId, agentId);
+        break;
+        
+      case 'team_collaborate':
+        responseData = await handleTeamCollaboration(projectId, agents, projectContext, autostart, verbose);
+        break;
+        
+      case 'send_message':
+        if (!messageData) {
+          throw new Error('Missing messageData for send_message action');
+        }
+        responseData = await handleSendMessage(projectId, messageData);
+        break;
+        
+      case 'get_messages':
+        responseData = await handleGetMessages(projectId, agentId);
+        break;
+        
+      case 'process_task':
+        if (!taskId) {
+          throw new Error('Missing taskId for process_task action');
+        }
+        responseData = await handleProcessTask(projectId, agentId, taskId, verbose);
+        break;
+        
+      case 'get_agent_state':
+        responseData = await handleGetAgentState(projectId, agentId);
+        break;
+        
+      default:
+        throw new Error(`Unknown action: ${action}`);
     }
     
-    // Fetch agent if agentId is provided
-    let agentData = null;
-    if (agentId) {
-      const { data, error } = await supabase
-        .from('agent_statuses')
-        .select('*')
-        .eq('id', agentId)
-        .single();
-        
-      if (error) {
-        console.error('Error fetching agent:', error);
-        return new Response(
-          JSON.stringify({ error: `Failed to fetch agent: ${error.message}` }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      
-      agentData = data;
-    }
-    
-    // Fetch tasks for the agent if specified
-    let tasksData = [];
-    if (agentId) {
-      const query = supabase
-        .from('tasks')
-        .select('*')
-        .eq('project_id', projectId)
-        .eq('assigned_to', agentId);
-        
-      if (taskId) {
-        query.eq('id', taskId);
-      } else {
-        query.in('status', ['pending', 'in_progress']);
-      }
-      
-      const { data, error } = await query;
-        
-      if (error) {
-        console.error('Error fetching tasks:', error);
-        return new Response(
-          JSON.stringify({ error: `Failed to fetch tasks: ${error.message}` }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      
-      tasksData = data || [];
-    }
-    
-    // Create initialization message based on action
-    if (action === 'start') {
-      await supabase
-        .from('chat_messages')
-        .insert([{
-          project_id: projectId,
-          content: agentId 
-            ? `Starting ${agentData?.name || 'Agent'} for project: ${projectData.name} (verbose=${verbose})`
-            : `CrewAI orchestration started for project: ${projectData.name} (verbose=${verbose})`,
-          sender: agentId ? agentData?.name : 'System',
-          type: 'text'
-        }]);
-    } else if (action === 'stop') {
-      await supabase
-        .from('chat_messages')
-        .insert([{
-          project_id: projectId,
-          content: agentId 
-            ? `Stopping ${agentData?.name || 'Agent'} for project: ${projectData.name}`
-            : `CrewAI orchestration stopped for project: ${projectData.name}`,
-          sender: agentId ? agentData?.name : 'System',
-          type: 'text'
-        }]);
-    } else if (action === 'team_collaborate') {
-      await supabase
-        .from('chat_messages')
-        .insert([{
-          project_id: projectId,
-          content: `The team is now collaborating on project: ${projectData.name} (verbose=${verbose}). Agents will automatically assign and work on tasks.`,
-          sender: "Architect Agent",
-          type: 'text'
-        }]);
-        
-      // Auto-start all agents if the flag is set
-      if (autostart === true) {
-        setTimeout(async () => {
-          if (agents && agents.length > 0) {
-            // Start all agents
-            for (const agent of agents) {
-              // Skip architect as it's already running
-              if (agent.type === 'architect') continue;
-              
-              console.log(`Auto-starting agent ${agent.name} (${agent.id}) with verbose=${verbose}`);
-              try {
-                processAgentWorkflow(projectId, agent.id, agent, [], verbose).catch(err => {
-                  console.error(`Error auto-starting agent ${agent.name}:`, err);
-                });
-              } catch (error) {
-                console.error(`Failed to auto-start agent ${agent.name}:`, error);
-              }
-            }
-          }
-        }, 1000); // Short delay before autostarting
-      }
-    }
-    
-    // Generate immediate response to client
-    const response = new Response(
-      JSON.stringify({ 
-        success: true, 
-        message: `CrewAI orchestration ${action} initiated for ${agentId ? 'agent' : 'project'} ${agentId || projectId} (verbose=${verbose})`,
-        project: projectData?.name || 'Unknown Project',
-        agent: agentData?.name || null,
-        tasks: tasksData?.length || 0,
-        verbose: verbose
-      }),
+    return new Response(
+      JSON.stringify(responseData),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-    
-    // Process orchestration asynchronously (don't await this)
-    if (action === 'team_collaborate') {
-      processTeamCollaboration(projectId, projectData, agents || [], projectContext, verbose).catch(error => {
-        console.error('Error in team collaboration processing:', error);
-      });
-    } else {
-      processOrchestration(projectId, projectData, agentId, agentData, tasksData, action, verbose).catch(error => {
-        console.error('Error in asynchronous orchestration processing:', error);
-      });
-    }
-    
-    return response;
     
   } catch (error) {
     console.error('Error in CrewAI Orchestrator function:', error);
@@ -203,540 +143,973 @@ serve(async (req) => {
 });
 
 /**
- * Process team collaboration
+ * Handle start action to initialize agent(s)
  */
-async function processTeamCollaboration(projectId, projectData, agents, projectContext, verbose = false) {
-  console.log(`Starting team collaboration for project ${projectId} with ${agents.length} agents (verbose=${verbose})`);
+async function handleStartAction(projectId: string, agentId?: string, taskId?: string, verbose = false) {
+  console.log(`Starting agent(s) for project ${projectId}`);
   
-  if (!agents || agents.length === 0) {
-    console.error('No agents provided for team collaboration');
-    return;
-  }
-  
-  try {
-    // Start with architect planning
-    const architect = agents.find(a => a.type === 'architect');
-    if (!architect) {
-      console.error('No architect agent found for team collaboration');
-      return;
-    }
+  if (agentId) {
+    // Single agent mode
+    let agentState = agentStates.get(agentId);
     
-    // Generate initial plan with the architect - UPDATED PROMPT
-    const architectPlan = await callOpenRouter(
-      'architect',
-      `You are the lead architect for project "${projectData.name}". ${projectData.description || ''}
-      
-      Create a concise plan with specific tasks for each team member.
-      
-      TASK FORMAT - FOLLOW THIS EXACTLY:
-      TASK: [Clear task title]
-      ASSIGNED TO: [Agent Type] 
-      DESCRIPTION: [Brief description]
-      PRIORITY: [High/Medium/Low]
-      
-      Assign at least one task to each agent type: Frontend, Backend, DevOps, Testing.
-      Keep your analysis brief and focus on creating well-defined tasks.`,
-      { projectId, projectName: projectData.name, projectDescription: projectData.description },
-      null,
-      verbose
-    );
-    
-    // Add the architect's plan to chat - SIMPLIFIED
-    await supabase
-      .from('chat_messages')
-      .insert([{
-        project_id: projectId,
-        content: "I've analyzed the project requirements and am assigning initial tasks to the team.",
-        sender: architect.name,
-        type: 'text'
-      }]);
-    
-    // Extract tasks from the plan
-    const tasksInfo = extractTasksInfo(architectPlan);
-    
-    if (tasksInfo.length > 0) {
-      console.log(`Extracted ${tasksInfo.length} tasks from architect's plan`);
-      
-      // Create the tasks in the database
-      for (const taskInfo of tasksInfo) {
-        const agentType = taskInfo.assignedTo.replace(' Agent', '').toLowerCase();
-        const assignedAgent = agents.find(a => a.type.toLowerCase() === agentType || 
-                                              a.type.toLowerCase().includes(agentType));
-        
-        if (assignedAgent) {
-          await supabase
-            .from('tasks')
-            .insert([{
-              project_id: projectId,
-              title: taskInfo.title,
-              description: taskInfo.description,
-              assigned_to: assignedAgent.id,
-              status: 'pending',
-              priority: taskInfo.priority.toLowerCase()
-            }]);
-            
-          console.log(`Created task "${taskInfo.title}" for ${assignedAgent.name}`);
-        }
-      }
-      
-      // Add a message about task creation
-      await supabase
-        .from('chat_messages')
-        .insert([{
-          project_id: projectId,
-          content: `I've created ${tasksInfo.length} initial tasks and assigned them to the appropriate team members.`,
-          sender: architect.name,
-          type: 'text'
-        }]);
-      
-      // Auto-start all agents immediately after task creation
-      for (const agent of agents) {
-        if (agent.type !== 'architect') {
-          // Fetch the agent's tasks
-          const { data: agentTasks } = await supabase
-            .from('tasks')
-            .select('*')
-            .eq('project_id', projectId)
-            .eq('assigned_to', agent.id)
-            .eq('status', 'pending');
-            
-          if (agentTasks && agentTasks.length > 0) {
-            // Update agent status to working
-            await supabase
-              .from('agent_statuses')
-              .update({ status: 'working', progress: 10 })
-              .eq('id', agent.id);
-              
-            // Generate brief acknowledgment
-            const acknowledgment = `I've received ${agentTasks.length} task(s) and will begin working on them immediately.`;
-            
-            await supabase
-              .from('chat_messages')
-              .insert([{
-                project_id: projectId,
-                content: acknowledgment,
-                sender: agent.name,
-                type: 'text'
-              }]);
-              
-            console.log(`${agent.name} acknowledged tasks`);
-            
-            // Start working on the first task immediately
-            console.log(`${agent.name} starting work on task: ${agentTasks[0].title} (verbose=${verbose})`);
-            processTask(projectId, agent.id, { name: agent.name, agent_type: agent.type }, agentTasks[0], verbose).catch(error => {
-              console.error(`Error processing task: ${error}`);
-            });
-          }
-        }
-      }
-    } else {
-      console.error('No tasks could be extracted from architect plan');
-      
-      // Create default tasks if no tasks could be extracted
-      await createInitialTasks(projectId, agents);
-      
-      // Auto-start all agents after default task creation
-      for (const agent of agents) {
-        if (agent.type !== 'architect') {
-          const { data: agentTasks } = await supabase
-            .from('tasks')
-            .select('*')
-            .eq('project_id', projectId)
-            .eq('assigned_to', agent.id)
-            .eq('status', 'pending');
-            
-          if (agentTasks && agentTasks.length > 0) {
-            // Update agent status to working
-            await supabase
-              .from('agent_statuses')
-              .update({ status: 'working', progress: 10 })
-              .eq('id', agent.id);
-              
-            // Start working on the first task
-            console.log(`Starting ${agent.name} on default task (verbose=${verbose})`);
-            processTask(projectId, agent.id, { name: agent.name, agent_type: agent.type }, agentTasks[0], verbose).catch(error => {
-              console.error(`Error processing default task: ${error}`);
-            });
-          }
-        }
-      }
-    }
-    
-    // Set up more frequent check for pending tasks
-    setTimeout(() => {
-      checkAndAssignPendingTasks(projectId, agents, verbose);
-    }, 15000); // Check after 15 seconds
-    
-  } catch (error) {
-    console.error('Error in team collaboration:', error);
-    
-    // Add error message to chat
-    await supabase
-      .from('chat_messages')
-      .insert([{
-        project_id: projectId,
-        content: `Team collaboration encountered an error: ${error.message}`,
-        sender: "System",
-        type: "error"
-      }]);
-  }
-}
-
-/**
- * Create initial default tasks for agents if architect doesn't provide them
- */
-async function createInitialTasks(projectId, agents) {
-  console.log(`Creating default tasks for project ${projectId}`);
-  
-  const defaultTasks = {
-    'frontend': {
-      title: 'Create initial UI components',
-      description: 'Design and implement the core UI components for the project interface.',
-      priority: 'high'
-    },
-    'backend': {
-      title: 'Set up API endpoints',
-      description: 'Create the necessary API endpoints for the frontend to interact with.',
-      priority: 'high'
-    },
-    'devops': {
-      title: 'Configure deployment pipeline',
-      description: 'Set up the CI/CD pipeline for automated testing and deployment.',
-      priority: 'medium'
-    },
-    'testing': {
-      title: 'Develop test strategy',
-      description: 'Create a comprehensive testing strategy for the project.',
-      priority: 'medium'
-    }
-  };
-  
-  for (const agent of agents) {
-    if (agent.type !== 'architect') {
-      const agentType = agent.type.toLowerCase();
-      const taskConfig = defaultTasks[agentType] || {
-        title: `Initial ${agentType} task`,
-        description: `Start work on ${agentType} implementation for the project.`,
-        priority: 'medium'
-      };
-      
-      await supabase
-        .from('tasks')
-        .insert([{
-          project_id: projectId,
-          title: taskConfig.title,
-          description: taskConfig.description,
-          assigned_to: agent.id,
-          status: 'pending',
-          priority: taskConfig.priority
-        }]);
-        
-      console.log(`Created default task for ${agent.name}`);
-    }
-  }
-}
-
-/**
- * Periodically check for pending tasks and assign them to agents
- */
-async function checkAndAssignPendingTasks(projectId, agents, verbose = false) {
-  try {
-    console.log(`Checking for pending tasks in project ${projectId}`);
-    
-    // Get all pending tasks
-    const { data: pendingTasks, error } = await supabase
-      .from('tasks')
-      .select('*')
-      .eq('project_id', projectId)
-      .eq('status', 'pending');
-      
-    if (error) {
-      console.error('Error fetching pending tasks:', error);
-      return;
-    }
-    
-    if (pendingTasks && pendingTasks.length > 0) {
-      console.log(`Found ${pendingTasks.length} pending tasks`);
-      
-      // Check which agents are idle
-      const { data: agentStatuses } = await supabase
+    if (!agentState) {
+      // Fetch agent from database
+      const { data: agentData, error } = await supabase
         .from('agent_statuses')
         .select('*')
-        .eq('project_id', projectId);
+        .eq('id', agentId)
+        .single();
         
-      if (agentStatuses) {
-        const idleAgents = agentStatuses.filter(a => a.status !== 'working');
-        
-        if (idleAgents.length > 0) {
-          // Assign a task to the first idle agent
-          const agent = idleAgents[0];
-          const task = pendingTasks.find(t => t.assigned_to === agent.id) || pendingTasks[0];
-          
-          if (task) {
-            console.log(`Assigning task "${task.title}" to ${agent.name} (verbose=${verbose})`);
-            
-            // Update agent status
-            await supabase
-              .from('agent_statuses')
-              .update({ status: 'working', progress: 10 })
-              .eq('id', agent.id);
-              
-            // Process the task
-            await processTask(projectId, agent.id, agent, task, verbose);
+      if (error) {
+        throw new Error(`Failed to fetch agent: ${error.message}`);
+      }
+      
+      // Initialize agent state
+      agentState = {
+        id: agentId,
+        name: agentData.name,
+        type: agentData.agent_type,
+        projectId,
+        status: 'idle',
+        progress: 0,
+        lastActivity: Date.now(),
+        contextMemory: [
+          {
+            role: 'system',
+            content: `You are ${agentData.name}, a ${agentData.agent_type} agent working on a project with other specialized AI agents. You have specific expertise in your domain and can collaborate with others.`
           }
-        }
+        ]
+      };
+      
+      agentStates.set(agentId, agentState);
+      
+      // Initialize message queue for this agent
+      if (!messageQueue.has(agentId)) {
+        messageQueue.set(agentId, []);
       }
     }
     
-    // Schedule next check
-    setTimeout(() => {
-      checkAndAssignPendingTasks(projectId, agents, verbose);
-    }, 60000); // Check every minute
+    // Update agent status to working
+    agentState.status = 'working';
+    agentState.progress = 10;
+    agentState.lastActivity = Date.now();
     
-  } catch (error) {
-    console.error('Error checking pending tasks:', error);
-    
-    // Schedule next check even if there was an error
-    setTimeout(() => {
-      checkAndAssignPendingTasks(projectId, agents, verbose);
-    }, 60000);
-  }
-}
-
-/**
- * Process the orchestration asynchronously
- */
-async function processOrchestration(projectId, projectData, agentId, agentData, tasksData, action, verbose = false) {
-  console.log(`Starting asynchronous orchestration processing for project ${projectId} (verbose=${verbose})`);
-  
-  try {
-    if (action === 'start') {
-      if (agentId) {
-        // Single agent workflow
-        await processAgentWorkflow(projectId, agentId, agentData, tasksData, verbose);
-      } else {
-        // Full project workflow
-        await processProjectWorkflow(projectId, projectData, verbose);
-      }
-    } else if (action === 'stop') {
-      if (agentId) {
-        // Stop single agent
-        await stopAgent(projectId, agentId);
-      } else {
-        // Stop all agents in the project
-        await stopProject(projectId);
-      }
+    // Update in database
+    await supabase
+      .from('agent_statuses')
+      .update({ status: 'working', progress: 10 })
+      .eq('id', agentId);
+      
+    // If task specified, start working on it
+    if (taskId) {
+      return await handleProcessTask(projectId, agentId, taskId, verbose);
     }
-  } catch (error) {
-    console.error('Error in asynchronous orchestration processing:', error);
     
+    // Add notification to chat
     await supabase
       .from('chat_messages')
       .insert([{
         project_id: projectId,
-        content: `Error in orchestration: ${error.message}`,
+        content: `I'm now active and ready to work on tasks for this project.`,
+        sender: agentState.name,
+        type: 'text'
+      }]);
+      
+    return {
+      success: true,
+      message: `Agent ${agentState.name} started`,
+      agentId,
+      projectId,
+      status: agentState.status
+    };
+    
+  } else {
+    // Project-wide start, fetch all agents
+    const { data: agents, error } = await supabase
+      .from('agent_statuses')
+      .select('*')
+      .eq('project_id', projectId);
+      
+    if (error) {
+      throw new Error(`Failed to fetch agents: ${error.message}`);
+    }
+    
+    // Start each agent
+    for (const agent of agents) {
+      const agentState: AgentState = {
+        id: agent.id,
+        name: agent.name,
+        type: agent.agent_type,
+        projectId,
+        status: 'idle',
+        progress: 0,
+        lastActivity: Date.now(),
+        contextMemory: [
+          {
+            role: 'system',
+            content: `You are ${agent.name}, a ${agent.agent_type} agent working on a project with other specialized AI agents. You have specific expertise in your domain and can collaborate with others.`
+          }
+        ]
+      };
+      
+      agentStates.set(agent.id, agentState);
+      
+      // Initialize message queue
+      if (!messageQueue.has(agent.id)) {
+        messageQueue.set(agent.id, []);
+      }
+    }
+    
+    // Add notification to chat
+    await supabase
+      .from('chat_messages')
+      .insert([{
+        project_id: projectId,
+        content: `All agents have been initialized and are ready to collaborate.`,
         sender: 'System',
         type: 'text'
       }]);
       
-    // Reset agent status on error if agentId provided
-    if (agentId) {
+    return {
+      success: true,
+      message: `All agents (${agents.length}) in project ${projectId} started`,
+      projectId,
+      agentCount: agents.length
+    };
+  }
+}
+
+/**
+ * Handle stop action
+ */
+async function handleStopAction(projectId: string, agentId?: string) {
+  if (agentId) {
+    // Stop single agent
+    const agentState = agentStates.get(agentId);
+    
+    if (agentState) {
+      agentState.status = 'idle';
+      agentState.progress = 0;
+      agentState.currentTask = undefined;
+      
+      // Update in database
       await supabase
         .from('agent_statuses')
         .update({ status: 'idle', progress: 0 })
         .eq('id', agentId);
+        
+      // Update any tasks
+      await supabase
+        .from('tasks')
+        .update({ status: 'pending' })
+        .eq('assigned_to', agentId)
+        .eq('status', 'in_progress');
     }
+    
+    return {
+      success: true,
+      message: `Agent ${agentId} stopped`,
+      agentId,
+      projectId
+    };
+    
+  } else {
+    // Stop all agents in project
+    for (const [id, state] of agentStates.entries()) {
+      if (state.projectId === projectId) {
+        state.status = 'idle';
+        state.progress = 0;
+        state.currentTask = undefined;
+      }
+    }
+    
+    // Update all agents in database
+    await supabase
+      .from('agent_statuses')
+      .update({ status: 'idle', progress: 0 })
+      .eq('project_id', projectId);
+      
+    // Update all in-progress tasks
+    await supabase
+      .from('tasks')
+      .update({ status: 'pending' })
+      .eq('project_id', projectId)
+      .eq('status', 'in_progress');
+      
+    return {
+      success: true,
+      message: `All agents in project ${projectId} stopped`,
+      projectId
+    };
   }
 }
 
 /**
- * Process workflow for a project (multi-agent)
+ * Handle team collaboration with real agent interaction
  */
-async function processProjectWorkflow(projectId, projectData, verbose = false) {
-  console.log(`Processing workflow for project ${projectId} (verbose=${verbose})`);
+async function handleTeamCollaboration(
+  projectId: string, 
+  agents: Array<{ id: string, type: string, name: string }>,
+  projectContext: any,
+  autostart = false,
+  verbose = false
+) {
+  console.log(`Initiating team collaboration for project ${projectId} with ${agents.length} agents`);
   
-  // Full project implementation would go here
-  // This is a placeholder for now as we're focusing on single agent workflows
+  // Make sure we have the project data
+  const { data: projectData, error: projectError } = await supabase
+    .from('projects')
+    .select('*')
+    .eq('id', projectId)
+    .single();
+    
+  if (projectError) {
+    throw new Error(`Failed to fetch project: ${projectError.message}`);
+  }
   
+  // Initialize all agents
+  for (const agent of agents) {
+    const agentState: AgentState = {
+      id: agent.id,
+      name: agent.name,
+      type: agent.type,
+      projectId,
+      status: 'idle',
+      progress: 0,
+      lastActivity: Date.now(),
+      contextMemory: [
+        {
+          role: 'system',
+          content: `You are ${agent.name}, a ${agent.type} agent working on project "${projectData.name}". 
+Project description: ${projectData.description || 'No description provided'}
+Your role is to collaborate with other specialized AI agents and provide expertise in your domain of ${agent.type}.`
+        }
+      ]
+    };
+    
+    agentStates.set(agent.id, agentState);
+    
+    // Initialize message queue
+    if (!messageQueue.has(agent.id)) {
+      messageQueue.set(agent.id, []);
+    }
+    
+    // Update in database
+    await supabase
+      .from('agent_statuses')
+      .update({ status: 'idle', progress: 0 })
+      .eq('id', agent.id);
+  }
+  
+  // Find the architect agent to lead the team
+  const architect = agents.find(a => a.type.toLowerCase() === 'architect');
+  
+  if (!architect) {
+    throw new Error('No architect agent found to lead the team');
+  }
+  
+  // Set architect to thinking status
+  const architectState = agentStates.get(architect.id);
+  if (architectState) {
+    architectState.status = 'thinking';
+    architectState.progress = 10;
+    architectState.lastActivity = Date.now();
+    
+    // Update in database
+    await supabase
+      .from('agent_statuses')
+      .update({ status: 'thinking', progress: 10 })
+      .eq('id', architect.id);
+  }
+  
+  // Add collaboration start message
   await supabase
     .from('chat_messages')
     .insert([{
       project_id: projectId,
-      content: `Project workflow for ${projectData.name} is starting. Individual agents will be initialized and assigned tasks. (verbose=${verbose})`,
-      sender: "System",
-      type: "text"
+      content: `Team collaboration has been initiated. I'll analyze the project requirements and coordinate our work.`,
+      sender: architect.name,
+      type: 'text'
     }]);
-}
-
-/**
- * Call OpenRouter API to generate agent response
- */
-async function callOpenRouter(agentType, prompt, projectContext = {}, taskId = null, verbose = false) {
-  if (!OPENROUTER_API_KEY) {
-    throw new Error('OpenRouter API key is not configured');
-  }
-
-  console.log(`Calling OpenRouter API for ${agentType} agent with prompt: ${prompt.substring(0, 100)}... (verbose=${verbose})`);
-
-  const systemPrompts = {
-    'architect': `You are the Architect Agent in a software development team. You analyze requirements and delegate tasks to specialized agents. 
-    Respond in character as a seasoned software architect. Your expertise is in designing scalable, maintainable systems.
-    You work with other agents: Frontend Agent, Backend Agent, Testing Agent, and DevOps Agent.
-    IMPORTANT: Always provide REAL, PRODUCTION-READY code. Never use placeholder comments or descriptive text about what code would do.
-    When you create code files, they will be DIRECTLY INTEGRATED into the project and must be fully functional.`,
     
-    'frontend': `You are the Frontend Agent in a software development team.
-    Respond in character as an expert frontend developer. Your expertise is in creating intuitive user interfaces and responsive designs.
-    You work with other agents, particularly looking to the Architect Agent for direction and collaborating with the Backend Agent for integration.
-    IMPORTANT: Always provide REAL, PRODUCTION-READY code. Never use placeholder comments or descriptive text about what code would do.
-    When you create code files, they will be DIRECTLY INTEGRATED into the project and must be fully functional.`,
+  // Generate initial plan with the architect
+  const planResponse = await callOpenRouter(
+    'architect',
+    `You are the lead architect for project "${projectData.name}". 
+Project description: ${projectData.description || 'No description available'}
+
+Your team consists of these specialized agents:
+${agents.filter(a => a.id !== architect.id).map(a => `- ${a.name} (${a.type})`).join('\n')}
+
+Create a detailed project plan that includes:
+1. A breakdown of the main components and features needed
+2. Specific tasks for each team member based on their specialization
+3. Dependencies between tasks
+4. Any technical decisions or architecture choices
+
+Format your response as a comprehensive project plan. Be detailed, specific, and production-ready.`,
+    { projectId, projectName: projectData.name },
+    verbose
+  );
+  
+  // Extract tasks from the plan
+  const tasks = extractTasksFromPlan(planResponse);
+  
+  // Create tasks in the database and assign to agents
+  if (tasks.length > 0) {
+    console.log(`Creating ${tasks.length} tasks from architect's plan`);
     
-    'backend': `You are the Backend Agent in a software development team.
-    Respond in character as a skilled backend developer. Your expertise is in creating robust APIs, database design, and server-side logic.
-    You work with other agents, implementing the architectural design from the Architect Agent and providing APIs for the Frontend Agent.
-    IMPORTANT: Always provide REAL, PRODUCTION-READY code. Never use placeholder comments or descriptive text about what code would do.
-    When you create code files, they will be DIRECTLY INTEGRATED into the project and must be fully functional.`,
-    
-    'testing': `You are the Testing Agent in a software development team.
-    Respond in character as a meticulous QA engineer. Your expertise is in ensuring code quality, writing test cases, and finding potential issues.
-    You work with all other agents to verify their work meets requirements and is free of defects.
-    IMPORTANT: Always provide REAL, PRODUCTION-READY code. Never use placeholder comments or descriptive text about what code would do.
-    When you create code files, they will be DIRECTLY INTEGRATED into the project and must be fully functional.`,
-    
-    'devops': `You are the DevOps Agent in a software development team.
-    Respond in character as an experienced DevOps engineer. Your expertise is in deployment pipelines, infrastructure, and system reliability.
-    You work with all other agents to ensure the project can be deployed and scaled effectively.
-    IMPORTANT: Always provide REAL, PRODUCTION-READY code. Never use placeholder comments or descriptive text about what code would do.
-    When you create code files, they will be DIRECTLY INTEGRATED into the project and must be fully functional.`
-  };
-
-  let fullSystemPrompt = systemPrompts[agentType] || 'You are an AI assistant helping with software development.';
-  
-  if (projectContext && Object.keys(projectContext).length > 0) {
-    fullSystemPrompt += `\n\nProject context: ${JSON.stringify(projectContext)}`;
-  }
-
-  if (verbose) {
-    fullSystemPrompt += `\n\nDETAILED VERBOSE OUTPUT: Your responses should include a detailed step-by-step reasoning process. Explain exactly what you're doing and why.`;
-  }
-
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://lovable.dev', 
-      'X-Title': 'Agentic Development Platform',
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.0-flash-thinking-exp:free',
-      messages: [
-        { role: 'system', content: fullSystemPrompt },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.7,
-      max_tokens: 1500,
-      thinking: {
-        enabled: true
-      }
-    }),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.text();
-    console.error('OpenRouter API error:', errorData);
-    throw new Error(`OpenRouter API returned status ${response.status}: ${errorData}`);
-  }
-
-  const data = await response.json();
-  
-  if (verbose) {
-    console.log('OpenRouter API full response:', JSON.stringify(data, null, 2));
-  }
-  
-  const content = data.choices[0].message.content;
-  
-  // Filter out descriptive content that isn't real code
-  const filteredContent = filterForProductionCode(content, verbose);
-  
-  return filteredContent;
-}
-
-/**
- * Filter content to ensure it contains real code and not just descriptions
- */
-function filterForProductionCode(content, verbose = false) {
-  // Check if content has code blocks
-  const hasCodeBlocks = content.includes('```');
-  
-  if (!hasCodeBlocks) {
-    console.log('Warning: Generated content doesn\'t contain any code blocks');
-    // We still return the content as it might be useful text
-    return content;
-  }
-  
-  // Check for descriptive statements that indicate non-implementation
-  const descriptivePatterns = [
-    /I would implement this|I would create|we would need to|we should implement|should be implemented/i,
-    /let\'s design|let\'s create|let\'s implement|let\'s style/i,
-    /First, we need to|Next, we would|This would require/i,
-    /I\'m going to use|We\'re going to use|I would use/i,
-    /This is just a mockup|This is a simplified/i
-  ];
-  
-  let hasDescriptiveWarnings = false;
-  
-  for (const pattern of descriptivePatterns) {
-    if (pattern.test(content)) {
-      console.log(`Warning: Generated content contains descriptive language that may indicate non-implementation: ${pattern}`);
-      hasDescriptiveWarnings = true;
+    for (const task of tasks) {
+      // Find the appropriate agent for this task
+      const targetAgent = agents.find(a => 
+        task.assignedTo.toLowerCase().includes(a.type.toLowerCase()) ||
+        a.name.toLowerCase().includes(task.assignedTo.toLowerCase())
+      );
       
-      if (verbose) {
-        console.log('Pattern match details:', {
-          pattern: pattern.toString(),
-          matches: content.match(pattern)
-        });
+      if (targetAgent) {
+        // Create the task
+        const { data: newTask, error } = await supabase
+          .from('tasks')
+          .insert([{
+            project_id: projectId,
+            title: task.title,
+            description: task.description,
+            assigned_to: targetAgent.id,
+            status: 'pending',
+            priority: task.priority || 'medium'
+          }])
+          .select()
+          .single();
+          
+        if (error) {
+          console.error(`Error creating task: ${error.message}`);
+          continue;
+        }
+        
+        // Send a message to the agent about their task
+        if (newTask) {
+          const message: AgentMessage = {
+            id: crypto.randomUUID(),
+            fromAgentId: architect.id,
+            toAgentId: targetAgent.id,
+            projectId,
+            content: `I've assigned you the following task: "${newTask.title}"\n\nDescription: ${newTask.description}\n\nThis is part of our project plan. Please start working on this as soon as you're ready and keep me updated on your progress.`,
+            type: 'task',
+            status: 'pending',
+            metadata: {
+              taskId: newTask.id
+            }
+          };
+          
+          // Add to message queue
+          const agentQueue = messageQueue.get(targetAgent.id) || [];
+          agentQueue.push(message);
+          messageQueue.set(targetAgent.id, agentQueue);
+        }
+      }
+    }
+    
+    // Send the complete plan to chat
+    await supabase
+      .from('chat_messages')
+      .insert([{
+        project_id: projectId,
+        content: `I've analyzed our project requirements and created a detailed plan. I've assigned ${tasks.length} specific tasks to team members based on their expertise. Each agent will now work on their assigned tasks and collaborate as needed.`,
+        sender: architect.name,
+        type: 'text'
+      }]);
+    
+    // Start other agents if autostart is enabled
+    if (autostart) {
+      for (const agent of agents) {
+        if (agent.id !== architect.id) {
+          // Update agent status
+          const agentState = agentStates.get(agent.id);
+          if (agentState) {
+            agentState.status = 'working';
+            agentState.progress = 10;
+            agentState.lastActivity = Date.now();
+            
+            // Update in database
+            await supabase
+              .from('agent_statuses')
+              .update({ status: 'working', progress: 10 })
+              .eq('id', agent.id);
+              
+            // Process the agent's messages
+            processAgentMessages(agent.id, projectId).catch(err => {
+              console.error(`Error processing messages for ${agent.name}:`, err);
+            });
+          }
+        }
+      }
+    }
+  } else {
+    // Send message if no tasks could be extracted
+    await supabase
+      .from('chat_messages')
+      .insert([{
+        project_id: projectId,
+        content: `I've analyzed the project requirements but couldn't determine specific tasks yet. I'll need to gather more information from the team.`,
+        sender: architect.name,
+        type: 'text'
+      }]);
+  }
+  
+  // Update architect status to working
+  if (architectState) {
+    architectState.status = 'working';
+    architectState.progress = 50;
+    
+    // Update in database
+    await supabase
+      .from('agent_statuses')
+      .update({ status: 'working', progress: 50 })
+      .eq('id', architect.id);
+  }
+  
+  return {
+    success: true,
+    message: `Team collaboration initiated for project ${projectId}`,
+    projectId,
+    taskCount: tasks.length,
+    agents: agents.length
+  };
+}
+
+/**
+ * Handle sending a message between agents
+ */
+async function handleSendMessage(projectId: string, messageData: Partial<AgentMessage>) {
+  if (!messageData.fromAgentId || !messageData.toAgentId || !messageData.content) {
+    throw new Error('Missing required message data fields');
+  }
+  
+  const message: AgentMessage = {
+    id: messageData.id || crypto.randomUUID(),
+    fromAgentId: messageData.fromAgentId,
+    toAgentId: messageData.toAgentId,
+    projectId,
+    content: messageData.content,
+    type: messageData.type || 'notification',
+    status: 'pending',
+    metadata: messageData.metadata || {},
+    created_at: new Date().toISOString()
+  };
+  
+  // Add to recipient's message queue
+  const agentQueue = messageQueue.get(message.toAgentId) || [];
+  agentQueue.push(message);
+  messageQueue.set(message.toAgentId, agentQueue);
+  
+  // Process messages immediately
+  try {
+    await processAgentMessages(message.toAgentId, projectId);
+  } catch (error) {
+    console.error(`Error processing messages for agent ${message.toAgentId}:`, error);
+  }
+  
+  return {
+    success: true,
+    message: `Message sent from ${message.fromAgentId} to ${message.toAgentId}`,
+    messageId: message.id
+  };
+}
+
+/**
+ * Handle retrieving messages for an agent
+ */
+async function handleGetMessages(projectId: string, agentId: string) {
+  if (!agentId) {
+    throw new Error('Agent ID is required');
+  }
+  
+  const messages = messageQueue.get(agentId) || [];
+  
+  return {
+    success: true,
+    agentId,
+    messages: messages.filter(m => m.projectId === projectId)
+  };
+}
+
+/**
+ * Handle processing a specific task
+ */
+async function handleProcessTask(projectId: string, agentId: string, taskId: string, verbose = false) {
+  if (!agentId || !taskId) {
+    throw new Error('Agent ID and Task ID are required');
+  }
+  
+  // Get agent state
+  const agentState = agentStates.get(agentId);
+  if (!agentState) {
+    throw new Error(`Agent ${agentId} not found in state`);
+  }
+  
+  // Get task details
+  const { data: task, error } = await supabase
+    .from('tasks')
+    .select('*')
+    .eq('id', taskId)
+    .single();
+    
+  if (error || !task) {
+    throw new Error(`Failed to fetch task: ${error?.message || 'Task not found'}`);
+  }
+  
+  // Update agent status
+  agentState.status = 'working';
+  agentState.progress = 20;
+  agentState.currentTask = taskId;
+  agentState.lastActivity = Date.now();
+  
+  // Update task status
+  await supabase
+    .from('tasks')
+    .update({ status: 'in_progress', updated_at: new Date().toISOString() })
+    .eq('id', taskId);
+    
+  // Update agent status in database
+  await supabase
+    .from('agent_statuses')
+    .update({ status: 'working', progress: 20 })
+    .eq('id', agentId);
+    
+  // Generate agent's approach message
+  const approachResponse = await callOpenRouter(
+    agentState.type,
+    `You are working on the following task: "${task.title}"
+    
+Description: ${task.description}
+
+1. Analyze what needs to be done to complete this task.
+2. Describe your approach and the steps you'll take.
+3. Mention any information or resources you might need from other agents.
+
+Respond as if you're messaging your team about how you plan to tackle this task.`,
+    { projectId, taskId },
+    verbose
+  );
+  
+  // Add approach message to chat
+  await supabase
+    .from('chat_messages')
+    .insert([{
+      project_id: projectId,
+      content: approachResponse,
+      sender: agentState.name,
+      type: 'text'
+    }]);
+    
+  // Update progress
+  agentState.progress = 40;
+  await supabase
+    .from('agent_statuses')
+    .update({ progress: 40 })
+    .eq('id', agentId);
+    
+  // Generate task implementation
+  const implementationResponse = await callOpenRouter(
+    agentState.type,
+    `You're now implementing the task: "${task.title}"
+    
+Description: ${task.description}
+
+Provide a detailed, production-ready implementation for this task. Include:
+
+1. Any code you need to write - use code blocks with the filepath in this format:
+\`\`\`filepath:/path/to/file.ext
+// Code content here
+\`\`\`
+
+2. Technical details and explanations of your implementation.
+
+3. Any configuration or setup required.
+
+Be thorough, specific, and make sure your implementation is complete and functional.`,
+    { projectId, taskId },
+    verbose
+  );
+  
+  // Extract code from the implementation
+  const codeSnippets = extractCodeSnippets(implementationResponse);
+  
+  // Create/update code files
+  if (codeSnippets.length > 0) {
+    for (const snippet of codeSnippets) {
+      const fileName = snippet.filePath.split('/').pop() || 'unknown.txt';
+      
+      // Check if file exists
+      const { data: existingFiles } = await supabase
+        .from('code_files')
+        .select('id')
+        .eq('path', snippet.filePath)
+        .eq('project_id', projectId);
+        
+      if (existingFiles && existingFiles.length > 0) {
+        // Update existing file
+        await supabase
+          .from('code_files')
+          .update({
+            content: snippet.code,
+            last_modified_by: agentState.name,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingFiles[0].id);
+      } else {
+        // Create new file
+        await supabase
+          .from('code_files')
+          .insert([{
+            project_id: projectId,
+            name: fileName,
+            path: snippet.filePath,
+            content: snippet.code,
+            language: determineLanguage(snippet.filePath),
+            created_by: agentState.name,
+            last_modified_by: agentState.name
+          }]);
       }
     }
   }
   
-  // Modify content to warn about potential non-implementation if needed
-  if (hasDescriptiveWarnings) {
-    // We'll still return the content, but log a warning
-    console.log('WARNING: Generated content may contain descriptive rather than implementational code');
+  // Add implementation message to chat
+  await supabase
+    .from('chat_messages')
+    .insert([{
+      project_id: projectId,
+      content: implementationResponse,
+      sender: agentState.name,
+      type: 'text'
+    }]);
     
-    if (verbose) {
-      console.log('Full content with descriptive warnings:', content);
-    }
+  // Generate completion message
+  const completionResponse = await callOpenRouter(
+    agentState.type,
+    `You've completed the task: "${task.title}"
+    
+Provide a brief summary of what you implemented, any challenges you encountered, and what the results are. Keep it concise but informative.`,
+    { projectId, taskId },
+    verbose
+  );
+  
+  // Add completion message to chat
+  await supabase
+    .from('chat_messages')
+    .insert([{
+      project_id: projectId,
+      content: completionResponse,
+      sender: agentState.name,
+      type: 'text'
+    }]);
+    
+  // Update task status
+  await supabase
+    .from('tasks')
+    .update({ 
+      status: 'completed', 
+      updated_at: new Date().toISOString(),
+      completed_at: new Date().toISOString()
+    })
+    .eq('id', taskId);
+    
+  // Update agent status
+  agentState.status = 'idle';
+  agentState.progress = 100;
+  agentState.currentTask = undefined;
+  agentState.lastActivity = Date.now();
+  
+  await supabase
+    .from('agent_statuses')
+    .update({ status: 'idle', progress: 100 })
+    .eq('id', agentId);
+    
+  // Check for other pending tasks
+  const { data: pendingTasks } = await supabase
+    .from('tasks')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('assigned_to', agentId)
+    .eq('status', 'pending')
+    .limit(1);
+    
+  if (pendingTasks && pendingTasks.length > 0) {
+    // Start next task
+    return handleProcessTask(projectId, agentId, pendingTasks[0].id, verbose);
   }
   
-  return content;
+  return {
+    success: true,
+    message: `Task ${taskId} completed by agent ${agentId}`,
+    agentId,
+    taskId,
+    filesCreated: codeSnippets.length
+  };
 }
 
 /**
- * Extract tasks from agent response
+ * Handle getting agent state
  */
-function extractTasksInfo(content) {
-  const taskPattern = /TASK:(.+?)(?:ASSIGNED TO|ASSIGNEE):(.+?)(?:DESCRIPTION|DESC):(.+?)(?:PRIORITY):(.+?)(?=\n\s*TASK:|\n\s*$|$)/gsi;
+async function handleGetAgentState(projectId: string, agentId: string) {
+  if (!agentId) {
+    throw new Error('Agent ID is required');
+  }
+  
+  const agentState = agentStates.get(agentId);
+  
+  if (!agentState) {
+    // Try to fetch from database
+    const { data: agentData, error } = await supabase
+      .from('agent_statuses')
+      .select('*')
+      .eq('id', agentId)
+      .single();
+      
+    if (error || !agentData) {
+      throw new Error(`Agent ${agentId} not found`);
+    }
+    
+    return {
+      success: true,
+      agentId,
+      state: {
+        id: agentData.id,
+        name: agentData.name,
+        type: agentData.agent_type,
+        status: agentData.status,
+        progress: agentData.progress
+      }
+    };
+  }
+  
+  return {
+    success: true,
+    agentId,
+    state: {
+      id: agentState.id,
+      name: agentState.name,
+      type: agentState.type,
+      status: agentState.status,
+      progress: agentState.progress,
+      currentTask: agentState.currentTask,
+      lastActivity: agentState.lastActivity
+    }
+  };
+}
+
+/**
+ * Process messages for an agent
+ */
+async function processAgentMessages(agentId: string, projectId: string): Promise<void> {
+  const agentState = agentStates.get(agentId);
+  if (!agentState) {
+    throw new Error(`Agent ${agentId} not found in state`);
+  }
+  
+  const messages = messageQueue.get(agentId) || [];
+  const pendingMessages = messages.filter(m => m.status === 'pending' && m.projectId === projectId);
+  
+  if (pendingMessages.length === 0) {
+    return; // No messages to process
+  }
+  
+  // Take the first pending message
+  const message = pendingMessages[0];
+  
+  // Update message status
+  message.status = 'delivered';
+  
+  // Get sender info
+  const senderState = agentStates.get(message.fromAgentId);
+  const senderName = senderState?.name || 'Unknown Agent';
+  
+  // Update agent status
+  agentState.status = 'thinking';
+  agentState.lastActivity = Date.now();
+  
+  // Update in database
+  await supabase
+    .from('agent_statuses')
+    .update({ status: 'thinking' })
+    .eq('id', agentId);
+    
+  // Add message to context memory
+  agentState.contextMemory.push({
+    role: 'user',
+    content: `Message from ${senderName}:\n\n${message.content}`
+  });
+  
+  // Generate response
+  const isTaskMessage = message.type === 'task';
+  let responsePrompt = `You received a message from ${senderName}:\n\n${message.content}\n\n`;
+  
+  if (isTaskMessage) {
+    responsePrompt += `This message is assigning you a task. Respond thoughtfully with:
+1. Your understanding of the task
+2. Any initial questions you have
+3. How you plan to approach this work
+4. Any dependencies or information you need
+    
+Keep your response professional, specific, and focused on the task.`;
+  } else {
+    responsePrompt += `Respond thoughtfully to this message. Consider:
+1. What information they're providing or requesting
+2. How this relates to your role as a ${agentState.type} agent
+3. What would be most helpful to move the project forward
+    
+Keep your response concise, professional, and constructive.`;
+  }
+  
+  try {
+    // Generate agent response
+    const response = await callOpenRouter(agentState.type, responsePrompt, { projectId });
+    
+    // Add to context memory
+    agentState.contextMemory.push({
+      role: 'assistant',
+      content: response
+    });
+    
+    // Send response message
+    const responseMessage: AgentMessage = {
+      id: crypto.randomUUID(),
+      fromAgentId: agentId,
+      toAgentId: message.fromAgentId,
+      projectId,
+      content: response,
+      type: 'response',
+      status: 'pending',
+      metadata: {
+        inResponseTo: message.id,
+        ...(message.metadata || {})
+      }
+    };
+    
+    // Add to sender's queue
+    const senderQueue = messageQueue.get(message.fromAgentId) || [];
+    senderQueue.push(responseMessage);
+    messageQueue.set(message.fromAgentId, senderQueue);
+    
+    // Add to chat for visibility
+    await supabase
+      .from('chat_messages')
+      .insert([{
+        project_id: projectId,
+        content: `@${senderName} ${response}`,
+        sender: agentState.name,
+        type: 'text'
+      }]);
+      
+    // Mark original message as processed
+    message.status = 'processed';
+    
+    // Update agent status
+    agentState.status = 'working';
+    agentState.lastActivity = Date.now();
+    
+    // Update in database
+    await supabase
+      .from('agent_statuses')
+      .update({ status: 'working' })
+      .eq('id', agentId);
+      
+    // If this was a task message, check if there's a task ID in metadata
+    if (isTaskMessage && message.metadata?.taskId) {
+      // Start working on the task
+      handleProcessTask(projectId, agentId, message.metadata.taskId, false).catch(err => {
+        console.error(`Error processing task ${message.metadata.taskId}:`, err);
+      });
+    }
+    
+  } catch (error) {
+    console.error(`Error processing message for agent ${agentState.name}:`, error);
+    
+    // Reset agent status
+    agentState.status = 'idle';
+    
+    // Update in database
+    await supabase
+      .from('agent_statuses')
+      .update({ status: 'idle' })
+      .eq('id', agentId);
+  }
+}
+
+/**
+ * Extract tasks from architect's plan
+ */
+function extractTasksFromPlan(plan: string): Array<{
+  title: string;
+  assignedTo: string;
+  description: string;
+  priority: string;
+}> {
   const tasks = [];
+  
+  // Try different patterns for task extraction
+  const taskPattern1 = /Task\s*(?:[\d#]+)?[:.\-]\s*([^\n]+)[\n\s]*Agent\s*[:.\-]\s*([^\n]+)[\n\s]*Description\s*[:.\-]\s*([^\n]+)(?:[\n\s]*Priority\s*[:.\-]\s*([^\n]+))?/gi;
+  const taskPattern2 = /Task\s*(?:for)?\s*([^:]+?):\s*([^\n]+?)(?:[\n\s]*Description\s*[:.\-]\s*([^\n]+))?(?:[\n\s]*Priority\s*[:.\-]\s*([^\n]+))?/gi;
+  const taskPattern3 = /\-\s*\*\*([^:]+?):\*\*\s*([^\n]+?)(?:[\n\s]*([^\n]+))?(?:[\n\s]*Priority\s*[:.\-]\s*([^\n]+))?/gi;
+  
   let match;
   
-  while ((match = taskPattern.exec(content)) !== null) {
+  // Try first pattern
+  while ((match = taskPattern1.exec(plan)) !== null) {
     tasks.push({
       title: match[1].trim(),
       assignedTo: match[2].trim(),
       description: match[3].trim(),
-      priority: match[4].trim()
+      priority: (match[4] || 'medium').trim().toLowerCase()
     });
+  }
+  
+  // If no tasks found, try second pattern
+  if (tasks.length === 0) {
+    while ((match = taskPattern2.exec(plan)) !== null) {
+      tasks.push({
+        title: match[2].trim(),
+        assignedTo: match[1].trim(),
+        description: (match[3] || match[2]).trim(),
+        priority: (match[4] || 'medium').trim().toLowerCase()
+      });
+    }
+  }
+  
+  // If still no tasks found, try third pattern
+  if (tasks.length === 0) {
+    while ((match = taskPattern3.exec(plan)) !== null) {
+      tasks.push({
+        title: match[2].trim(),
+        assignedTo: match[1].trim(),
+        description: (match[3] || match[2]).trim(),
+        priority: (match[4] || 'medium').trim().toLowerCase()
+      });
+    }
+  }
+  
+  // Normalize priorities
+  for (const task of tasks) {
+    const priority = task.priority.toLowerCase();
+    if (priority.includes('high')) {
+      task.priority = 'high';
+    } else if (priority.includes('low')) {
+      task.priority = 'low';
+    } else {
+      task.priority = 'medium';
+    }
   }
   
   return tasks;
 }
 
 /**
- * Extract code snippets from agent response
+ * Extract code snippets from responses
  */
-function extractCodeSnippets(content) {
+function extractCodeSnippets(content: string): Array<{
+  filePath: string;
+  code: string;
+}> {
   const codeSnippets = [];
   
   // Match code blocks with filepath format: ```filepath:/path/to/file
@@ -795,8 +1168,8 @@ function extractCodeSnippets(content) {
 /**
  * Determine language from file path
  */
-function determineLanguage(filePath) {
-  const extension = filePath.split('.').pop().toLowerCase();
+function determineLanguage(filePath: string): string {
+  const extension = filePath.split('.').pop()?.toLowerCase() || '';
   
   switch (extension) {
     case 'js': return 'javascript';
@@ -813,378 +1186,68 @@ function determineLanguage(filePath) {
 }
 
 /**
- * Get a default task title based on agent type
+ * Call OpenRouter API for agent responses
  */
-function getDefaultTaskTitle(agentType) {
-  const typeNormalized = agentType.toLowerCase();
-  
-  if (typeNormalized.includes('front')) {
-    return 'Implement initial user interface components';
-  } else if (typeNormalized.includes('back')) {
-    return 'Create core API endpoints and database models';
-  } else if (typeNormalized.includes('devops')) {
-    return 'Set up CI/CD pipeline and deployment configuration';
-  } else if (typeNormalized.includes('test')) {
-    return 'Develop test strategy and initial test cases';
-  } else if (typeNormalized.includes('architect')) {
-    return 'Design system architecture and component breakdown';
-  } else {
-    return 'Complete initial development tasks';
-  }
-}
-
-/**
- * Get a default task description based on agent type
- */
-function getDefaultTaskDescription(agentType) {
-  const typeNormalized = agentType.toLowerCase();
-  
-  if (typeNormalized.includes('front')) {
-    return 'Create the core UI components needed for the application. Focus on responsive design, accessibility, and a clean user experience. Implement key screens and navigation flow.';
-  } else if (typeNormalized.includes('back')) {
-    return 'Develop the essential API endpoints and database models required for the application. Ensure proper data validation, error handling, and security measures are implemented.';
-  } else if (typeNormalized.includes('devops')) {
-    return 'Configure the CI/CD pipeline for automated testing and deployment. Set up infrastructure as code, monitoring, and alerting systems to ensure reliable operations.';
-  } else if (typeNormalized.includes('test')) {
-    return 'Create a comprehensive testing strategy including unit, integration, and end-to-end tests. Implement initial test cases for critical application features.';
-  } else if (typeNormalized.includes('architect')) {
-    return 'Design the overall system architecture, component breakdown, and technical specifications. Define technology stack, integration points, and data flow throughout the application.';
-  } else {
-    return 'Complete initial development tasks required for the project. Follow best practices for code quality, documentation, and collaboration with the team.';
-  }
-}
-
-/**
- * Stop all agents in a project
- */
-async function stopProject(projectId) {
-  // Update project status
-  await supabase
-    .from('projects')
-    .update({ status: 'idle' })
-    .eq('id', projectId);
-    
-  // Update all agents in the project to idle status
-  await supabase
-    .from('agent_statuses')
-    .update({ status: 'idle' })
-    .eq('project_id', projectId);
-    
-  console.log(`Stopped all agents for project ${projectId}`);
-}
-
-/**
- * Stop a specific agent
- */
-async function stopAgent(projectId, agentId) {
-  // Update the agent to idle status
-  await supabase
-    .from('agent_statuses')
-    .update({ status: 'idle' })
-    .eq('id', agentId);
-    
-  // Update any in-progress tasks for this agent to pending
-  await supabase
-    .from('tasks')
-    .update({ status: 'pending' })
-    .eq('assigned_to', agentId)
-    .eq('status', 'in_progress');
-    
-  console.log(`Stopped agent ${agentId} for project ${projectId}`);
-}
-
-/**
- * Process workflow for a single agent
- */
-async function processAgentWorkflow(projectId, agentId, agentData, tasksData, verbose = false) {
-  console.log(`Processing workflow for agent ${agentId} with ${tasksData.length} tasks (verbose=${verbose})`);
-  
-  // If no tasks, create a default task for the agent
-  if (tasksData.length === 0) {
-    // Create a default task based on agent type with real descriptions
-    const taskTitle = getDefaultTaskTitle(agentData.agent_type);
-    const taskDesc = getDefaultTaskDescription(agentData.agent_type);
-    
-    const { data: newTask, error } = await supabase
-      .from('tasks')
-      .insert([{
-        project_id: projectId,
-        title: taskTitle,
-        description: taskDesc,
-        assigned_to: agentId,
-        status: 'pending',
-        priority: 'high'
-      }])
-      .select()
-      .single();
-      
-    if (error) {
-      console.error('Error creating default task:', error);
-      throw new Error(`Failed to create default task: ${error.message}`);
-    }
-    
-    tasksData = [newTask];
-    
-    // Generate an AI response about the task creation
-    const response = await callOpenRouter(
-      agentData.agent_type,
-      `You've been assigned a new task: ${taskTitle}. Briefly describe how you will approach this task.`,
-      { projectId, taskTitle, taskDescription: taskDesc },
-      null,
-      verbose
-    );
-    
-    await supabase
-      .from('chat_messages')
-      .insert([{
-        project_id: projectId,
-        content: response,
-        sender: agentData.name,
-        type: 'text'
-      }]);
+async function callOpenRouter(
+  agentType: string, 
+  prompt: string, 
+  context: any = {}, 
+  verbose = false
+): Promise<string> {
+  if (!OPENROUTER_API_KEY) {
+    throw new Error('OpenRouter API key is not configured');
   }
   
-  // Update agent status to working
-  await supabase
-    .from('agent_statuses')
-    .update({ status: 'working', progress: 10 })
-    .eq('id', agentId);
+  console.log(`Calling OpenRouter API for ${agentType} agent with prompt: ${prompt.substring(0, 100)}...`);
+  
+  const systemPrompts: Record<string, string> = {
+    'architect': `You are a professional software architect. You design systems, plan technical implementations, and coordinate development efforts. Your responses are detailed, technical, and production-ready.`,
     
-  // Process each task in sequence with real AI responses
-  for (const task of tasksData) {
-    await processTask(projectId, agentId, agentData, task, verbose);
+    'frontend': `You are an expert frontend developer specializing in React, TypeScript, and modern web development patterns. You write clean, maintainable code with proper error handling and performance considerations.`,
+    
+    'backend': `You are a backend developer with expertise in API design, database optimization, and server architecture. Your code is secure, scalable, and follows best practices.`,
+    
+    'devops': `You are a DevOps engineer focused on CI/CD pipelines, infrastructure as code, and deployment automation. You understand cloud services, container orchestration, and operational excellence.`,
+    
+    'testing': `You are a QA engineer specializing in test automation, quality assurance processes, and bug identification. You write thorough test cases and ensure software reliability.`
+  };
+  
+  const systemPrompt = systemPrompts[agentType.toLowerCase()] || 
+    `You are an AI agent specializing in ${agentType}. Provide technical, detailed, and production-ready responses.`;
+  
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://lovable.dev', 
+      'X-Title': 'Agentic Development Platform',
+    },
+    body: JSON.stringify({
+      model: 'google/gemini-2.0-flash-thinking-exp:free',
+      messages: [
+        { 
+          role: 'system', 
+          content: `${systemPrompt}\n\nContext: ${JSON.stringify(context)}\n\nAlways provide production-ready, complete implementations. Never include placeholder code or TODOs.` 
+        },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 1500
+    }),
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenRouter API error (${response.status}): ${errorText}`);
   }
   
-  // Final update to agent
-  await supabase
-    .from('agent_statuses')
-    .update({ status: 'completed', progress: 100 })
-    .eq('id', agentId);
-    
-  // Add completion message
-  const completionResponse = await callOpenRouter(
-    agentData.agent_type,
-    `You've completed all your assigned tasks for project ${projectId}. Summarize what you've accomplished.`,
-    { projectId },
-    null,
-    verbose
-  );
+  const data = await response.json();
+  const content = data.choices[0].message.content;
   
-  await supabase
-    .from('chat_messages')
-    .insert([{
-      project_id: projectId,
-      content: completionResponse,
-      sender: agentData.name,
-      type: 'text'
-    }]);
-}
-
-/**
- * Process a specific task
- */
-async function processTask(projectId, agentId, agentData, task, verbose = false) {
-  console.log(`Processing task ${task.id}: ${task.title} (verbose=${verbose})`);
-  
-  // Update task status to in_progress
-  await supabase
-    .from('tasks')
-    .update({ status: 'in_progress', updated_at: new Date().toISOString() })
-    .eq('id', task.id);
-    
-  // Generate a message about starting the task using AI with stronger instructions for real code
-  const startResponse = await callOpenRouter(
-    agentData.agent_type,
-    `Execute the following task: "${task.title}". ${task.description} 
-    Provide REAL, PRODUCTION-READY implementation with functional code that will be directly added to the project.
-    Your code must be complete and ready to run - not pseudocode or explanations of what code would do.
-    
-    Use the filepath format for code: \`\`\`filepath:/path/to/file\`\`\`
-    
-    If your task involves creating other tasks for team members, format them as:
-    TASK: [Title]
-    ASSIGNED TO: [Agent Type] Agent
-    DESCRIPTION: [Details]
-    PRIORITY: [High/Medium/Low]
-    
-    Think about how your work integrates with the rest of the team. Consider dependencies and collaborations needed.`,
-    { projectId, taskId: task.id, taskTitle: task.title, taskDescription: task.description },
-    task.id,
-    verbose
-  );
-  
-  // Extract code snippets and create code files
-  const codeSnippets = extractCodeSnippets(startResponse);
-  if (codeSnippets.length > 0) {
-    for (const snippet of codeSnippets) {
-      const fileName = snippet.filePath.split('/').pop();
-      
-      // Check if file already exists
-      const { data: existingFiles } = await supabase
-        .from('code_files')
-        .select('id')
-        .eq('path', snippet.filePath)
-        .eq('project_id', projectId);
-        
-      if (existingFiles && existingFiles.length > 0) {
-        // Update existing file
-        await supabase
-          .from('code_files')
-          .update({
-            content: snippet.code,
-            last_modified_by: agentData.name,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingFiles[0].id);
-          
-        console.log(`Updated existing file: ${snippet.filePath}`);
-      } else {
-        // Create new file
-        await supabase
-          .from('code_files')
-          .insert([{
-            project_id: projectId,
-            name: fileName,
-            path: snippet.filePath,
-            content: snippet.code,
-            language: determineLanguage(snippet.filePath),
-            created_by: agentData.name,
-            last_modified_by: agentData.name
-          }]);
-          
-        console.log(`Created new file: ${snippet.filePath}`);
-      }
-    }
-    
-    // Add a message about the created files
-    await supabase
-      .from('chat_messages')
-      .insert([{
-        project_id: projectId,
-        content: `I've created/updated ${codeSnippets.length} code files as part of this task.`,
-        sender: agentData.name,
-        type: "text"
-      }]);
-  } else {
-    console.log('No valid code snippets found in the response - this may indicate a problem');
-    
-    // Alert about the issue
-    await supabase
-      .from('chat_messages')
-      .insert([{
-        project_id: projectId,
-        content: `Warning: I couldn't extract any valid code snippets from my work on task "${task.title}". This may indicate an issue with my implementation approach.`,
-        sender: agentData.name,
-        type: "text"
-      }]);
+  if (verbose) {
+    console.log('OpenRouter API full response:', JSON.stringify(data, null, 2));
   }
   
-  // Extract and create tasks
-  const tasksInfo = extractTasksInfo(startResponse);
-  if (tasksInfo.length > 0) {
-    for (const taskInfo of tasksInfo) {
-      // Find the agent for the task
-      const agentType = taskInfo.assignedTo.replace(' Agent', '').toLowerCase();
-      const { data: agents } = await supabase
-        .from('agent_statuses')
-        .select('id')
-        .eq('project_id', projectId)
-        .eq('agent_type', agentType);
-        
-      const assignedToId = agents && agents.length > 0 ? agents[0].id : agentId;
-      
-      // Create the task
-      await supabase
-        .from('tasks')
-        .insert([{
-          project_id: projectId,
-          title: taskInfo.title,
-          description: taskInfo.description,
-          assigned_to: assignedToId,
-          status: 'pending',
-          priority: taskInfo.priority.toLowerCase(),
-          parent_task_id: task.id
-        }]);
-    }
-    
-    // Add a message about the created tasks
-    await supabase
-      .from('chat_messages')
-      .insert([{
-        project_id: projectId,
-        content: `I've created ${tasksInfo.length} new tasks based on my work.`,
-        sender: agentData.name,
-        type: "text"
-      }]);
-  }
-  
-  await supabase
-    .from('chat_messages')
-    .insert([{
-      project_id: projectId,
-      content: startResponse,
-      sender: agentData.name,
-      type: "text"
-    }]);
-    
-  // Update agent progress to show we're working on the task
-  await supabase
-    .from('agent_statuses')
-    .update({ progress: 70 })
-    .eq('id', agentId);
-    
-  // Wait some time to simulate work
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  
-  // Complete the task
-  await supabase
-    .from('tasks')
-    .update({ 
-      status: 'completed', 
-      updated_at: new Date().toISOString(),
-      completed_at: new Date().toISOString()
-    })
-    .eq('id', task.id);
-    
-  // Generate completion message using AI
-  const completionResponse = await callOpenRouter(
-    agentData.agent_type,
-    `You've completed task: "${task.title}". Provide a summary of what you've accomplished and any recommendations for future improvements.`,
-    { projectId, taskId: task.id },
-    task.id,
-    verbose
-  );
-  
-  await supabase
-    .from('chat_messages')
-    .insert([{
-      project_id: projectId,
-      content: completionResponse,
-      sender: agentData.name,
-      type: "text"
-    }]);
-    
-  // Update agent progress
-  await supabase
-    .from('agent_statuses')
-    .update({ progress: 90 })
-    .eq('id', agentId);
-    
-  console.log(`Completed task ${task.id}`);
-  
-  // Check for additional pending tasks for this agent
-  const { data: pendingTasks } = await supabase
-    .from('tasks')
-    .select('*')
-    .eq('project_id', projectId)
-    .eq('assigned_to', agentId)
-    .eq('status', 'pending')
-    .limit(1);
-    
-  if (pendingTasks && pendingTasks.length > 0) {
-    console.log(`Agent ${agentId} has more pending tasks. Processing next task: ${pendingTasks[0].id}`);
-    await processTask(projectId, agentId, agentData, pendingTasks[0], verbose);
-  } else {
-    console.log(`Agent ${agentId} has completed all tasks`);
-  }
+  return content;
 }
