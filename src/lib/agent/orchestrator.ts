@@ -1,3 +1,4 @@
+
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { broadcastMessage } from "./messageBroker";
@@ -95,13 +96,16 @@ const initiateTeamCollaboration = async (projectId: string, project: any) => {
     }
     
     // Create a team message in chat
+    const systemAgent = {
+      id: 'system',
+      name: 'System',
+      type: 'system' as any
+    };
+    
     await broadcastMessage(
-      projectId,
-      {
-        sender: "System",
-        content: `Team collaboration has been initiated for project "${project.name}". Agents will now collaborate automatically on tasks following the planning, reasoning, execution framework.`,
-        type: "text"
-      }
+      systemAgent,
+      `Team collaboration has been initiated for project "${project.name}". Agents will now collaborate automatically on tasks following the planning, reasoning, execution framework.`,
+      project
     );
     
     // Update all agents to be in working state
@@ -136,12 +140,9 @@ const initiateTeamCollaboration = async (projectId: string, project: any) => {
     
     // Broadcast a message to inform about the collaborative process
     await broadcastMessage(
-      projectId,
-      {
-        sender: "System",
-        content: "Team is now collaborating using enhanced planning & reasoning capabilities. The Architect will coordinate task distribution.",
-        type: "text"
-      }
+      systemAgent,
+      "Team is now collaborating using enhanced planning & reasoning capabilities. The Architect will coordinate task distribution.",
+      project
     );
     
   } catch (error) {
@@ -345,12 +346,9 @@ export const initializeAgentOrchestration = async (
         
       if (projectData && architect && !projectError) {
         await broadcastMessage(
-          projectId,
-          {
-            sender: architect.name,
-            content: `The Architect Agent has been initialized for project ${projectData.name}. I'll be leading the team to design and build ${projectData.description}.`,
-            type: "text"
-          }
+          architect,
+          `The Architect Agent has been initialized for project ${projectData.name}. I'll be leading the team to design and build ${projectData.description}.`,
+          projectData
         );
       }
     }
