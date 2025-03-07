@@ -8,6 +8,7 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { v4 as uuidv4 } from 'uuid';
+import { toast } from "sonner";
 
 export interface AgentMessage {
   id: string;
@@ -38,6 +39,7 @@ class AgentMessageBus {
   private agentProgressMap: Map<string, number>; // Track individual agent progress
   private retryDelays: number[]; // Exponential backoff delays in ms
   private fetchTimeouts: Map<string, ReturnType<typeof setTimeout>>;
+  private useFallbackHttp: boolean = false; // Flag to use direct HTTP when Supabase Functions fail
   
   constructor() {
     this.subscribers = new Map();
@@ -68,33 +70,69 @@ class AgentMessageBus {
     }
     
     try {
-      // Store message in the database with proper error handling
-      const { data, error } = await supabase.functions.invoke('crew-orchestrator', {
-        body: {
-          action: 'send_message',
-          projectId: message.projectId,
-          messageData: {
-            id: messageId,
-            fromAgentId: message.from.id,
-            toAgentId: message.to.id,
-            content: message.content,
-            type: message.type,
-            metadata: message.metadata
-          }
-        }
-      });
+      // Try to store message in the database with proper error handling
+      let success = false;
       
-      if (error) {
-        console.error('Error sending agent message:', error);
-        // Cache the message anyway so we don't lose it
-        this.cacheMessage(fullMessage.to.id, fullMessage);
-        this.notifySubscribers(fullMessage.to.id, fullMessage);
-        
-        // Return messageId even if there was an error with the server
-        return messageId;
+      if (!this.useFallbackHttp) {
+        try {
+          const { data, error } = await supabase.functions.invoke('crew-orchestrator', {
+            body: {
+              action: 'send_message',
+              projectId: message.projectId,
+              messageData: {
+                id: messageId,
+                fromAgentId: message.from.id,
+                toAgentId: message.to.id,
+                content: message.content,
+                type: message.type,
+                metadata: message.metadata
+              }
+            }
+          });
+          
+          if (error) {
+            console.error('Error sending agent message via Supabase Edge Function:', error);
+            // Fall back to direct HTTP if Supabase Functions fail
+            this.useFallbackHttp = true;
+          } else {
+            success = true;
+          }
+        } catch (error) {
+          console.error('Exception in sendMessage via Supabase Edge Function:', error);
+          // Enable fallback mode after error
+          this.useFallbackHttp = true;
+        }
       }
       
-      // Cache the message
+      // If Supabase Function failed or fallback is already enabled, use direct API
+      if (!success && this.useFallbackHttp) {
+        try {
+          // Store message directly in the agent_messages table
+          const { error } = await supabase
+            .from('agent_messages')
+            .insert([{
+              id: messageId,
+              from_agent_id: message.from.id,
+              to_agent_id: message.to.id,
+              project_id: message.projectId,
+              content: message.content,
+              type: message.type,
+              status: 'pending',
+              metadata: message.metadata
+            }]);
+            
+          if (error) {
+            console.error('Error sending agent message via direct API:', error);
+            toast.error('Failed to send agent message');
+          } else {
+            success = true;
+          }
+        } catch (directError) {
+          console.error('Exception in sendMessage via direct API:', directError);
+        }
+      }
+      
+      // Cache the message regardless of delivery status
       this.cacheMessage(fullMessage.to.id, fullMessage);
       
       // Notify subscribers
@@ -187,22 +225,64 @@ class AgentMessageBus {
    */
   private setupRealtimeListener(agentId: string): void {
     let retryCount = 0;
-    const fetchWithRetry = async () => {
+    
+    // Function to poll for messages
+    const poll = async () => {
       try {
         console.log(`Fetching messages for agent ${agentId}...`);
-        const { data, error } = await supabase.functions.invoke('crew-orchestrator', {
-          body: {
-            action: 'get_messages',
-            agentId
-          }
-        });
         
-        if (error) {
-          throw error;
+        let data;
+        let error;
+        
+        if (!this.useFallbackHttp) {
+          // Try Edge Function first
+          try {
+            const response = await supabase.functions.invoke('crew-orchestrator', {
+              body: {
+                action: 'get_messages',
+                agentId
+              }
+            });
+            
+            data = response.data;
+            error = response.error;
+            
+            if (error) {
+              console.error('Error in Edge Function, switching to direct API:', error);
+              this.useFallbackHttp = true;
+            }
+          } catch (fnError) {
+            console.error('Edge Function exception, switching to direct API:', fnError);
+            this.useFallbackHttp = true;
+            error = fnError;
+          }
+        }
+        
+        // If Edge Function failed or fallback is enabled, use direct API
+        if (this.useFallbackHttp || error) {
+          try {
+            const { data: messages, error: apiError } = await supabase
+              .from('agent_messages')
+              .select('*')
+              .eq('to_agent_id', agentId)
+              .in('status', ['pending', 'delivered'])
+              .order('created_at', { ascending: true });
+              
+            if (apiError) {
+              throw apiError;
+            }
+            
+            data = { messages, success: true };
+          } catch (directError) {
+            console.error('Error fetching messages via direct API:', directError);
+            error = directError;
+          }
         }
         
         // Reset retry count on success
-        retryCount = 0;
+        if (!error) {
+          retryCount = 0;
+        }
         
         if (data?.messages && Array.isArray(data.messages)) {
           data.messages
@@ -211,21 +291,35 @@ class AgentMessageBus {
               const message: AgentMessage = {
                 id: msg.id,
                 from: {
-                  id: msg.fromAgentId,
+                  id: msg.from_agent_id || msg.fromAgentId,
                   name: 'Unknown',
                   type: 'unknown'
                 },
                 to: {
-                  id: msg.toAgentId
+                  id: msg.to_agent_id || msg.toAgentId
                 },
                 content: msg.content,
                 type: msg.type as any,
                 timestamp: new Date(msg.created_at || Date.now()).getTime(),
-                projectId: msg.projectId,
+                projectId: msg.project_id || msg.projectId,
                 metadata: msg.metadata
               };
               
               this.notifySubscribers(agentId, message);
+              
+              // Mark message as delivered if using direct API
+              if (this.useFallbackHttp) {
+                supabase
+                  .from('agent_messages')
+                  .update({ status: 'delivered' })
+                  .eq('id', msg.id)
+                  .then(() => {
+                    console.log(`Marked message ${msg.id} as delivered`);
+                  })
+                  .catch(updateError => {
+                    console.error('Error updating message status:', updateError);
+                  });
+              }
             });
         }
       } catch (error) {
@@ -241,10 +335,10 @@ class AgentMessageBus {
     };
 
     // Initial fetch
-    fetchWithRetry();
+    poll();
     
     // Set up polling with the possibility to cancel
-    const intervalId = setInterval(fetchWithRetry, 5000);
+    const intervalId = setInterval(poll, 5000);
     this.channels.set(agentId, intervalId);
   }
   
@@ -371,8 +465,43 @@ class AgentMessageBus {
       throw error;
     }
   }
+  
+  /**
+   * Force fallback to direct HTTP API (for testing or when Edge Function is known to be down)
+   */
+  forceFallbackMode(enabled: boolean = true): void {
+    this.useFallbackHttp = enabled;
+    console.log(`Fallback HTTP mode ${enabled ? 'enabled' : 'disabled'}`);
+    
+    if (enabled) {
+      toast.info('Using direct API for agent communication');
+    }
+  }
+  
+  /**
+   * Reset all communication channels and reconnect
+   */
+  resetAndReconnect(): void {
+    // Clear all intervals
+    for (const [agentId, interval] of this.channels.entries()) {
+      clearInterval(interval);
+    }
+    
+    this.channels.clear();
+    
+    // Re-establish all connections
+    for (const agentId of this.subscribers.keys()) {
+      this.setupRealtimeListener(agentId);
+    }
+    
+    toast.success('Agent communication channels reset');
+  }
 }
 
 // Export singleton instance
 const agentMessageBus = new AgentMessageBus();
+
+// Initialize in fallback mode since Edge Function has issues
+agentMessageBus.forceFallbackMode(true);
+
 export default agentMessageBus;
