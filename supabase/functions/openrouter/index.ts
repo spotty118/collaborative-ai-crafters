@@ -366,3 +366,4 @@ function extractTasksInfo(content) {
   console.log(`Extracted ${tasks.length} tasks from agent response`);
   return tasks;
 }
+

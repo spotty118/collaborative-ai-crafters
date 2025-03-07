@@ -127,7 +127,7 @@ serve(async (req) => {
         }]);
 
       // Call OpenRouter directly to process the task
-      if (taskId && OPENROUTER_API_KEY) {
+      if (taskId && Deno.env.get('OPENROUTER_API_KEY')) {
         console.log(`Sending task to OpenRouter for processing: ${taskData?.title}`);
         
         try {
@@ -163,7 +163,10 @@ PRIORITY: [high/medium/low]
           console.log(`Sending prompt to OpenRouter (excerpt): ${prompt.substring(0, 100)}...`);
           
           // Send request to OpenRouter via our edge function
-          const openRouterResponse = await fetch(`${supabaseUrl}/functions/v1/openrouter`, {
+          const openRouterURL = `${supabaseUrl}/functions/v1/openrouter`;
+          console.log(`Calling OpenRouter edge function at URL: ${openRouterURL}`);
+          
+          const openRouterResponse = await fetch(openRouterURL, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -172,7 +175,7 @@ PRIORITY: [high/medium/low]
             body: JSON.stringify({
               prompt,
               agentType: agentData.agent_type,
-              model: "google/gemini-2.0-flash-thinking-exp:free",
+              model: "anthropic/claude-3.7-sonnet:thinking",
               projectContext: {
                 name: projectData.name,
                 description: projectData.description,
@@ -184,13 +187,18 @@ PRIORITY: [high/medium/low]
             }),
           });
 
+          console.log(`OpenRouter response status: ${openRouterResponse.status}`);
+          
+          const responseText = await openRouterResponse.text();
+          console.log(`Raw response from OpenRouter (first 200 chars): ${responseText.substring(0, 200)}...`);
+
           if (!openRouterResponse.ok) {
-            const errorResponse = await openRouterResponse.text();
-            console.error('Error from OpenRouter:', errorResponse);
-            throw new Error(`OpenRouter responded with status ${openRouterResponse.status}: ${errorResponse}`);
+            console.error('Error from OpenRouter:', responseText);
+            throw new Error(`OpenRouter responded with status ${openRouterResponse.status}: ${responseText}`);
           }
 
-          const responseData = await openRouterResponse.json();
+          const responseData = JSON.parse(responseText);
+          console.log('OpenRouter response parsed successfully');
           console.log('OpenRouter response received:', JSON.stringify(responseData).substring(0, 200) + '...');
           
           // Now we have the AI response, update the progress
@@ -229,6 +237,7 @@ PRIORITY: [high/medium/low]
 
         } catch (openRouterError) {
           console.error('Error calling OpenRouter:', openRouterError);
+          console.error('Error stack:', openRouterError.stack);
           
           // Add error message to chat
           await supabase
@@ -510,11 +519,13 @@ PRIORITY: [high/medium/low]
   } catch (error) {
     // Log and return the error
     console.error('Crew orchestrator error:', error);
+    console.error('Error stack:', error.stack);
     
     return new Response(
       JSON.stringify({ 
         success: false, 
-        message: error instanceof Error ? error.message : 'Unknown error' 
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
       }),
       { status: 500, headers: responseHeaders }
     );
