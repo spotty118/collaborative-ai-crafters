@@ -1,25 +1,34 @@
 
 import { useTheme } from "next-themes"
 import { Toaster as Sonner } from "sonner"
+import { memo } from "react"
 
 type ToasterProps = React.ComponentProps<typeof Sonner>
 
-const Toaster = ({ ...props }: ToasterProps) => {
+// Memoized Toaster component to prevent unnecessary re-renders
+const Toaster = memo(({ ...props }: ToasterProps) => {
   const { theme = "system" } = useTheme()
 
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
-      // Limit the number of visible toasts to reduce performance impact
-      visibleToasts={3}
+      // Reduce visible toasts to minimize performance impact
+      visibleToasts={2}
       // Increase closeButton duration to reduce rapid render cycles
       closeButton={true}
+      // Simplified rich colors to reduce rendering complexity
       richColors={true}
-      // Add duration to reduce the number of active toasts
-      duration={4000}
-      // Optimize animations
+      // Reduce duration to clear toasts faster
+      duration={3000}
+      // Disable animations that might cause performance issues
       expand={false}
+      // Disable animation on mobile
+      invert={false}
+      // Use position that requires less calculations
+      position="top-right"
+      // Optimize rendering with a higher throttle value
+      throttleMs={500}
       toastOptions={{
         classNames: {
           toast:
@@ -34,6 +43,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
       {...props}
     />
   )
-}
+})
+
+Toaster.displayName = "Toaster"
 
 export { Toaster }

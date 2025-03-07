@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useRef, useCallback } from 'react';
 import { Agent } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -18,17 +18,23 @@ const AgentSection = ({
   onStartAgent, 
   onStartAllAgents 
 }: AgentSectionProps) => {
-  // Create a debounced toast function to prevent multiple toasts in rapid succession
-  const debouncedToast = (message: string) => {
-    // Use a simple timestamp-based debounce to prevent toast spam
+  // Use refs to track last toast time for better performance
+  const lastToastTimeRef = useRef<number>(0);
+  const toastDebounceTimeMs = 2000; // 2 seconds between toasts
+  
+  // Optimized debounced toast function
+  const showToast = useCallback((message: string) => {
     const now = Date.now();
-    if (!debouncedToast.lastToastTime || now - debouncedToast.lastToastTime > 1000) {
-      toast(message);
-      debouncedToast.lastToastTime = now;
+    if (now - lastToastTimeRef.current > toastDebounceTimeMs) {
+      toast(message, {
+        // Use a unique ID to prevent duplicates
+        id: `agent-toast-${now}`,
+        // Shorter duration for better performance
+        duration: 2000
+      });
+      lastToastTimeRef.current = now;
     }
-  };
-  // Add a property to the function to track the last toast time
-  debouncedToast.lastToastTime = 0;
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -37,7 +43,7 @@ const AgentSection = ({
         <Button
           onClick={() => {
             onStartAllAgents();
-            debouncedToast("Starting all agents...");
+            showToast("Starting all agents...");
           }}
           disabled={isLoading}
         >
@@ -73,7 +79,7 @@ const AgentSection = ({
               variant="outline"
               onClick={() => {
                 onStartAgent(agent);
-                debouncedToast(`Starting ${agent.name}...`);
+                showToast(`Starting ${agent.name}...`);
               }}
               disabled={agent.status === 'working' || isLoading}
             >
@@ -86,4 +92,4 @@ const AgentSection = ({
   );
 };
 
-export default AgentSection;
+export default React.memo(AgentSection);

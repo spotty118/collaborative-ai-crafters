@@ -1,5 +1,4 @@
-
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useCrewAIApi } from '../hooks/useCrewAIApi';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
@@ -15,31 +14,29 @@ interface CrewAIConnectorProps {
 
 export default function CrewAIConnector({ onResultReceived }: CrewAIConnectorProps) {
   const [inputValues, setInputValues] = useState<Record<string, unknown>>({});
-  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastToastTimeRef = useRef<number>(0);
+  const toastDebounceTimeMs = 3000; // 3 seconds between toasts
   
   // Optimized toast function to prevent spamming
-  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const now = Date.now();
-    // Only show a toast if it's been at least 2 seconds since the last one
-    if (now - lastToastTimeRef.current > 2000) {
-      // Clear any pending toasts
-      if (toastTimerRef.current) {
-        clearTimeout(toastTimerRef.current);
-      }
+    // Only show a toast if it's been at least the debounce time since the last one
+    if (now - lastToastTimeRef.current > toastDebounceTimeMs) {
+      // Create a unique ID for the toast to prevent duplicates
+      const toastId = `crew-toast-${now}-${type}`;
       
       // Show the toast based on type
       if (type === 'success') {
-        toast.success(message);
+        toast.success(message, { id: toastId, duration: 3000 });
       } else if (type === 'error') {
-        toast.error(message);
+        toast.error(message, { id: toastId, duration: 4000 });
       } else {
-        toast(message);
+        toast(message, { id: toastId, duration: 3000 });
       }
       
       lastToastTimeRef.current = now;
     }
-  };
+  }, []);
   
   const {
     isLoading,
@@ -82,13 +79,14 @@ export default function CrewAIConnector({ onResultReceived }: CrewAIConnectorPro
       // Set polling with increasing intervals for better performance
       let interval = 5000; // Start with 5 seconds
       const maxInterval = 15000; // Max 15 seconds
+      const incrementFactor = 1.3; // More gradual increase
       
       const poll = () => {
         checkTaskStatus();
         
         // Increase interval if task is progressing to reduce load
         if (taskStatus?.progress && taskStatus.progress > 50) {
-          interval = Math.min(interval * 1.5, maxInterval);
+          interval = Math.min(interval * incrementFactor, maxInterval);
         }
         
         intervalId = setTimeout(poll, interval);
@@ -105,12 +103,12 @@ export default function CrewAIConnector({ onResultReceived }: CrewAIConnectorPro
   }, [taskId, checkTaskStatus, taskStatus]);
 
   // Handle input change
-  const handleInputChange = (name: string, value: string) => {
+  const handleInputChange = useCallback((name: string, value: string) => {
     setInputValues((prev) => ({
       ...prev,
       [name]: value,
     }));
-  };
+  }, []);
 
   // Start a new CrewAI task
   const handleStartTask = async () => {
