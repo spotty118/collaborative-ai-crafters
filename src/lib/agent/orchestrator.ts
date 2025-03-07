@@ -4,6 +4,20 @@ import { toast } from "sonner";
 import { broadcastMessage } from "./messageBroker";
 import { Agent, Project } from "@/lib/types";
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const convertProject = (projectData: any): Project => {
+  return {
+    ...projectData,
+    mode: projectData.source_type as any,
+    techStack: {
+      frontend: projectData.tech_stack.find((t: string) => /react/i.test(t)) || "",
+      backend: projectData.tech_stack.find((t: string) => /node/i.test(t)) || "",
+      database: projectData.tech_stack.find((t: string) => /postgres|mysql|mongo/i.test(t)) || "",
+      deployment: projectData.tech_stack.find((t: string) => /docker|kubernetes|aws|vercel/i.test(t)) || ""
+    }
+  };
+};
+
 /**
  * Start agent orchestration
  * 
@@ -16,7 +30,7 @@ export const startAgentOrchestration = async (
   projectId: string,
   agentId: string,
   taskId?: string
-): Promise<any> => {
+): Promise<unknown> => {
   try {
     console.log(`Starting agent orchestration: Project ${projectId}, Agent ${agentId}`);
     
@@ -26,7 +40,8 @@ export const startAgentOrchestration = async (
         projectId,
         agentId,
         taskId,
-        action: 'start'
+        action: 'start',
+        temperature: 0.3
       }
     });
     
@@ -37,12 +52,14 @@ export const startAgentOrchestration = async (
     
     console.log('Orchestration response:', data);
     
-    // Fetch agent data to check if this is the Architect
+    // Fetch agent data to check if this is the Architect and retrieve token if available
     const { data: agentData } = await supabase
       .from('agent_statuses')
       .select('*')
       .eq('id', agentId)
       .single();
+    // Cast agentData to any to retrieve the token, if it exists
+    const token = (agentData as any)?.token || "";
       
     if (agentData && agentData.agent_type === 'architect') {
       console.log('Architect agent detected, will start team collaboration');
@@ -58,8 +75,8 @@ export const startAgentOrchestration = async (
         // Start team collaboration immediately
         toast.info("Starting team collaboration...");
         
-        // Immediate start of team collaboration for faster response
-        initiateTeamCollaboration(projectId, projectData);
+        // Immediate start of team collaboration for faster response, passing token to next agent
+        initiateTeamCollaboration(projectId, convertProject(projectData), token);
       }
     }
     
@@ -73,7 +90,7 @@ export const startAgentOrchestration = async (
 /**
  * Initiate team collaboration for a project
  */
-const initiateTeamCollaboration = async (projectId: string, project: any) => {
+const initiateTeamCollaboration = async (projectId: string, project: Project, token?: string) => {
   try {
     console.log(`Initiating team collaboration for project ${projectId}`);
     
@@ -122,6 +139,7 @@ const initiateTeamCollaboration = async (projectId: string, project: any) => {
         action: 'team_collaborate',
         agents: agents.map(a => ({ id: a.id, type: a.agent_type, name: a.name })),
         projectContext: project,
+        temperature: 0.3,
         autostart: true // Explicit flag to auto-start all agents
       }
     });
@@ -149,7 +167,7 @@ const initiateTeamCollaboration = async (projectId: string, project: any) => {
 export const stopAgentOrchestration = async (
   projectId: string,
   agentId: string
-): Promise<any> => {
+): Promise<unknown> => {
   try {
     console.log(`Stopping agent orchestration: Project ${projectId}, Agent ${agentId}`);
     
@@ -181,14 +199,15 @@ export const stopAgentOrchestration = async (
  * @param projectId - The project ID
  * @returns Promise with the initialization response
  */
-export const initializeCrewAI = async (projectId: string): Promise<any> => {
+export const initializeCrewAI = async (projectId: string): Promise<unknown> => {
   try {
     console.log(`Initializing CrewAI orchestration for project ${projectId}`);
     
     const { data, error } = await supabase.functions.invoke('crew-orchestrator', {
       body: {
         projectId,
-        action: 'initialize'
+        action: 'initialize',
+        temperature: 0.3
       }
     });
     
@@ -208,12 +227,12 @@ export const initializeCrewAI = async (projectId: string): Promise<any> => {
         .eq('id', projectId)
         .single();
         
-      if (projectData) {
-        // Wait a bit for agents to be properly initialized
-        setTimeout(() => {
-          initiateTeamCollaboration(projectId, projectData);
-        }, 8000);
-      }
+        if (projectData) {
+          // Wait a bit for agents to be properly initialized
+          setTimeout(() => {
+            initiateTeamCollaboration(projectId, convertProject(projectData), "");
+          }, 8000);
+        }
     }
     
     return data;
@@ -222,6 +241,7 @@ export const initializeCrewAI = async (projectId: string): Promise<any> => {
     throw error;
   }
 };
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 /**
  * Update CrewAI orchestration
@@ -232,8 +252,8 @@ export const initializeCrewAI = async (projectId: string): Promise<any> => {
  */
 export const updateCrewAIOrchestration = async (
   projectId: string, 
-  updates: any
-): Promise<any> => {
+  updates: unknown
+): Promise<unknown> => {
   try {
     console.log(`Updating CrewAI orchestration for project ${projectId}`, updates);
     
@@ -269,8 +289,8 @@ export const updateCrewAIOrchestration = async (
 export const handleCrewTaskCompletion = async (
   projectId: string,
   taskId: string,
-  result: any
-): Promise<any> => {
+  result: unknown
+): Promise<unknown> => {
   try {
     console.log(`Handling task completion for project ${projectId}, task ${taskId}`);
     
