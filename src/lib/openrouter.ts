@@ -14,6 +14,9 @@ export const sendAgentPrompt = async (
   try {
     console.log(`Sending prompt to ${agent.name}: ${prompt.substring(0, 50)}...`);
     
+    // Add timestamp for debugging
+    console.log(`Request started at: ${new Date().toISOString()}`);
+    
     // Send the request to our Supabase Edge Function for OpenRouter
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openrouter`, {
       method: 'POST',
@@ -34,13 +37,32 @@ export const sendAgentPrompt = async (
       }),
     });
 
+    console.log(`Response received at: ${new Date().toISOString()}`);
+    console.log(`Response status: ${response.status}`);
+
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error('OpenRouter API Error:', errorData);
-      throw new Error(`OpenRouter API request failed: ${errorData.error || response.statusText}`);
+      let errorMessage = `OpenRouter API request failed with status ${response.status}`;
+      try {
+        const errorData = await response.json();
+        console.error('OpenRouter API Error:', errorData);
+        errorMessage = `OpenRouter API request failed: ${errorData.error || response.statusText}`;
+      } catch (parseError) {
+        console.error('Failed to parse error response:', parseError);
+        errorMessage = `OpenRouter API request failed with status ${response.status}`;
+      }
+      throw new Error(errorMessage);
     }
 
     const responseData = await response.json();
+    console.log(`Response parsed at: ${new Date().toISOString()}`);
+    console.log('Response type:', typeof responseData);
+    console.log('Response structure:', Object.keys(responseData).join(', '));
+    
+    if (!responseData.choices || !responseData.choices[0]) {
+      console.error('Unexpected response format:', responseData);
+      throw new Error('Received an invalid response format from OpenRouter');
+    }
+    
     const agentResponse = responseData.choices[0].message.content;
     
     console.log(`Agent ${agent.name} response:`, agentResponse.substring(0, 100) + '...');

@@ -437,6 +437,14 @@ Focus on creating reliable, scalable infrastructure and deployment processes tha
     
     console.log('Sending request to OpenRouter API with model: google/gemini-2.0-flash-thinking-exp:free');
     
+    // Log more details about the request
+    console.log('Request details:', {
+      model: 'google/gemini-2.0-flash-thinking-exp:free',
+      prompt: prompt.substring(0, 100) + '...',
+      temperature: 0.3,
+      thinking_enabled: true
+    });
+    
     // For Gemini Flash with thinking enabled, adjust parameters appropriately
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -461,16 +469,29 @@ Focus on creating reliable, scalable infrastructure and deployment processes tha
     });
 
     if (!response.ok) {
-      const errorData = await response.text();
-      console.error('OpenRouter API error:', errorData);
-      return new Response(
-        JSON.stringify({ error: `OpenRouter API returned status ${response.status}: ${errorData}` }),
-        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      const errorText = await response.text();
+      console.error('OpenRouter API error response:', errorText);
+      try {
+        const errorData = JSON.parse(errorText);
+        console.error('OpenRouter API error details:', errorData);
+        return new Response(
+          JSON.stringify({ error: `OpenRouter API returned status ${response.status}: ${errorData.error?.message || errorData.error || 'Unknown error'}` }),
+          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } catch (parseError) {
+        console.error('Failed to parse OpenRouter error response:', parseError);
+        return new Response(
+          JSON.stringify({ error: `OpenRouter API returned status ${response.status}: ${errorText}` }),
+          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
     const data = await response.json();
     console.log('OpenRouter response received successfully');
+    console.log('Response status:', response.status);
+    console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+    console.log('Response data:', JSON.stringify(data).substring(0, 200) + '...');
     
     // Enhanced response processing with better code extraction
     let content = data.choices[0].message.content;
