@@ -1,4 +1,3 @@
-
 /**
  * Agent Message Bus
  * 
@@ -22,7 +21,7 @@ export interface AgentMessage {
     type?: string;
   };
   content: string;
-  type: 'request' | 'response' | 'update' | 'notification' | 'task';
+  type: 'request' | 'response' | 'update' | 'notification' | 'task' | 'progress';
   timestamp: number;
   projectId: string;
   metadata?: Record<string, any>;
@@ -35,12 +34,14 @@ class AgentMessageBus {
   private channels: Map<string, any>; // Store Supabase channel subscriptions
   private messageCache: Map<string, AgentMessage[]>;
   private maxCacheSize: number;
+  private agentProgressMap: Map<string, number>; // Track individual agent progress
   
   constructor() {
     this.subscribers = new Map();
     this.channels = new Map();
     this.messageCache = new Map();
     this.maxCacheSize = 100; // Store last 100 messages per agent
+    this.agentProgressMap = new Map(); // Initialize progress tracking
   }
   
   /**
@@ -55,6 +56,11 @@ class AgentMessageBus {
       id: messageId,
       timestamp
     };
+    
+    // Update progress if this is a progress message
+    if (message.type === 'progress' && message.metadata?.progress !== undefined) {
+      this.updateAgentProgress(message.from.id, message.metadata.progress);
+    }
     
     try {
       // Store message in the database
@@ -89,6 +95,52 @@ class AgentMessageBus {
       console.error('Error in sendMessage:', error);
       throw error;
     }
+  }
+  
+  /**
+   * Send a progress update for an agent
+   */
+  async updateProgress(
+    fromAgent: { id: string, name: string, type: string },
+    progress: number,
+    projectId: string
+  ): Promise<string> {
+    // Update local progress tracking
+    this.updateAgentProgress(fromAgent.id, progress);
+    
+    // Persist to database
+    try {
+      await supabase
+        .from('agent_statuses')
+        .update({ progress })
+        .eq('id', fromAgent.id);
+    } catch (error) {
+      console.error('Error updating agent progress in database:', error);
+    }
+    
+    // Create and send progress update message
+    return this.sendMessage({
+      from: fromAgent,
+      to: { id: 'system' }, // Send to system
+      content: `Agent progress updated to ${progress}%`,
+      type: 'progress',
+      projectId,
+      metadata: { progress }
+    });
+  }
+  
+  /**
+   * Get current progress for an agent
+   */
+  getAgentProgress(agentId: string): number {
+    return this.agentProgressMap.get(agentId) || 0;
+  }
+  
+  /**
+   * Update agent progress locally
+   */
+  private updateAgentProgress(agentId: string, progress: number): void {
+    this.agentProgressMap.set(agentId, progress);
   }
   
   /**
@@ -208,6 +260,20 @@ class AgentMessageBus {
           console.error('Error in message subscriber callback:', error);
         }
       });
+    }
+    
+    // If this is a progress message, also notify any system subscribers
+    if (message.type === 'progress') {
+      const systemCallbacks = this.subscribers.get('system');
+      if (systemCallbacks) {
+        systemCallbacks.forEach(callback => {
+          try {
+            callback(message);
+          } catch (error) {
+            console.error('Error in system subscriber callback:', error);
+          }
+        });
+      }
     }
   }
   

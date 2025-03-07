@@ -7,6 +7,7 @@ import AgentStatus from "./AgentStatus";
 import { Button } from "@/components/ui/button";
 import { MessageSquare, PlayCircle, PauseCircle, RefreshCw, Users, Loader2, Brain } from "lucide-react";
 import { toast } from "sonner";
+import agentMessageBus from "@/lib/agent/agentMessageBus";
 
 interface AgentCardProps {
   agent: Agent;
@@ -32,20 +33,38 @@ const AgentCard: React.FC<AgentCardProps> = ({
   const [animating, setAnimating] = useState(false);
   const [thinking, setThinking] = useState(false);
   
-  // Only update progress value when it significantly changes
+  // Subscribe to agent progress updates
   useEffect(() => {
-    // Only update if the difference is significant to avoid infinite loops
-    if (agent.progress !== undefined && Math.abs(agent.progress - progressValue) >= 1) {
-      setProgressValue(agent.progress);
-      
-      // Trigger animation for significant changes
-      if (Math.abs(agent.progress - progressValue) > 5) {
-        setAnimating(true);
-        const timer = setTimeout(() => setAnimating(false), 800);
-        return () => clearTimeout(timer);
-      }
+    // Initialize with current progress from agent
+    setProgressValue(agent.progress || 0);
+    
+    // Get progress from message bus (if more recent)
+    const storedProgress = agentMessageBus.getAgentProgress(agent.id);
+    if (storedProgress > 0) {
+      setProgressValue(storedProgress);
     }
-  }, [agent.progress, progressValue]);
+    
+    // Subscribe to progress updates
+    const unsubscribe = agentMessageBus.subscribe(agent.id, (message) => {
+      if (message.type === 'progress' && message.metadata?.progress !== undefined) {
+        const newProgress = message.metadata.progress;
+        setProgressValue(prevProgress => {
+          // Only update if significant change to avoid too many rerenders
+          if (Math.abs(newProgress - prevProgress) >= 1) {
+            // Animate if significant change
+            if (Math.abs(newProgress - prevProgress) > 5) {
+              setAnimating(true);
+              setTimeout(() => setAnimating(false), 800);
+            }
+            return newProgress;
+          }
+          return prevProgress;
+        });
+      }
+    });
+    
+    return () => unsubscribe();
+  }, [agent.id, agent.progress]);
   
   // Simulate agent "thinking" state for UI feedback
   useEffect(() => {

@@ -1,4 +1,3 @@
-
 // Import necessary dependencies
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { supabase } from "../_shared/supabase-client.ts";
@@ -101,6 +100,13 @@ serve(async (req) => {
           throw new Error('Missing messageData for send_message action');
         }
         responseData = await handleSendMessage(projectId, messageData);
+        break;
+        
+      case 'update_progress':
+        if (!agentId || messageData?.progress === undefined) {
+          throw new Error('Missing agentId or progress for update_progress action');
+        }
+        responseData = await handleUpdateProgress(projectId, agentId, messageData.progress);
         break;
         
       case 'get_messages':
@@ -597,6 +603,19 @@ async function handleSendMessage(projectId: string, messageData: Partial<AgentMe
     created_at: new Date().toISOString()
   };
   
+  // Special handling for progress messages
+  if (messageData.type === 'progress' && messageData.metadata?.progress !== undefined) {
+    try {
+      // Update agent progress in database
+      await supabase
+        .from('agent_statuses')
+        .update({ progress: messageData.metadata.progress })
+        .eq('id', messageData.fromAgentId);
+    } catch (error) {
+      console.error('Error updating agent progress:', error);
+    }
+  }
+  
   // Add to recipient's message queue
   const agentQueue = messageQueue.get(message.toAgentId) || [];
   agentQueue.push(message);
@@ -614,6 +633,38 @@ async function handleSendMessage(projectId: string, messageData: Partial<AgentMe
     message: `Message sent from ${message.fromAgentId} to ${message.toAgentId}`,
     messageId: message.id
   };
+}
+
+/**
+ * Handle updating agent progress
+ */
+async function handleUpdateProgress(projectId: string, agentId: string, progress: number): Promise<any> {
+  if (progress < 0 || progress > 100) {
+    throw new Error('Progress value must be between 0 and 100');
+  }
+  
+  try {
+    // Update agent progress in database
+    const { error } = await supabase
+      .from('agent_statuses')
+      .update({ progress })
+      .eq('id', agentId)
+      .eq('project_id', projectId);
+      
+    if (error) {
+      throw new Error(`Failed to update agent progress: ${error.message}`);
+    }
+    
+    return {
+      success: true,
+      agentId,
+      progress,
+      message: `Progress updated for agent ${agentId}`
+    };
+  } catch (error) {
+    console.error('Error in handleUpdateProgress:', error);
+    throw error;
+  }
 }
 
 /**
@@ -657,6 +708,19 @@ async function handleProcessTask(projectId: string, agentId: string, taskId: str
   if (error || !task) {
     throw new Error(`Failed to fetch task: ${error?.message || 'Task not found'}`);
   }
+  
+  // Update agent progress independently for each step of task processing
+  // This ensures each agent has their own progress journey
+  const updateProgress = async (progress: number) => {
+    agentState.progress = progress;
+    await supabase
+      .from('agent_statuses')
+      .update({ progress })
+      .eq('id', agentId);
+  };
+  
+  // Start with lower progress
+  await updateProgress(20);
   
   // Update agent status
   agentState.status = 'working';
@@ -703,12 +767,8 @@ Respond as if you're messaging your team about how you plan to tackle this task.
     }]);
     
   // Update progress
-  agentState.progress = 40;
-  await supabase
-    .from('agent_statuses')
-    .update({ progress: 40 })
-    .eq('id', agentId);
-    
+  await updateProgress(40);
+  
   // Generate task implementation
   const implementationResponse = await callOpenRouter(
     agentState.type,
@@ -1049,7 +1109,7 @@ function extractTasksFromPlan(plan: string): Array<{
   
   // Try different patterns for task extraction
   const taskPattern1 = /Task\s*(?:[\d#]+)?[:.\-]\s*([^\n]+)[\n\s]*Agent\s*[:.\-]\s*([^\n]+)[\n\s]*Description\s*[:.\-]\s*([^\n]+)(?:[\n\s]*Priority\s*[:.\-]\s*([^\n]+))?/gi;
-  const taskPattern2 = /Task\s*(?:for)?\s*([^:]+?):\s*([^\n]+?)(?:[\n\s]*Description\s*[:.\-]\s*([^\n]+))?(?:[\n\s]*Priority\s*[:.\-]\s*([^\n]+))?/gi;
+  const taskPattern2 = /Task\s*(?:for)?\s*([^:]+?):\s*([^\n]+?)[\n\s]*Description\s*[:.\-]\s*([^\n]+))?(?:[\n\s]*Priority\s*[:.\-]\s*([^\n]+))?/gi;
   const taskPattern3 = /\-\s*\*\*([^:]+?):\*\*\s*([^\n]+?)(?:[\n\s]*([^\n]+))?(?:[\n\s]*Priority\s*[:.\-]\s*([^\n]+))?/gi;
   
   let match;
