@@ -3,6 +3,7 @@ import React from 'react';
 import { Agent } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { toast } from 'sonner';
 
 interface AgentSectionProps {
   agents: Agent[];
@@ -22,7 +23,10 @@ const AgentSection = ({
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-bold">AI Agents</h2>
         <Button
-          onClick={onStartAllAgents}
+          onClick={() => {
+            onStartAllAgents();
+            toast("Starting all agents...");
+          }}
           disabled={isLoading}
         >
           {isLoading ? 'Starting Agents...' : 'Start All Agents'}
@@ -48,21 +52,17 @@ const AgentSection = ({
               </span>
             </div>
             {agent.progress > 0 && (
-              <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
-                <div 
-                  className={`h-2.5 rounded-full ${
-                    agent.status === 'completed' ? 'bg-green-500' :
-                    agent.status === 'failed' ? 'bg-red-500' :
-                    'bg-blue-500'
-                  }`}
-                  style={{ width: `${agent.progress}%` }}
-                ></div>
+              <div className="mb-4">
+                <Progress value={agent.progress} />
               </div>
             )}
             <Button
               size="sm"
               variant="outline"
-              onClick={() => onStartAgent(agent)}
+              onClick={() => {
+                onStartAgent(agent);
+                toast(`Starting ${agent.name}...`);
+              }}
               disabled={agent.status === 'working' || isLoading}
             >
               Start Agent

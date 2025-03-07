@@ -1,98 +1,119 @@
-/**
- * Mock data for CrewAI API integration when the actual API is unavailable
- */
 
-import { RequiredInput, TaskStatus } from './crewAIApi';
+import { Agent } from "./types";
 
-// Mock required inputs
-export const mockRequiredInputs: RequiredInput[] = [
+// Mock required inputs for CrewAI
+export const mockRequiredInputs = [
   {
-    name: 'project_name',
-    type: 'string',
-    description: 'Name of the project you want to create',
+    name: "goal",
+    type: "text",
+    description: "What do you want the AI agents to accomplish?",
     required: true
   },
   {
-    name: 'project_description',
-    type: 'textarea',
-    description: 'Detailed description of the project and its requirements',
-    required: true
-  },
-  {
-    name: 'technology_stack',
-    type: 'string',
-    description: 'Preferred technologies to use (e.g., React, Node.js, Python)',
-    required: false
-  },
-  {
-    name: 'deployment_target',
-    type: 'string',
-    description: 'Where the project will be deployed (e.g., AWS, Vercel, Heroku)',
+    name: "context",
+    type: "textarea",
+    description: "Provide any additional context about your task",
     required: false
   }
 ];
 
-// Mock task status response for different stages
-export const getMockTaskStatus = (taskId: string, stage: 'pending' | 'in_progress' | 'completed' | 'failed' = 'pending'): TaskStatus => {
-  const statuses: Record<string, TaskStatus> = {
-    pending: {
-      task_id: taskId,
-      status: 'pending',
-      progress: 0
-    },
-    in_progress: {
-      task_id: taskId,
-      status: 'in_progress',
-      progress: 45
-    },
-    completed: {
-      task_id: taskId,
-      status: 'completed',
-      progress: 100,
-      result: {
-        project_structure: [
-          'src/',
-          'src/components/',
-          'src/pages/',
-          'src/utils/',
-          'public/',
-          'package.json',
-          'README.md'
+// Generate a mock task status based on the provided status
+export const getMockTaskStatus = (taskId: string, status: 'pending' | 'in_progress' | 'completed' | 'failed') => {
+  let progress = 0;
+  let result = null;
+  let error = null;
+  
+  switch (status) {
+    case 'pending':
+      progress = 0;
+      break;
+    case 'in_progress':
+      progress = Math.floor(Math.random() * 70) + 10; // Random progress between 10-80%
+      break;
+    case 'completed':
+      progress = 100;
+      result = {
+        summary: "Task completed successfully",
+        recommendations: [
+          "Consider implementing feature X",
+          "Optimize function Y for better performance",
+          "Add more test coverage to module Z"
         ],
-        tasks: [
+        codeSnippets: [
           {
-            id: 'task-1',
-            title: 'Setup project repository',
-            status: 'completed',
-            assignee: 'DevOps Engineer'
-          },
-          {
-            id: 'task-2',
-            title: 'Implement authentication',
-            status: 'in_progress',
-            assignee: 'Backend Developer'
-          },
-          {
-            id: 'task-3',
-            title: 'Create UI components',
-            status: 'pending',
-            assignee: 'Frontend Developer'
+            filePath: "src/components/Example.tsx",
+            code: "function Example() {\n  return <div>Example Component</div>;\n}"
           }
         ],
-        recommendations: [
-          'Use Next.js for server-side rendering capabilities',
-          'Implement CI/CD pipeline with GitHub Actions',
-          'Consider using Supabase for authentication and database'
-        ],
-        next_steps: 'The team should now focus on implementing core features while maintaining a modular architecture'
-      }
-    },
-    failed: {
-      task_id: taskId,
-      status: 'failed',
-      error: 'Unable to complete project planning due to insufficient requirements'
-    }
+        tasks: [
+          { title: "Implement feature A", status: "completed" },
+          { title: "Fix bug B", status: "in_progress" },
+          { title: "Optimize function C", status: "pending" }
+        ]
+      };
+      break;
+    case 'failed':
+      progress = 0;
+      error = "Task execution failed due to an unexpected error";
+      break;
+  }
+  
+  return {
+    task_id: taskId,
+    status,
+    progress,
+    result,
+    error
   };
+};
 
-  return statuses[stage];
+// Create default agents with different roles
+export const getDefaultAgents = (projectId: string): Agent[] => {
+  return [
+    {
+      id: `${projectId}-architect`,
+      name: "System Architect",
+      description: "Designs the overall system architecture and technical specifications",
+      type: "architect",
+      status: "idle",
+      progress: 0,
+      avatar: "🏛️"
+    },
+    {
+      id: `${projectId}-frontend`,
+      name: "Frontend Developer",
+      description: "Implements the user interface and client-side functionality",
+      type: "frontend",
+      status: "idle",
+      progress: 0,
+      avatar: "🎨"
+    },
+    {
+      id: `${projectId}-backend`,
+      name: "Backend Developer",
+      description: "Implements server-side logic, APIs, and database interactions",
+      type: "backend",
+      status: "idle",
+      progress: 0,
+      avatar: "⚙️"
+    },
+    {
+      id: `${projectId}-testing`,
+      name: "QA Engineer",
+      description: "Tests the application for bugs and ensures it meets requirements",
+      type: "testing",
+      status: "idle",
+      progress: 0,
+      avatar: "🧪"
+    },
+    {
+      id: `${projectId}-devops`,
+      name: "DevOps Engineer",
+      description: "Sets up deployment pipelines and infrastructure",
+      type: "devops",
+      status: "idle",
+      progress: 0,
+      avatar: "🚀"
+    }
+  ];
 };

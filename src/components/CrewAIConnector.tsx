@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useCrewAIApi } from '../hooks/useCrewAIApi';
 import { Button } from './ui/button';
@@ -6,6 +7,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Progress } from './ui/progress';
 import { Textarea } from './ui/textarea';
+import { toast } from 'sonner';
 
 interface CrewAIConnectorProps {
   onResultReceived?: (result: Record<string, unknown>) => void;
@@ -22,7 +24,6 @@ export default function CrewAIConnector({ onResultReceived }: CrewAIConnectorPro
     getRequiredInputs,
     startCrew,
     checkTaskStatus,
-    pollTaskStatus,
   } = useCrewAIApi({
     onSuccess: (data) => {
       console.log('API operation completed successfully:', data);
@@ -30,10 +31,12 @@ export default function CrewAIConnector({ onResultReceived }: CrewAIConnectorPro
       // If we received a task result and it has a result property, call the onResultReceived callback
       if (taskResult && onResultReceived) {
         onResultReceived(taskResult);
+        toast.success("Task completed successfully!");
       }
     },
     onError: (error) => {
       console.error('API operation failed:', error);
+      toast.error(`API operation failed: ${error.message}`);
     },
   });
 
@@ -70,12 +73,17 @@ export default function CrewAIConnector({ onResultReceived }: CrewAIConnectorPro
         .map((input) => input.name);
 
       if (missingRequiredInputs.length > 0) {
-        alert(`Please provide values for: ${missingRequiredInputs.join(', ')}`);
+        toast.error(`Please provide values for: ${missingRequiredInputs.join(', ')}`);
         return;
       }
     }
 
-    await startCrew(inputValues);
+    try {
+      await startCrew(inputValues);
+      toast.success("CrewAI task started!");
+    } catch (error) {
+      toast.error("Failed to start CrewAI task. Using mock data instead.");
+    }
   };
 
   // Render a form field based on input type
