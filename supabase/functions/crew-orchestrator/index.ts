@@ -66,6 +66,7 @@ serve(async (req) => {
           .from('tasks')
           .update({ 
             status: 'in_progress',
+            assigned_to: agentId, // Ensure task is assigned to this agent
             updated_at: new Date().toISOString() 
           })
           .eq('id', taskId);
@@ -91,7 +92,9 @@ serve(async (req) => {
         .from('chat_messages')
         .insert([{
           project_id: projectId,
-          content: `I'm now active and ready to work on tasks for this project.`,
+          content: taskId 
+            ? `I'm now working on the assigned task.` 
+            : `I'm now active and ready to work on tasks for this project.`,
           sender: agentData?.name || 'Agent',
           type: 'text'
         }]);
@@ -100,7 +103,7 @@ serve(async (req) => {
         JSON.stringify({ 
           success: true, 
           message: `Agent orchestration started successfully`,
-          data: { agentId, status: 'working' }
+          data: { agentId, status: 'working', taskId }
         }),
         { headers: responseHeaders }
       );
@@ -277,6 +280,62 @@ serve(async (req) => {
           success: true, 
           message: `Task completed successfully`,
           data: { agentId, taskId, status: 'completed' }
+        }),
+        { headers: responseHeaders }
+      );
+    }
+    else if (action === 'assign_task') {
+      // Handle task assignment
+      // 1. Update the task to be assigned to the agent
+      const { error: taskError } = await supabase
+        .from('tasks')
+        .update({ 
+          assigned_to: agentId,
+          status: 'pending', // Set to pending initially
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', taskId);
+
+      if (taskError) {
+        throw new Error(`Failed to assign task: ${taskError.message}`);
+      }
+
+      // 2. Get agent and task details for the notification
+      const { data: agentData, error: agentFetchError } = await supabase
+        .from('agent_statuses')
+        .select('name')
+        .eq('id', agentId)
+        .single();
+
+      if (agentFetchError) {
+        throw new Error(`Failed to fetch agent details: ${agentFetchError.message}`);
+      }
+
+      const { data: taskData, error: taskFetchError } = await supabase
+        .from('tasks')
+        .select('title')
+        .eq('id', taskId)
+        .single();
+
+      if (taskFetchError) {
+        throw new Error(`Failed to fetch task details: ${taskFetchError.message}`);
+      }
+
+      // 3. Create a chat message about the assignment
+      await supabase
+        .from('chat_messages')
+        .insert([{
+          project_id: projectId,
+          content: `I've been assigned to work on: "${taskData?.title || 'Unknown task'}"`,
+          sender: agentData?.name || 'Agent',
+          type: 'text'
+        }]);
+
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: `Task assigned successfully`,
+          data: { agentId, taskId, taskTitle: taskData?.title }
         }),
         { headers: responseHeaders }
       );
