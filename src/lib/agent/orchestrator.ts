@@ -177,7 +177,7 @@ export const stopAgentOrchestration = async (projectId: string, agentId: string)
     
     // First update the agent status locally to improve UI responsiveness
     const { error: localUpdateError } = await supabase
-      .from('agents')
+      .from('agent_statuses') // Changed from 'agents' to 'agent_statuses'
       .update({ status: 'idle' })
       .eq('id', agentId);
       

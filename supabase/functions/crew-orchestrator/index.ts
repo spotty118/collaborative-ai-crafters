@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 
@@ -269,7 +268,7 @@ async function handleCrewAction(requestData: any): Promise<Response> {
       
       // Get agent data
       const { data: agentData, error: agentError } = await supabase
-        .from('agents')
+        .from('agent_statuses')
         .select('*')
         .eq('id', agentId)
         .single();
@@ -333,7 +332,7 @@ async function handleCrewAction(requestData: any): Promise<Response> {
 
       // Update agent status to show it's now working
       const { error: updateError } = await supabase
-        .from('agents')
+        .from('agent_statuses')
         .update({ status: 'working' })
         .eq('id', agentId);
         
@@ -435,7 +434,7 @@ async function handleCrewAction(requestData: any): Promise<Response> {
             
             // Now we have the AI response, update the progress
             const { error: progressError } = await supabase
-              .from('agents')
+              .from('agent_statuses')
               .update({ progress: 50 })
               .eq('id', agentId);
               
@@ -555,7 +554,7 @@ async function handleCrewAction(requestData: any): Promise<Response> {
       
       // Check if agent exists before trying to update
       const { data: agentData, error: agentError } = await supabase
-        .from('agents')
+        .from('agent_statuses')
         .select('id, name, status')
         .eq('id', agentId)
         .single();
@@ -578,10 +577,10 @@ async function handleCrewAction(requestData: any): Promise<Response> {
       
       // Update agent status to show it's now idle
       const { error: updateError } = await supabase
-        .from('agents')
+        .from('agent_statuses')
         .update({ status: 'idle' })
         .eq('id', agentId);
-        
+          
       if (updateError) {
         console.error('Error updating agent status:', updateError.message);
         // Return a success response anyway to prevent UI blocking
@@ -637,7 +636,7 @@ async function handleCrewAction(requestData: any): Promise<Response> {
       
       // Update agent progress in Supabase
       const { error: updateError } = await supabase
-        .from('agents')
+        .from('agent_statuses')
         .update({ progress: requestData.progress })
         .eq('id', agentId);
         
