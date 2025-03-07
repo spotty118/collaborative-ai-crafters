@@ -1,4 +1,3 @@
-
 /**
  * Agent Core Module
  * 
@@ -64,7 +63,7 @@ class AgentCore {
    * Handle incoming messages from other agents
    */
   private async handleIncomingMessage(message: AgentMessage): Promise<void> {
-    console.log(`Agent ${this.agentName} received message from ${message.from.name}:`, message);
+    console.log(`Agent ${this.agentName} received message from ${message.from?.name}:`, message);
     
     try {
       // Check if there's a specific handler for this message type
@@ -113,7 +112,7 @@ class AgentCore {
     // Store in memory
     await this.memory.addToShortTermMemory(this.agentId, {
       role: 'user',
-      content: `Task from ${message.from.name}: ${message.content}`,
+      content: `Task from ${message.from?.name}: ${message.content}`,
       timestamp: Date.now()
     });
     
@@ -148,7 +147,7 @@ Keep your response professional and focused on the task.
         to: message.from,
         content: response,
         type: 'response',
-        projectId: message.projectId,
+        project_id: message.project_id,
         metadata: {
           inResponseTo: message.id,
           taskId: message.metadata?.taskId
@@ -169,7 +168,7 @@ Keep your response professional and focused on the task.
     // Store in memory
     await this.memory.addToShortTermMemory(this.agentId, {
       role: 'user',
-      content: `Request from ${message.from.name}: ${message.content}`,
+      content: `Request from ${message.from?.name}: ${message.content}`,
       timestamp: Date.now()
     });
     
@@ -205,7 +204,7 @@ ${relevantMemories.length > 0 ? `Relevant context from your memory:\n${relevantM
         to: message.from,
         content: response,
         type: 'response',
-        projectId: message.projectId,
+        project_id: message.project_id,
         metadata: {
           inResponseTo: message.id
         }
@@ -225,7 +224,7 @@ ${relevantMemories.length > 0 ? `Relevant context from your memory:\n${relevantM
     // For notifications, just store in memory
     await this.memory.addToShortTermMemory(this.agentId, {
       role: 'user',
-      content: `Notification from ${message.from.name}: ${message.content}`,
+      content: `Notification from ${message.from?.name}: ${message.content}`,
       timestamp: Date.now()
     });
   }
@@ -233,21 +232,26 @@ ${relevantMemories.length > 0 ? `Relevant context from your memory:\n${relevantM
   /**
    * Send a message to another agent
    */
-  async sendAgentMessage(message: Omit<AgentMessage, 'id' | 'timestamp' | 'from'>): Promise<string> {
+  async sendAgentMessage(message: Omit<AgentMessage, 'id' | 'timestamp' | 'from'>): Promise<boolean> {
     if (!this.agentId || !this.agentName || !this.agentType) {
       throw new Error('Agent identity not configured');
     }
     
-    const fullMessage: Omit<AgentMessage, 'id' | 'timestamp'> = {
-      ...message,
-      from: {
-        id: this.agentId,
-        name: this.agentName,
-        type: this.agentType
-      }
-    };
+    const agentId = message.to?.id || message.agent_id;
+    const projectId = message.project_id;
     
-    return await agentMessageBus.sendMessage(fullMessage);
+    if (!agentId || !projectId) {
+      throw new Error('Missing required properties: agent_id and project_id');
+    }
+    
+    // Call the agentMessageBus sendMessage function with the correct parameters
+    return await agentMessageBus.send(
+      projectId,
+      agentId,
+      message.content,
+      message.type,
+      message.metadata
+    );
   }
   
   /**
