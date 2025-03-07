@@ -29,7 +29,7 @@ export const sendAgentPrompt = async (
     const requestBody = multipartContent 
       ? {
           agentType: agent.type,
-          model: model,
+          model: "google/gemini-2.0-flash-thinking-exp:free", // Ensure consistent model usage
           multipartContent: multipartContent,
           projectContext: {
             name: project.name,
@@ -43,7 +43,7 @@ export const sendAgentPrompt = async (
       : {
           prompt,
           agentType: agent.type,
-          model: model,
+          model: "google/gemini-2.0-flash-thinking-exp:free", // Ensure consistent model usage
           projectContext: {
             name: project.name,
             description: project.description,
@@ -335,8 +335,8 @@ export const sendMultimodalPrompt = async (
         'string content'
     }))));
   
-  // Use the sendAgentPrompt function but with multipartContent
-  return sendAgentPrompt(agent, "", project, model, messages);
+  // Use the sendAgentPrompt function but with multipartContent and force the model to be the thinking model
+  return sendAgentPrompt(agent, "", project, "google/gemini-2.0-flash-thinking-exp:free", messages);
 };
 
 /**
@@ -549,7 +549,7 @@ PRIORITY: [high/medium/low]`;
           body: JSON.stringify({
             prompt: enhancedPrompt,
             agentType: agent.type,
-            model: model,
+            model: "google/gemini-2.0-flash-thinking-exp:free", // Ensure consistent model usage
             projectContext: {
               name: project.name,
               description: project.description,

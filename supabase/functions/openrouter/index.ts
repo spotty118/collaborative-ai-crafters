@@ -20,7 +20,7 @@ serve(async (req) => {
       prompt, 
       agentType, 
       projectContext, 
-      model = "anthropic/claude-3-opus:beta", 
+      model = "google/gemini-2.0-flash-thinking-exp:free", 
       multipartContent = null 
     } = requestData;
     
@@ -47,171 +47,14 @@ serve(async (req) => {
       return await handleMultimodalRequest(multipartContent, model, req, corsHeaders);
     }
 
-    // If using the gemini thinking model, use that specific implementation
+    // For all models, use the gemini thinking implementation which supports the thinking parameter
     if (model.includes("gemini") && model.includes("thinking")) {
       return await handleGeminiThinkingModel(prompt, agentType, projectContext, req, corsHeaders);
+    } else {
+      // If not using thinking model, default to thinking model anyway for consistency
+      console.log(`Model ${model} is not a thinking model, using default thinking model instead`);
+      return await handleGeminiThinkingModel(prompt, agentType, projectContext, req, corsHeaders);
     }
-
-    // For other models, use standard implementation
-    const temperature = agentType === 'architect' ? 0.3 : 0.4;
-    
-    console.log(`Using model: ${model} with temperature ${temperature}`);
-
-    // Add a system instruction appropriate to the agent type
-    let systemInstruction = `You are an AI agent specialized in ${agentType} work for a software development project.`;
-    
-    // Add more specific instructions based on agent type
-    switch (agentType) {
-      case 'architect':
-        systemInstruction += ` 
-        As the architect, your job is to: 
-        1. Plan and design the overall system architecture 
-        2. Make high-level technical decisions about frameworks and technologies
-        3. Break down complex tasks into smaller manageable tasks for other agents
-        4. Ensure all components work together coherently`;
-        break;
-      case 'frontend':
-        systemInstruction += ` 
-        As the frontend developer, your job is to: 
-        1. Implement user interfaces using modern web technologies
-        2. Build responsive and accessible components
-        3. Handle client-side state management and user interactions
-        4. Work with the backend developer to integrate APIs`;
-        break;
-      case 'backend':
-        systemInstruction += ` 
-        As the backend developer, your job is to:
-        1. Design and implement server-side logic and APIs
-        2. Work with databases and data modeling
-        3. Ensure security, scalability, and performance
-        4. Integrate with external services when needed`;
-        break;
-      case 'testing':
-        systemInstruction += ` 
-        As the testing specialist, your job is to:
-        1. Create comprehensive test plans and cases
-        2. Implement unit, integration, and e2e tests
-        3. Identify bugs and edge cases
-        4. Ensure code quality and reliability`;
-        break;
-      case 'devops':
-        systemInstruction += ` 
-        As the DevOps engineer, your job is to:
-        1. Set up CI/CD pipelines
-        2. Configure deployment environments
-        3. Manage infrastructure and cloud resources
-        4. Optimize performance and reliability`;
-        break;
-    }
-    
-    // Add specific instructions for code generation
-    systemInstruction += `\n\nProject Context: ${projectContext.name} - ${projectContext.description || 'No description provided'}.
-    
-    When writing code:
-    1. WRITE FULLY FUNCTIONAL, PRODUCTION-READY CODE
-    2. Include complete implementations, not pseudocode or placeholders
-    3. Follow modern best practices for your domain
-    4. For code examples, wrap the code in triple backticks with the language (e.g. \`\`\`javascript)
-    5. INCLUDE THE FULL FILEPATH at the beginning of any code block by writing \`\`\`filepath:<path/to/file>
-    
-    When creating tasks:
-    1. Use this format:
-    TASK: [Clear, specific task name]
-    ASSIGNED TO: [Agent type, e.g. Frontend, Backend]
-    DESCRIPTION: [Detailed description with acceptance criteria]
-    PRIORITY: [high/medium/low]
-    
-    2. Break down complex work into multiple tasks
-    3. Assign tasks to the appropriate specialist agent
-    `;
-    
-    console.log('Sending request to OpenRouter API');
-    
-    const requestBody = {
-      model: model,
-      messages: [
-        {
-          role: 'system',
-          content: systemInstruction
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: temperature,
-      max_tokens: 4000
-    };
-    
-    console.log('Request URL:', 'https://openrouter.ai/api/v1/chat/completions');
-    console.log('Request headers:', {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer <API_KEY_REDACTED>',
-      'HTTP-Referer': 'https://example.com',
-      'X-Title': 'Agent Collaboration System'
-    });
-    console.log('Request body excerpt:', JSON.stringify(requestBody).substring(0, 200) + '...');
-    
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-        'HTTP-Referer': 'https://example.com',
-        'X-Title': 'Agent Collaboration System'
-      },
-      body: JSON.stringify(requestBody)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('OpenRouter API error response:', errorText);
-      console.error('Response status:', response.status);
-      console.error('Response headers:', Object.fromEntries(response.headers.entries()));
-      
-      try {
-        const errorData = JSON.parse(errorText);
-        console.error('OpenRouter API error details:', errorData);
-        return new Response(
-          JSON.stringify({ error: `OpenRouter API returned status ${response.status}: ${errorData.error?.message || errorData.error || 'Unknown error'}` }),
-          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      } catch (parseError) {
-        console.error('Failed to parse OpenRouter error response:', parseError);
-        return new Response(
-          JSON.stringify({ error: `OpenRouter API returned status ${response.status}: ${errorText}` }),
-          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-    }
-
-    const data = await response.json();
-    console.log('OpenRouter response received successfully');
-    console.log('Response status:', response.status);
-    console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-    console.log('Response data excerpt:', JSON.stringify(data).substring(0, 200) + '...');
-    
-    // Process response and extract code snippets
-    const content = data.choices[0].message.content;
-    const codeSnippets = extractCodeSnippets(content);
-    
-    // Extract tasks information from the content
-    const tasksInfo = extractTasksInfo(content);
-    
-    return new Response(
-      JSON.stringify({
-        choices: [
-          {
-            message: {
-              content: content
-            }
-          }
-        ],
-        codeSnippets,
-        tasksInfo
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
   } catch (error) {
     console.error('Error in OpenRouter function:', error);
     console.error('Error stack:', error.stack);
