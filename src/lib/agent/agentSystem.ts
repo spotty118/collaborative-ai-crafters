@@ -2,199 +2,125 @@
 import AgentCore from './agentCore';
 import MemorySystem from './memorySystem';
 import ToolRegistry from './toolRegistry';
-import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
 
 /**
- * Agent System
- * 
- * Main entry point for the agent system. Coordinates between the agent core,
- * memory system, LLM service, and tools.
+ * Main agent system that coordinates all agent components
  */
 class AgentSystem {
-  private agentCore: AgentCore;
-  private memorySystem: MemorySystem;
-  private toolRegistry: ToolRegistry;
-  private llmService: any;
-  private initialized: boolean = false;
-  
+  private core: AgentCore;
+  private memory: MemorySystem;
+  private tools: ToolRegistry;
+  private isInitialized: boolean = false;
+
+  constructor() {
+    this.memory = new MemorySystem();
+    this.tools = new ToolRegistry();
+    this.core = new AgentCore({
+      memorySystem: this.memory,
+      toolRegistry: this.tools
+    });
+  }
+
   /**
    * Initialize the agent system
-   * This should be called before using any agent capabilities
    */
-  async initialize(config: any = {}): Promise<boolean> {
-    try {
-      // Initialize the LLM service (connects to Supabase Edge Function)
-      this.llmService = {
-        generateCompletion: async (prompt: string) => {
-          const { data, error } = await supabase.functions.invoke('agent-llm', {
-            body: { prompt, type: 'completion' }
-          });
-          
-          if (error) {
-            console.error('Error in LLM service:', error);
-            throw new Error(`LLM service error: ${error.message}`);
-          }
-          
-          return data.completion;
-        },
-        
-        generateEmbedding: async (text: string) => {
-          const { data, error } = await supabase.functions.invoke('agent-llm', {
-            body: { text, type: 'embedding' }
-          });
-          
-          if (error) {
-            console.error('Error in embedding service:', error);
-            throw new Error(`Embedding service error: ${error.message}`);
-          }
-          
-          return data.embedding;
-        }
-      };
-      
-      // Initialize the vector store
-      const vectorStore = {
-        addItem: async (item: any) => {
-          // Temporarily simulated until we implement proper vector storage
-          console.log('Adding item to vector store:', item);
-          return `mem_${Date.now()}`;
-        },
-        
-        search: async (query: any) => {
-          // Temporarily return empty results until we implement proper vector search
-          console.log('Searching vector store:', query);
-          return [];
-        },
-        
-        deleteItems: async (projectId: string, ids: string[]) => {
-          console.log(`Deleting items ${ids.join(', ')} for project ${projectId}`);
-          return true;
-        },
-        
-        getRecent: async (projectId: string, limit: number, earliestTimestamp: number) => {
-          console.log(`Getting ${limit} recent items for project ${projectId} since ${new Date(earliestTimestamp).toISOString()}`);
-          return [];
-        }
-      };
-      
-      // Initialize the main components
-      this.memorySystem = new MemorySystem({ 
-        embeddingService: this.llmService,
-        vectorStore
-      });
-      
-      this.toolRegistry = new ToolRegistry();
-      
-      // Register default tools
-      this.registerDefaultTools();
-      
-      this.agentCore = new AgentCore({
-        llmService: this.llmService,
-        memorySystem: this.memorySystem,
-        toolRegistry: this.toolRegistry
-      });
-      
-      this.initialized = true;
-      console.log('Agent system initialized successfully');
-      return true;
-    } catch (error) {
-      console.error('Error initializing agent system:', error);
-      toast.error(`Failed to initialize agent system: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      return false;
+  initialize(): void {
+    if (this.isInitialized) {
+      return;
     }
+
+    // Register default tools
+    this.registerDefaultTools();
+    
+    this.isInitialized = true;
+    console.log('Agent system initialized');
   }
-  
+
   /**
-   * Register the default set of tools
+   * Register default tools
    */
   private registerDefaultTools(): void {
-    // Register a search tool
-    this.toolRegistry.registerTool('search', {
-      description: 'Search for information on the web',
+    // Register a search tool example
+    this.tools.registerTool('search', {
+      name: 'search',
+      description: 'Search for information on a topic',
       parameters: {
-        query: 'The search query string'
+        query: {
+          type: 'string',
+          description: 'The search query'
+        }
       },
       execute: async (input: any) => {
-        // Simplified mock implementation
-        console.log(`Searching for: ${input.query}`);
-        return `Results for "${input.query}"`;
+        console.log('Executing search with query:', input.query);
+        return `Simulated search results for: ${input.query}`;
       }
     }, 'information');
-    
-    // Register a code generation tool
-    this.toolRegistry.registerTool('generate_code', {
-      description: 'Generate code based on a specification',
+
+    // Register a calculator tool example
+    this.tools.registerTool('calculator', {
+      name: 'calculator',
+      description: 'Perform calculations',
       parameters: {
-        language: 'The programming language',
-        specification: 'What the code should do'
+        expression: {
+          type: 'string',
+          description: 'The mathematical expression to evaluate'
+        }
       },
       execute: async (input: any) => {
-        // Simplified mock implementation
-        console.log(`Generating ${input.language} code for: ${input.specification}`);
-        return `// Generated ${input.language} code for ${input.specification}`;
+        console.log('Executing calculation:', input.expression);
+        try {
+          // Simple eval for demonstration - in production, use a safe evaluation method
+          // eslint-disable-next-line no-eval
+          return `Result: ${eval(input.expression)}`;
+        } catch (error) {
+          return `Error calculating: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        }
       }
-    }, 'development');
-    
-    // Register a task management tool
-    this.toolRegistry.registerTool('create_task', {
-      description: 'Create a new task in the project',
-      parameters: {
-        title: 'Task title',
-        description: 'Task description',
-        assignedTo: 'Agent ID to assign the task to'
-      },
-      execute: async (input: any, projectId: string) => {
-        // Simplified mock implementation
-        console.log(`Creating task "${input.title}" for project ${projectId}`);
-        return `Task "${input.title}" created successfully`;
-      }
-    }, 'project');
+    }, 'utilities');
   }
-  
+
   /**
-   * Process a user request using the agent
-   * @param projectId - Project identifier
+   * Process a user request
+   * @param userId - User identifier
    * @param userInput - User's request text
-   * @returns Promise with the agent's response
+   * @returns - Agent's response
    */
-  async processRequest(projectId: string, userInput: string): Promise<any> {
-    if (!this.initialized) {
-      await this.initialize();
+  async processUserRequest(userId: string, userInput: string): Promise<any> {
+    if (!this.isInitialized) {
+      this.initialize();
     }
-    
-    return this.agentCore.processUserRequest(projectId, userInput);
+
+    return await this.core.processUserRequest(userId, userInput);
   }
-  
+
   /**
-   * Register a custom tool for the agent to use
-   * @param name - Tool identifier
+   * Register a new tool
+   * @param name - Tool name
    * @param tool - Tool implementation
    * @param category - Tool category
-   * @returns boolean - Success indicator
+   * @returns - Success indicator
    */
-  registerTool(name: string, tool: any, category: string = 'custom'): boolean {
-    return this.toolRegistry.registerTool(name, tool, category);
+  registerTool(name: string, tool: any, category: string = 'general'): boolean {
+    return this.tools.registerTool(name, tool, category);
   }
-  
+
   /**
-   * Get the memory system instance
-   * @returns MemorySystem - The memory system
+   * Get the memory system
+   * @returns - Memory system
    */
   getMemorySystem(): MemorySystem {
-    return this.memorySystem;
+    return this.memory;
   }
-  
+
   /**
-   * Get the tool registry instance
-   * @returns ToolRegistry - The tool registry
+   * Get the tool registry
+   * @returns - Tool registry
    */
   getToolRegistry(): ToolRegistry {
-    return this.toolRegistry;
+    return this.tools;
   }
 }
 
-// Create a singleton instance
+// Export singleton instance
 const agentSystem = new AgentSystem();
-
 export default agentSystem;

@@ -1,91 +1,54 @@
-import { supabase } from "@/integrations/supabase/client";
-import { broadcastMessage } from "./messageBroker";
-import { Agent, Project } from "@/lib/types";
-import { toast } from "sonner";
-
 /**
  * Agent Core Module
  * 
  * The central reasoning and planning engine for the agentic AI system.
  * Handles task decomposition, reasoning, and action execution.
  */
-class AgentCore {
-  private llm: any; // LLM service for reasoning
-  private memory: any; // Memory system for storing context
-  private tools: any; // Available tools for the agent
-  private activeTasks: Map<string, any>; // Currently running tasks
-  private maxRecursionDepth: number; // Prevent infinite loops
-  private systemAgent: Agent; // System agent for broadcasting messages
 
-  constructor({ llmService, memorySystem, toolRegistry }: { 
-    llmService: any; 
-    memorySystem: any; 
-    toolRegistry: any;
-  }) {
-    this.llm = llmService;
+import MemorySystem from './memorySystem';
+import ToolRegistry from './toolRegistry';
+import { generateCompletion } from '../agent-llm';
+
+class AgentCore {
+  private memory: MemorySystem;
+  private tools: ToolRegistry;
+  private maxRecursionDepth: number;
+  private activeTasks: Map<string, any>;
+  
+  constructor({ memorySystem, toolRegistry }: { memorySystem: MemorySystem; toolRegistry: ToolRegistry }) {
     this.memory = memorySystem;
     this.tools = toolRegistry;
     this.activeTasks = new Map();
-    this.maxRecursionDepth = 5;
-    
-    // Initialize system agent for broadcasting messages
-    this.systemAgent = {
-      id: 'system',
-      name: 'System',
-      type: 'architect',
-      status: 'idle',
-      description: 'System agent for notifications',
-    };
+    this.maxRecursionDepth = 5; // Prevent infinite loops
   }
-
+  
   /**
    * Process a user request and generate a response
-   * @param projectId - Project identifier
+   * @param userId - User identifier
    * @param userInput - User's request text
-   * @returns Promise with the agent's response
+   * @returns - Agent's response
    */
-  async processUserRequest(projectId: string, userInput: string): Promise<any> {
+  async processUserRequest(userId: string, userInput: string): Promise<any> {
     try {
-      console.log(`Processing user request for project ${projectId}: ${userInput}`);
-      
       // 1. Store user input in short-term memory
-      await this.memory.addToShortTermMemory(projectId, {
+      await this.memory.addToShortTermMemory(userId, {
         role: 'user',
         content: userInput,
         timestamp: Date.now()
       });
 
       // 2. Retrieve relevant context from memory
-      const conversationContext = await this.memory.getConversationContext(projectId);
-      const relevantMemories = await this.memory.retrieveRelevantMemories(projectId, userInput);
+      const conversationContext = await this.memory.getConversationContext(userId);
+      const relevantMemories = await this.memory.retrieveRelevantMemories(userId, userInput);
       
       // 3. Plan approach to respond to the request
       const plan = await this.createPlan(userInput, conversationContext, relevantMemories);
       
-      // Fetch project data for broadcasting messages
-      const { data: projectData, error: projectError } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('id', projectId)
-        .single();
-        
-      if (projectError) {
-        console.error('Error fetching project data:', projectError);
-        throw new Error(`Failed to fetch project data: ${projectError.message}`);
-      }
-      
-      // Broadcast planning message
-      await broadcastMessage(
-        this.systemAgent,
-        `Planning response to: "${userInput}"`,
-        projectData
-      );
-      
       // 4. Execute the plan
-      const executionResult = await this.executePlan(projectId, plan);
+      const executionResult = await this.executePlan(userId, plan);
       
       // 5. Store the interaction in long-term memory
-      await this.memory.addToLongTermMemory(projectId, {
+      await this.memory.addToLongTermMemory(userId, {
         userInput,
         plan,
         result: executionResult,
@@ -93,18 +56,11 @@ class AgentCore {
       });
 
       // 6. Store agent's response in short-term memory
-      await this.memory.addToShortTermMemory(projectId, {
+      await this.memory.addToShortTermMemory(userId, {
         role: 'assistant',
         content: executionResult.response,
         timestamp: Date.now()
       });
-
-      // Broadcast completion message
-      await broadcastMessage(
-        this.systemAgent,
-        `Completed request: "${userInput}"`,
-        projectData
-      );
 
       return {
         response: executionResult.response,
@@ -113,10 +69,6 @@ class AgentCore {
       };
     } catch (error) {
       console.error('Error processing user request:', error);
-      
-      // Show error toast
-      toast.error(`Error processing request: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      
       return {
         response: "I encountered an error while processing your request. Please try again.",
         error: error instanceof Error ? error.message : 'Unknown error'
@@ -129,9 +81,9 @@ class AgentCore {
    * @param userInput - User's request
    * @param conversationContext - Recent conversation history
    * @param relevantMemories - Relevant information from long-term memory
-   * @returns Promise with the action plan
+   * @returns - Action plan
    */
-  private async createPlan(userInput: string, conversationContext: any[], relevantMemories: any[]): Promise<any> {
+  async createPlan(userInput: string, conversationContext: any[], relevantMemories: any[]): Promise<any> {
     // Prompt the LLM to create a plan
     const planningPrompt = this.buildPlanningPrompt(
       userInput, 
@@ -140,7 +92,7 @@ class AgentCore {
       this.tools.getToolDescriptions()
     );
     
-    const planResponse = await this.llm.generateCompletion(planningPrompt);
+    const planResponse = await generateCompletion(planningPrompt);
     
     try {
       // Parse the plan from the LLM's response
@@ -161,7 +113,9 @@ class AgentCore {
         steps: [{ 
           type: "generate_response", 
           input: userInput,
-          context: conversationContext
+          context: conversationContext,
+          id: 1,
+          description: "Generate direct response to user"
         }],
         requiredTools: [],
         estimatedComplexity: "low"
@@ -171,18 +125,8 @@ class AgentCore {
 
   /**
    * Build the prompt for the planning phase
-   * @param userInput - User's request
-   * @param conversationContext - Recent conversation history
-   * @param relevantMemories - Relevant information from memory
-   * @param availableTools - Descriptions of available tools
-   * @returns Prompt for the LLM
    */
-  private buildPlanningPrompt(
-    userInput: string, 
-    conversationContext: any[], 
-    relevantMemories: any[], 
-    availableTools: any[]
-  ): string {
+  buildPlanningPrompt(userInput: string, conversationContext: any[], relevantMemories: any[], availableTools: any[]): string {
     return `
 You are an advanced AI agent tasked with planning how to respond to a user request.
 
@@ -226,11 +170,8 @@ Respond with a JSON object in the following format:
 
   /**
    * Execute the plan created by the planning phase
-   * @param projectId - Project identifier
-   * @param plan - The plan object
-   * @returns Promise with execution results
    */
-  private async executePlan(projectId: string, plan: any): Promise<any> {
+  async executePlan(userId: string, plan: any): Promise<any> {
     const results = {
       thinking: [],
       toolsUsed: [],
@@ -247,7 +188,7 @@ Respond with a JSON object in the following format:
 
       // Execute each step in the plan
       for (const step of plan.steps) {
-        const stepResult = await this.executeStep(projectId, step, results);
+        const stepResult = await this.executeStep(userId, step, results);
         
         results.intermediateResults.push({
           stepId: step.id,
@@ -257,7 +198,7 @@ Respond with a JSON object in the following format:
 
         // If this is a critical step and it failed, we might need to replan
         if (stepResult.error && !step.fallbackAction) {
-          const newPlan = await this.recoverFromFailure(projectId, plan, step, stepResult.error);
+          const newPlan = await this.recoverFromFailure(userId, plan, step, stepResult.error);
           // Replace remaining steps with the new plan
           const currentIndex = plan.steps.findIndex((s: any) => s.id === step.id);
           plan.steps = [
@@ -268,7 +209,7 @@ Respond with a JSON object in the following format:
       }
 
       // Generate the final response
-      results.response = await this.generateFinalResponse(projectId, plan, results.intermediateResults);
+      results.response = await this.generateFinalResponse(userId, plan, results.intermediateResults);
       
       return results;
     } catch (error) {
@@ -283,12 +224,8 @@ Respond with a JSON object in the following format:
 
   /**
    * Execute a single step in the plan
-   * @param projectId - Project identifier
-   * @param step - Step to execute
-   * @param results - Current execution results
-   * @returns Promise with step execution result
    */
-  private async executeStep(projectId: string, step: any, results: any): Promise<any> {
+  async executeStep(userId: string, step: any, results: any): Promise<any> {
     try {
       // Record this step in the thinking process
       results.thinking.push({
@@ -299,7 +236,7 @@ Respond with a JSON object in the following format:
 
       // If step is to generate a response using the LLM
       if (step.type === 'generate_response') {
-        const response = await this.llm.generateCompletion(step.input);
+        const response = await generateCompletion(step.input);
         return { success: true, output: response };
       }
       
@@ -308,7 +245,7 @@ Respond with a JSON object in the following format:
         const tool = this.tools.getTool(step.type);
         results.toolsUsed.push(step.type);
         
-        const toolResult = await tool.execute(step.input, projectId);
+        const toolResult = await tool.execute(step.input, userId);
         return { success: true, output: toolResult };
       }
 
@@ -328,7 +265,7 @@ Respond with a JSON object in the following format:
           description: `Using fallback for step ${step.id}`
         });
         
-        return await this.executeFallback(projectId, step.fallbackAction);
+        return await this.executeFallback(userId, step.fallbackAction);
       }
       
       return {
@@ -340,11 +277,8 @@ Respond with a JSON object in the following format:
 
   /**
    * Execute a fallback action when a step fails
-   * @param projectId - Project identifier
-   * @param fallbackAction - Description of fallback action
-   * @returns Promise with fallback execution result
    */
-  private async executeFallback(projectId: string, fallbackAction: string): Promise<any> {
+  async executeFallback(userId: string, fallbackAction: string): Promise<any> {
     // Prompt the LLM to generate a fallback response
     const fallbackPrompt = `
 The original plan step failed. Please generate an appropriate fallback response or action.
@@ -358,7 +292,7 @@ Respond with a JSON object:
 `;
 
     try {
-      const fallbackResponse = await this.llm.generateCompletion(fallbackPrompt);
+      const fallbackResponse = await generateCompletion(fallbackPrompt);
       const fallback = JSON.parse(fallbackResponse);
       
       return {
@@ -378,13 +312,8 @@ Respond with a JSON object:
 
   /**
    * Generate a new plan to recover from a step failure
-   * @param projectId - Project identifier
-   * @param originalPlan - The original plan that failed
-   * @param failedStep - The step that failed
-   * @param errorMessage - Error description
-   * @returns Promise with new recovery plan
    */
-  private async recoverFromFailure(projectId: string, originalPlan: any, failedStep: any, errorMessage: string): Promise<any> {
+  async recoverFromFailure(userId: string, originalPlan: any, failedStep: any, errorMessage: string): Promise<any> {
     const recoveryPrompt = `
 You are executing a plan to respond to a user request, but a step has failed.
 
@@ -404,7 +333,7 @@ Respond with a JSON plan object with the same structure as the original plan.
 `;
 
     try {
-      const recoveryResponse = await this.llm.generateCompletion(recoveryPrompt);
+      const recoveryResponse = await generateCompletion(recoveryPrompt);
       return JSON.parse(recoveryResponse);
     } catch (error) {
       console.error('Error creating recovery plan:', error);
@@ -427,12 +356,8 @@ Respond with a JSON plan object with the same structure as the original plan.
 
   /**
    * Generate the final response to the user
-   * @param projectId - Project identifier
-   * @param plan - The executed plan
-   * @param intermediateResults - Results from each step
-   * @returns Promise with final response text
    */
-  private async generateFinalResponse(projectId: string, plan: any, intermediateResults: any[]): Promise<string> {
+  async generateFinalResponse(userId: string, plan: any, intermediateResults: any[]): Promise<string> {
     // If the plan only had one step and it was a direct response, just return that
     if (plan.steps.length === 1 && plan.steps[0].type === 'generate_response') {
       const result = intermediateResults[0]?.result;
@@ -462,13 +387,13 @@ Respond directly with the text for the user.
 `;
 
     try {
-      return await this.llm.generateCompletion(responsePrompt);
+      return await generateCompletion(responsePrompt);
     } catch (error) {
       console.error('Error generating final response:', error);
       return "I've collected the information you requested, but I'm having trouble putting it all together. Here's what I found: " + 
         intermediateResults
-          .filter(r => r.result.success)
-          .map(r => r.result.output)
+          .filter((r: any) => r.result.success)
+          .map((r: any) => r.result.output)
           .join(" ");
     }
   }

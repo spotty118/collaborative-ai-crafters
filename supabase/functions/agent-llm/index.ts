@@ -15,8 +15,21 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Log the request for debugging
+  console.log('Agent-LLM function received request:', req.method);
+
+  // Verify API key is available
+  if (!OPENAI_API_KEY) {
+    console.error('OpenAI API key is not set');
+    return new Response(
+      JSON.stringify({ error: 'OpenAI API key is not configured' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
   try {
     const { type, prompt, text } = await req.json();
+    console.log(`Processing request of type: ${type}`);
 
     if (type === 'completion') {
       // Handle completion request
@@ -43,6 +56,7 @@ serve(async (req) => {
       }
       
       const completion = data.choices[0].message.content;
+      console.log('Successfully generated completion');
 
       return new Response(JSON.stringify({ completion }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -69,6 +83,7 @@ serve(async (req) => {
       }
       
       const embedding = data.data[0].embedding;
+      console.log('Successfully generated embedding');
 
       return new Response(JSON.stringify({ embedding }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
