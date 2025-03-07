@@ -1,8 +1,9 @@
+
 import { supabase } from "@/lib/supabase";
 import { 
   Project, Agent, Task, Message, CodeFile, 
   AgentType, AgentStatus, TaskStatus, TaskPriority,
-  ProjectDB, AgentDB, TaskDB, MessageDB, CodeFileDB
+  ProjectDB, AgentDB, TaskDB, MessageDB, CodeFileDB, MessageType
 } from "./types";
 
 // Projects API
@@ -391,7 +392,7 @@ export const getMessages = async (projectId: string): Promise<Message[]> => {
     id: msg.id,
     content: msg.content,
     sender: msg.sender,
-    type: msg.type,
+    type: msg.type as MessageType,
     code_language: msg.code_language,
     project_id: msg.project_id,
     created_at: msg.created_at
@@ -409,7 +410,7 @@ export const createMessage = async (message: MessageDB): Promise<Message> => {
       content: message.content,
       project_id: message.project_id,
       sender: message.sender,
-      type: message.type || 'text',
+      type: message.type || 'text' as MessageType,
       code_language: message.code_language
     }])
     .select()
@@ -421,7 +422,7 @@ export const createMessage = async (message: MessageDB): Promise<Message> => {
     id: data.id,
     content: data.content,
     sender: data.sender,
-    type: data.type,
+    type: data.type as MessageType,
     code_language: data.code_language,
     project_id: data.project_id,
     created_at: data.created_at

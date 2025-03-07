@@ -1,6 +1,7 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { MessageType, AgentIdentity } from "@/lib/types";
 
 /**
  * Type definitions for agent messages
@@ -10,11 +11,12 @@ export interface AgentMessage {
   project_id: string;
   agent_id: string;
   content: string;
-  type: "text" | "code" | "task" | "error" | "progress" | "notification" | "request" | "response";
+  type: MessageType;
   status: "pending" | "delivered" | "read";
   metadata?: Record<string, any>;
   created_at: string;
-  from?: string; // Adding the 'from' property that was missing
+  from?: AgentIdentity;
+  to?: AgentIdentity;
 }
 
 interface Subscriber {
@@ -36,7 +38,7 @@ interface MessageCache {
 class AgentMessageBus {
   private subscribers: Map<string, Subscriber[]> = new Map();
   private pollingInterval: number = 5000;
-  private pollingTimers: Map<string, NodeJS.Timeout> = new Map(); // Changed Timer to Timeout
+  private pollingTimers: Map<string, NodeJS.Timeout> = new Map();
   private messageCache: MessageCache = {};
   private initialized: boolean = false;
   private retryCount: Map<string, number> = new Map();
@@ -90,7 +92,7 @@ class AgentMessageBus {
     projectId: string, 
     toAgentId: string, 
     content: string, 
-    type: AgentMessage["type"] = "text",
+    type: MessageType = "text",
     metadata: Record<string, any> = {}
   ): Promise<boolean> {
     if (!this.initialized) this.initialize();
@@ -133,7 +135,7 @@ class AgentMessageBus {
     projectId: string, 
     toAgentId: string, 
     content: string, 
-    type: AgentMessage["type"] = "text",
+    type: MessageType = "text",
     metadata: Record<string, any> = {}
   ): Promise<boolean> {
     return this.send(projectId, toAgentId, content, type, metadata);
