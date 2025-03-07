@@ -1,10 +1,9 @@
-
 export type ProjectMode = "new" | "existing";
 
 export type AgentStatus = "idle" | "working" | "completed" | "failed" | "waiting" | "running";
 export type TaskStatus = "pending" | "in_progress" | "completed" | "failed";
 export type TaskPriority = "low" | "medium" | "high";
-export type MessageType = "text" | "code" | "task" | "error" | "progress" | "notification" | "request" | "response";
+export type MessageType = "text" | "code" | "task" | "error" | "progress" | "notification" | "request" | "response" | "thinking";
 
 // Agent-related interfaces
 export interface AgentIdentity {
