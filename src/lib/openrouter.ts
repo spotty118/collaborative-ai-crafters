@@ -1,6 +1,7 @@
 import { Agent, Project, Task, TaskPriority, CodeFile } from '@/lib/types';
 import { createMessage, createTask, createCodeFile } from '@/lib/api';
 import { broadcastMessage } from './agent/messageBroker';
+import { toast } from "sonner";
 
 /**
  * Send a prompt to the agent using OpenRouter
@@ -53,6 +54,9 @@ export const sendAgentPrompt = async (
           }
         };
     
+    // Log the request body for debugging
+    console.log(`Request body: ${JSON.stringify(requestBody).substring(0, 500)}...`);
+    
     // Send the request to our Supabase Edge Function for OpenRouter
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openrouter`, {
       method: 'POST',
@@ -66,15 +70,35 @@ export const sendAgentPrompt = async (
     console.log(`Response status: ${response.status}`);
 
     if (!response.ok) {
+      const responseText = await response.text();
+      console.error('Raw error response:', responseText);
+      
       let errorMessage = `OpenRouter API request failed with status ${response.status}`;
       try {
-        const errorData = await response.json();
+        const errorData = JSON.parse(responseText);
         console.error('OpenRouter API Error:', errorData);
-        errorMessage = `OpenRouter API request failed: ${errorData.error || response.statusText}`;
+        
+        // Check if the error is an OpenRouter or upstream provider error
+        if (errorData.error) {
+          if (typeof errorData.error === 'string') {
+            errorMessage = `OpenRouter API request failed: ${errorData.error}`;
+          } else if (errorData.error.message) {
+            errorMessage = `OpenRouter API request failed: ${errorData.error.message}`;
+          } else {
+            errorMessage = `OpenRouter API request failed: ${JSON.stringify(errorData.error)}`;
+          }
+        } else if (errorData.stack) {
+          errorMessage = `OpenRouter API request failed: Internal error with stack trace`;
+          console.error('Error stack:', errorData.stack);
+        }
       } catch (parseError) {
         console.error('Failed to parse error response:', parseError);
-        errorMessage = `OpenRouter API request failed with status ${response.status}`;
+        errorMessage = `OpenRouter API request failed with status ${response.status}: ${responseText.substring(0, 200)}`;
       }
+      
+      // Show toast notification for the error
+      toast.error(errorMessage);
+      
       throw new Error(errorMessage);
     }
 
@@ -266,6 +290,7 @@ export const sendAgentPrompt = async (
     return agentResponse;
   } catch (error: any) {
     console.error("Error in sendAgentPrompt:", error);
+    console.error("Error stack:", error.stack);
     
     // Create an error message in chat
     if (project.id) {
@@ -299,6 +324,16 @@ export const sendMultimodalPrompt = async (
   if (!isValidMultimodal) {
     throw new Error("Invalid multimodal format. Must include at least one image.");
   }
+  
+  console.log("Sending multimodal request with messages:", 
+    JSON.stringify(messages.map(msg => ({
+      role: msg.role,
+      content: Array.isArray(msg.content) ? 
+        msg.content.map(item => 
+          item.type === 'image_url' ? {type: 'image_url', url: 'image-url-hidden'} : 
+          {type: item.type, text: item.text?.substring(0, 30) + '...'}) : 
+        'string content'
+    }))));
   
   // Use the sendAgentPrompt function but with multipartContent
   return sendAgentPrompt(agent, "", project, model, messages);
@@ -480,14 +515,15 @@ export const sendTeamPrompt = async (
     
     // Process agents in sequence for a more coherent conversation flow
     for (const agent of agents) {
-      // Add context about which agents are participating
-      const teamContext = {
-        team: agents.map(a => ({ name: a.name, type: a.type })),
-        currentAgent: { name: agent.name, type: agent.type }
-      };
-      
-      // Create an enhanced prompt that includes team context
-      const enhancedPrompt = `
+      try {
+        // Add context about which agents are participating
+        const teamContext = {
+          team: agents.map(a => ({ name: a.name, type: a.type })),
+          currentAgent: { name: agent.name, type: agent.type }
+        };
+        
+        // Create an enhanced prompt that includes team context
+        const enhancedPrompt = `
 As part of a development team that includes ${agents.map(a => a.name).join(', ')}, 
 please respond to the following request from the user:
 
@@ -501,138 +537,154 @@ TASK: [Task name]
 ASSIGNED TO: [Agent type, e.g. Frontend]
 DESCRIPTION: [Detailed description]
 PRIORITY: [high/medium/low]`;
-      
-      // Send the request to our Supabase Edge Function for OpenRouter
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openrouter`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          prompt: enhancedPrompt,
-          agentType: agent.type,
-          model: model,
-          projectContext: {
-            name: project.name,
-            description: project.description,
-            sourceUrl: project.sourceUrl,
-            sourceType: project.sourceType,
-            id: project.id,
-            created_at: project.created_at,
-            teamContext
-          }
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error(`OpenRouter API Error for ${agent.name}:`, errorData);
-        responses[agent.id] = `I couldn't process this request due to an error: ${errorData.error || response.statusText}`;
-        continue;
-      }
-
-      const responseData = await response.json();
-      const agentResponse = responseData.choices[0].message.content;
-      
-      // Store the response
-      responses[agent.id] = agentResponse;
-      
-      // Send the message to the chat
-      await createMessage({
-        project_id: project.id,
-        content: agentResponse,
-        sender: agent.name,
-        type: "text"
-      });
-      
-      // Process any code snippets and tasks
-      const codeSnippets = responseData.codeSnippets || extractCodeSnippets(agentResponse);
-      if (codeSnippets && codeSnippets.length > 0) {
-        for (const snippet of codeSnippets) {
-          const fileName = snippet.filePath.split('/').pop();
-          
-          // Create a code file entry in the database
-          await createCodeFile({
-            project_id: project.id,
-            name: fileName,
-            path: snippet.filePath,
-            content: snippet.code,
-            language: determineLanguage(snippet.filePath),
-            created_by: agent.name,
-            last_modified_by: agent.name
-          });
-          
-          // Add a message about the created file
-          await createMessage({
-            project_id: project.id,
-            content: `I've created a new file: ${snippet.filePath}`,
-            sender: agent.name,
-            type: "code",
-            code_language: determineLanguage(snippet.filePath)
-          });
-        }
-      }
-      
-      // Process any tasks that were created
-      const tasksInfo = responseData.tasksInfo || extractTasksInfo(agentResponse);
-      if (tasksInfo && tasksInfo.length > 0) {
-        console.log(`Agent ${agent.name} created ${tasksInfo.length} tasks in team collaboration`);
         
-        for (const taskInfo of tasksInfo) {
-          let assignedAgentId = agent.id; // Default to the current agent
-          
-          // Try to find the correct agent by type
-          if (taskInfo.assignedTo !== agent.type && taskInfo.assignedTo.toLowerCase().includes('agent')) {
-            const agentType = taskInfo.assignedTo.replace(/\s+agent/i, '').toLowerCase();
-            const assignedAgent = agents.find(a => a.type.toLowerCase() === agentType);
-            if (assignedAgent) {
-              assignedAgentId = assignedAgent.id;
-              console.log(`Found agent match: ${assignedAgent.name} (${assignedAgent.id})`);
-            } else {
-              console.log(`Could not find agent for type: ${agentType}`);
+        console.log(`Sending request for team member ${agent.name}`);
+        
+        // Send the request to our Supabase Edge Function for OpenRouter
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openrouter`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            prompt: enhancedPrompt,
+            agentType: agent.type,
+            model: model,
+            projectContext: {
+              name: project.name,
+              description: project.description,
+              sourceUrl: project.sourceUrl,
+              sourceType: project.sourceType,
+              id: project.id,
+              created_at: project.created_at,
+              teamContext
             }
-          } else if (!taskInfo.assignedTo.toLowerCase().includes('agent')) {
-            // Try to match just the agent type without the word "agent"
-            const agentType = taskInfo.assignedTo.toLowerCase().trim();
-            const assignedAgent = agents.find(a => a.type.toLowerCase() === agentType);
-            if (assignedAgent) {
-              assignedAgentId = assignedAgent.id;
-              console.log(`Found agent match by type only: ${assignedAgent.name} (${assignedAgent.id})`);
-            }
-          }
-          
-          // Create the task with a more descriptive title that includes the agent name
-          const taskTitle = `[${agent.name}] ${taskInfo.title}`;
-          console.log(`Creating team task: ${taskTitle} for agent ${assignedAgentId}`);
-          
-          try {
-            // Create the task
-            await createTask({
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error(`OpenRouter API Error for ${agent.name}:`, errorData);
+          responses[agent.id] = `I couldn't process this request due to an error: ${errorData.error || response.statusText}`;
+          continue;
+        }
+
+        const responseData = await response.json();
+        console.log(`Response received for team member ${agent.name}`);
+        
+        const agentResponse = responseData.choices[0].message.content;
+        
+        // Store the response
+        responses[agent.id] = agentResponse;
+        
+        // Send the message to the chat
+        await createMessage({
+          project_id: project.id,
+          content: agentResponse,
+          sender: agent.name,
+          type: "text"
+        });
+        
+        // Process any code snippets and tasks
+        const codeSnippets = responseData.codeSnippets || extractCodeSnippets(agentResponse);
+        if (codeSnippets && codeSnippets.length > 0) {
+          for (const snippet of codeSnippets) {
+            const fileName = snippet.filePath.split('/').pop();
+            
+            // Create a code file entry in the database
+            await createCodeFile({
               project_id: project.id,
-              title: taskTitle,
-              description: taskInfo.description,
-              assigned_to: assignedAgentId,
-              status: 'pending',
-              priority: taskInfo.priority as TaskPriority || 'medium'
+              name: fileName,
+              path: snippet.filePath,
+              content: snippet.code,
+              language: determineLanguage(snippet.filePath),
+              created_by: agent.name,
+              last_modified_by: agent.name
             });
             
-            // Add a message about the created task
+            // Add a message about the created file
             await createMessage({
               project_id: project.id,
-              content: `I've created a new task: "${taskInfo.title}" with ${taskInfo.priority} priority, assigned to ${taskInfo.assignedTo}`,
+              content: `I've created a new file: ${snippet.filePath}`,
               sender: agent.name,
-              type: "text"
-            });
-          } catch (error) {
-            console.error(`Error creating team task ${taskTitle}:`, error);
-            await createMessage({
-              project_id: project.id,
-              content: `Failed to create task: "${taskInfo.title}" - ${error instanceof Error ? error.message : 'Unknown error'}`,
-              sender: agent.name,
-              type: "error"
+              type: "code",
+              code_language: determineLanguage(snippet.filePath)
             });
           }
         }
+        
+        // Process any tasks that were created
+        const tasksInfo = responseData.tasksInfo || extractTasksInfo(agentResponse);
+        if (tasksInfo && tasksInfo.length > 0) {
+          console.log(`Agent ${agent.name} created ${tasksInfo.length} tasks in team collaboration`);
+          
+          for (const taskInfo of tasksInfo) {
+            let assignedAgentId = agent.id; // Default to the current agent
+            
+            // Try to find the correct agent by type
+            if (taskInfo.assignedTo !== agent.type && taskInfo.assignedTo.toLowerCase().includes('agent')) {
+              const agentType = taskInfo.assignedTo.replace(/\s+agent/i, '').toLowerCase();
+              const assignedAgent = agents.find(a => a.type.toLowerCase() === agentType);
+              if (assignedAgent) {
+                assignedAgentId = assignedAgent.id;
+                console.log(`Found agent match: ${assignedAgent.name} (${assignedAgent.id})`);
+              } else {
+                console.log(`Could not find agent for type: ${agentType}`);
+              }
+            } else if (!taskInfo.assignedTo.toLowerCase().includes('agent')) {
+              // Try to match just the agent type without the word "agent"
+              const agentType = taskInfo.assignedTo.toLowerCase().trim();
+              const assignedAgent = agents.find(a => a.type.toLowerCase() === agentType);
+              if (assignedAgent) {
+                assignedAgentId = assignedAgent.id;
+                console.log(`Found agent match by type only: ${assignedAgent.name} (${assignedAgent.id})`);
+              }
+            }
+            
+            // Create the task with a more descriptive title that includes the agent name
+            const taskTitle = `[${agent.name}] ${taskInfo.title}`;
+            console.log(`Creating team task: ${taskTitle} for agent ${assignedAgentId}`);
+            
+            try {
+              // Create the task
+              await createTask({
+                project_id: project.id,
+                title: taskTitle,
+                description: taskInfo.description,
+                assigned_to: assignedAgentId,
+                status: 'pending',
+                priority: taskInfo.priority as TaskPriority || 'medium'
+              });
+              
+              // Add a message about the created task
+              await createMessage({
+                project_id: project.id,
+                content: `I've created a new task: "${taskInfo.title}" with ${taskInfo.priority} priority, assigned to ${taskInfo.assignedTo}`,
+                sender: agent.name,
+                type: "text"
+              });
+            } catch (error) {
+              console.error(`Error creating team task ${taskTitle}:`, error);
+              await createMessage({
+                project_id: project.id,
+                content: `Failed to create task: "${taskInfo.title}" - ${error instanceof Error ? error.message : 'Unknown error'}`,
+                sender: agent.name,
+                type: "error"
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Error processing team request for ${agent.name}:`, error);
+        // Continue with other agents even if one fails
+        responses[agent.id] = `I encountered an error while processing this request: ${error instanceof Error ? error.message : String(error)}`;
+        
+        await createMessage({
+          project_id: project.id,
+          content: `I encountered an error while processing this request: ${error instanceof Error ? error.message : String(error)}`,
+          sender: agent.name,
+          type: "error"
+        });
       }
       
       // Small delay between agent responses to make the conversation more natural
