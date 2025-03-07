@@ -58,236 +58,271 @@ export const sendAgentPrompt = async (
     console.log(`Request body: ${JSON.stringify(requestBody).substring(0, 500)}...`);
     
     // Send the request to our Supabase Edge Function for OpenRouter
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openrouter`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    console.log(`Response received at: ${new Date().toISOString()}`);
-    console.log(`Response status: ${response.status}`);
-
-    if (!response.ok) {
-      const responseText = await response.text();
-      console.error('Raw error response:', responseText);
-      
-      let errorMessage = `OpenRouter API request failed with status ${response.status}`;
+    console.log(`Making direct fetch to ${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openrouter`);
+    
+    // Add retry logic for resilience
+    let attempts = 0;
+    const maxAttempts = 2;
+    let lastError = null;
+    
+    while (attempts < maxAttempts) {
       try {
-        const errorData = JSON.parse(responseText);
-        console.error('OpenRouter API Error:', errorData);
+        attempts++;
+        console.log(`Attempt ${attempts} of ${maxAttempts}`);
         
-        // Check if the error is an OpenRouter or upstream provider error
-        if (errorData.error) {
-          if (typeof errorData.error === 'string') {
-            errorMessage = `OpenRouter API request failed: ${errorData.error}`;
-          } else if (errorData.error.message) {
-            errorMessage = `OpenRouter API request failed: ${errorData.error.message}`;
-          } else {
-            errorMessage = `OpenRouter API request failed: ${JSON.stringify(errorData.error)}`;
-          }
-        } else if (errorData.stack) {
-          errorMessage = `OpenRouter API request failed: Internal error with stack trace`;
-          console.error('Error stack:', errorData.stack);
-        }
-      } catch (parseError) {
-        console.error('Failed to parse error response:', parseError);
-        errorMessage = `OpenRouter API request failed with status ${response.status}: ${responseText.substring(0, 200)}`;
-      }
-      
-      // Show toast notification for the error
-      toast.error(errorMessage);
-      
-      throw new Error(errorMessage);
-    }
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openrouter`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        });
 
-    const responseData = await response.json();
-    console.log(`Response parsed at: ${new Date().toISOString()}`);
-    console.log('Response type:', typeof responseData);
-    console.log('Response structure:', Object.keys(responseData).join(', '));
-    
-    // Handle direct responses from multimodal requests differently
-    if (multipartContent) {
-      if (!responseData.choices || !responseData.choices[0]) {
-        console.error('Unexpected multimodal response format:', responseData);
-        throw new Error('Received an invalid response format from OpenRouter');
-      }
-      
-      const agentResponse = responseData.choices[0].message.content;
-      
-      // Create a message with the response
-      await createMessage({
-        project_id: project.id,
-        content: agentResponse,
-        sender: agent.name,
-        type: "text"
-      });
-      
-      return agentResponse;
-    }
-    
-    // Standard response processing
-    if (!responseData.choices || !responseData.choices[0]) {
-      console.error('Unexpected response format:', responseData);
-      throw new Error('Received an invalid response format from OpenRouter');
-    }
-    
-    const agentResponse = responseData.choices[0].message.content;
-    const thinkingResponse = responseData.choices[0].thinking || '';
-    
-    if (thinkingResponse) {
-      console.log(`Agent ${agent.name} thinking:`, thinkingResponse.substring(0, 100) + '...');
-      
-      // Create a message with the thinking process (if you want to show it in UI)
-      await createMessage({
-        project_id: project.id,
-        content: `Thinking process: ${thinkingResponse}`,
-        sender: `${agent.name} (Thinking)`,
-        type: "thinking"
-      });
-    }
-    
-    console.log(`Agent ${agent.name} response:`, agentResponse.substring(0, 100) + '...');
-    
-    // Check if the response contains any markers of non-production code
-    if (agentResponse.includes("let's implement") || 
-        agentResponse.includes("Let's implement") ||
-        agentResponse.includes("would look something like") ||
-        agentResponse.includes("might look like")) {
-      console.warn("Response contains descriptive language instead of real code");
-    }
-    
-    // Create a message in the chat with the agent's response
-    await createMessage({
-      project_id: project.id,
-      content: agentResponse,
-      sender: agent.name,
-      type: "text"
-    });
-    
-    // Process any code snippets that were returned
-    const codeSnippets = responseData.codeSnippets || extractCodeSnippets(agentResponse);
-    if (codeSnippets && codeSnippets.length > 0) {
-      console.log(`Agent ${agent.name} generated ${codeSnippets.length} code snippets`);
-      
-      for (const snippet of codeSnippets) {
-        const fileName = snippet.filePath.split('/').pop();
-        
-        // Skip code snippets that appear to be descriptive rather than real code
-        if (isDescriptiveCode(snippet.code)) {
-          console.warn(`Skipping non-implementation code for ${snippet.filePath}`);
-          await createMessage({
-            project_id: project.id,
-            content: `Warning: I detected that the code for ${snippet.filePath} was descriptive rather than a real implementation. I've skipped creating this file. Please ask me to implement it properly.`,
-            sender: agent.name,
-            type: "error"
-          });
+        console.log(`Response received at: ${new Date().toISOString()}`);
+        console.log(`Response status: ${response.status}`);
+
+        if (!response.ok) {
+          const responseText = await response.text();
+          console.error('Raw error response:', responseText);
+          
+          let errorMessage = `OpenRouter API request failed with status ${response.status}`;
+          try {
+            const errorData = JSON.parse(responseText);
+            console.error('OpenRouter API Error:', errorData);
+            
+            // Check if the error is an OpenRouter or upstream provider error
+            if (errorData.error) {
+              if (typeof errorData.error === 'string') {
+                errorMessage = `OpenRouter API request failed: ${errorData.error}`;
+              } else if (errorData.error.message) {
+                errorMessage = `OpenRouter API request failed: ${errorData.error.message}`;
+              } else {
+                errorMessage = `OpenRouter API request failed: ${JSON.stringify(errorData.error)}`;
+              }
+            } else if (errorData.stack) {
+              errorMessage = `OpenRouter API request failed: Internal error with stack trace`;
+              console.error('Error stack:', errorData.stack);
+            }
+          } catch (parseError) {
+            console.error('Failed to parse error response:', parseError);
+            errorMessage = `OpenRouter API request failed with status ${response.status}: ${responseText.substring(0, 200)}`;
+          }
+          
+          // If we're on the last attempt, show toast notification for the error
+          if (attempts >= maxAttempts) {
+            toast.error(errorMessage);
+            throw new Error(errorMessage);
+          }
+          
+          // Otherwise, continue to the next attempt
+          lastError = new Error(errorMessage);
+          console.log(`Retrying after error: ${errorMessage}`);
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait a second before retrying
           continue;
         }
+
+        const responseData = await response.json();
+        console.log(`Response parsed at: ${new Date().toISOString()}`);
+        console.log('Response type:', typeof responseData);
+        console.log('Response structure:', Object.keys(responseData).join(', '));
         
-        // Create a code file entry in the database
-        await createCodeFile({
-          project_id: project.id,
-          name: fileName,
-          path: snippet.filePath,
-          content: snippet.code,
-          language: determineLanguage(snippet.filePath),
-          created_by: agent.name,
-          last_modified_by: agent.name
-        });
+        // Handle direct responses from multimodal requests differently
+        if (multipartContent) {
+          if (!responseData.choices || !responseData.choices[0]) {
+            console.error('Unexpected multimodal response format:', responseData);
+            throw new Error('Received an invalid response format from OpenRouter');
+          }
+          
+          const agentResponse = responseData.choices[0].message.content;
+          
+          // Create a message with the response
+          await createMessage({
+            project_id: project.id,
+            content: agentResponse,
+            sender: agent.name,
+            type: "text"
+          });
+          
+          return agentResponse;
+        }
         
-        // Add a message about the created file
+        // Standard response processing
+        if (!responseData.choices || !responseData.choices[0]) {
+          console.error('Unexpected response format:', responseData);
+          throw new Error('Received an invalid response format from OpenRouter');
+        }
+        
+        const agentResponse = responseData.choices[0].message.content;
+        const thinkingResponse = responseData.choices[0].thinking || '';
+        
+        if (thinkingResponse) {
+          console.log(`Agent ${agent.name} thinking:`, thinkingResponse.substring(0, 100) + '...');
+          
+          // Create a message with the thinking process (if you want to show it in UI)
+          await createMessage({
+            project_id: project.id,
+            content: `Thinking process: ${thinkingResponse}`,
+            sender: `${agent.name} (Thinking)`,
+            type: "thinking"
+          });
+        }
+        
+        console.log(`Agent ${agent.name} response:`, agentResponse.substring(0, 100) + '...');
+        
+        // Check if the response contains any markers of non-production code
+        if (agentResponse.includes("let's implement") || 
+            agentResponse.includes("Let's implement") ||
+            agentResponse.includes("would look something like") ||
+            agentResponse.includes("might look like")) {
+          console.warn("Response contains descriptive language instead of real code");
+        }
+        
+        // Create a message in the chat with the agent's response
         await createMessage({
           project_id: project.id,
-          content: `I've created a new file: ${snippet.filePath}`,
+          content: agentResponse,
           sender: agent.name,
-          type: "code",
-          code_language: determineLanguage(snippet.filePath)
+          type: "text"
         });
-      }
-    }
-    
-    // Process any tasks that were created
-    const tasksInfo = responseData.tasksInfo || extractTasksInfo(agentResponse);
-    if (tasksInfo && tasksInfo.length > 0) {
-      console.log(`Agent ${agent.name} created ${tasksInfo.length} tasks`);
-      
-      // Create a short summary message about task creation
-      const taskSummary = `I've identified ${tasksInfo.length} tasks that need to be completed for this project.`;
-      await createMessage({
-        project_id: project.id,
-        content: taskSummary,
-        sender: agent.name,
-        type: "text"
-      });
-      
-      for (const taskInfo of tasksInfo) {
-        // Get the right agent ID based on the assigned agent type
-        let assignedAgentId = agent.id; // Default to the current agent
-        let assignedAgentType = taskInfo.assignedTo.toLowerCase();
         
-        if (assignedAgentType !== agent.type.toLowerCase()) {
-          // Try to find matching agent based on various possible formats
-          if (assignedAgentType.includes('front')) assignedAgentType = 'frontend';
-          else if (assignedAgentType.includes('back')) assignedAgentType = 'backend';
-          else if (assignedAgentType.includes('test')) assignedAgentType = 'testing';
-          else if (assignedAgentType.includes('dev') && assignedAgentType.includes('ops')) assignedAgentType = 'devops';
-          else if (assignedAgentType.includes('arch')) assignedAgentType = 'architect';
+        // Process any code snippets that were returned
+        const codeSnippets = responseData.codeSnippets || extractCodeSnippets(agentResponse);
+        if (codeSnippets && codeSnippets.length > 0) {
+          console.log(`Agent ${agent.name} generated ${codeSnippets.length} code snippets`);
           
-          console.log(`Looking for agent type: ${assignedAgentType}`);
-          
-          // Fetch agents for this project
-          try {
-            const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/agent_statuses?project_id=eq.${project.id}&agent_type=ilike.${assignedAgentType}%`, {
-              headers: {
-                'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-                'Content-Type': 'application/json'
-              }
+          for (const snippet of codeSnippets) {
+            const fileName = snippet.filePath.split('/').pop();
+            
+            // Skip code snippets that appear to be descriptive rather than real code
+            if (isDescriptiveCode(snippet.code)) {
+              console.warn(`Skipping non-implementation code for ${snippet.filePath}`);
+              await createMessage({
+                project_id: project.id,
+                content: `Warning: I detected that the code for ${snippet.filePath} was descriptive rather than a real implementation. I've skipped creating this file. Please ask me to implement it properly.`,
+                sender: agent.name,
+                type: "error"
+              });
+              continue;
+            }
+            
+            // Create a code file entry in the database
+            await createCodeFile({
+              project_id: project.id,
+              name: fileName,
+              path: snippet.filePath,
+              content: snippet.code,
+              language: determineLanguage(snippet.filePath),
+              created_by: agent.name,
+              last_modified_by: agent.name
             });
             
-            if (response.ok) {
-              const agents = await response.json();
-              if (agents && agents.length > 0) {
-                assignedAgentId = agents[0].id;
-                console.log(`Found matching agent: ${agents[0].name} (${assignedAgentId})`);
-              }
-            }
-          } catch (error) {
-            console.error("Error finding matching agent:", error);
+            // Add a message about the created file
+            await createMessage({
+              project_id: project.id,
+              content: `I've created a new file: ${snippet.filePath}`,
+              sender: agent.name,
+              type: "code",
+              code_language: determineLanguage(snippet.filePath)
+            });
           }
         }
         
-        // Create a descriptive title that includes the agent name
-        const taskTitle = agent.type === 'architect' ? 
-          taskInfo.title : // Keep architect's task titles clean
-          `[${agent.name}] ${taskInfo.title}`; // Add creator prefix for other agents
+        // Process any tasks that were created
+        const tasksInfo = responseData.tasksInfo || extractTasksInfo(agentResponse);
+        if (tasksInfo && tasksInfo.length > 0) {
+          console.log(`Agent ${agent.name} created ${tasksInfo.length} tasks`);
           
-        console.log(`Creating task: ${taskTitle} assigned to agent ${assignedAgentId}`);
-        
-        try {
-          // Create the task
-          await createTask({
-            project_id: project.id,
-            title: taskTitle,
-            description: taskInfo.description,
-            assigned_to: assignedAgentId,
-            status: 'pending',
-            priority: taskInfo.priority as TaskPriority || 'medium'
-          });
-        } catch (error) {
-          console.error(`Error creating task ${taskTitle}:`, error);
+          // Create a short summary message about task creation
+          const taskSummary = `I've identified ${tasksInfo.length} tasks that need to be completed for this project.`;
           await createMessage({
             project_id: project.id,
-            content: `Failed to create task: "${taskInfo.title}" - ${error instanceof Error ? error.message : 'Unknown error'}`,
+            content: taskSummary,
             sender: agent.name,
-            type: "error"
+            type: "text"
           });
+          
+          for (const taskInfo of tasksInfo) {
+            // Get the right agent ID based on the assigned agent type
+            let assignedAgentId = agent.id; // Default to the current agent
+            let assignedAgentType = taskInfo.assignedTo.toLowerCase();
+            
+            if (assignedAgentType !== agent.type.toLowerCase()) {
+              // Try to find matching agent based on various possible formats
+              if (assignedAgentType.includes('front')) assignedAgentType = 'frontend';
+              else if (assignedAgentType.includes('back')) assignedAgentType = 'backend';
+              else if (assignedAgentType.includes('test')) assignedAgentType = 'testing';
+              else if (assignedAgentType.includes('dev') && assignedAgentType.includes('ops')) assignedAgentType = 'devops';
+              else if (assignedAgentType.includes('arch')) assignedAgentType = 'architect';
+              
+              console.log(`Looking for agent type: ${assignedAgentType}`);
+              
+              // Fetch agents for this project
+              try {
+                const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/agent_statuses?project_id=eq.${project.id}&agent_type=ilike.${assignedAgentType}%`, {
+                  headers: {
+                    'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+                    'Content-Type': 'application/json'
+                  }
+                });
+                
+                if (response.ok) {
+                  const agents = await response.json();
+                  if (agents && agents.length > 0) {
+                    assignedAgentId = agents[0].id;
+                    console.log(`Found matching agent: ${agents[0].name} (${assignedAgentId})`);
+                  }
+                }
+              } catch (error) {
+                console.error("Error finding matching agent:", error);
+              }
+            }
+            
+            // Create a descriptive title that includes the agent name
+            const taskTitle = agent.type === 'architect' ? 
+              taskInfo.title : // Keep architect's task titles clean
+              `[${agent.name}] ${taskInfo.title}`; // Add creator prefix for other agents
+              
+            console.log(`Creating task: ${taskTitle} assigned to agent ${assignedAgentId}`);
+            
+            try {
+              // Create the task
+              await createTask({
+                project_id: project.id,
+                title: taskTitle,
+                description: taskInfo.description,
+                assigned_to: assignedAgentId,
+                status: 'pending',
+                priority: taskInfo.priority as TaskPriority || 'medium'
+              });
+            } catch (error) {
+              console.error(`Error creating task ${taskTitle}:`, error);
+              await createMessage({
+                project_id: project.id,
+                content: `Failed to create task: "${taskInfo.title}" - ${error instanceof Error ? error.message : 'Unknown error'}`,
+                sender: agent.name,
+                type: "error"
+              });
+            }
+          }
         }
+        
+        return agentResponse;
+      } catch (error) {
+        lastError = error;
+        console.error(`Attempt ${attempts} failed:`, error);
+        
+        if (attempts >= maxAttempts) {
+          throw error;
+        }
+        
+        // Wait a bit longer before the next retry
+        await new Promise(resolve => setTimeout(resolve, 1500));
       }
     }
     
-    return agentResponse;
+    // If we get here, we've exhausted all attempts
+    throw lastError || new Error("Failed to connect to OpenRouter after multiple attempts");
+    
   } catch (error: any) {
     console.error("Error in sendAgentPrompt:", error);
     console.error("Error stack:", error.stack);
@@ -715,10 +750,14 @@ PRIORITY: [high/medium/low]`;
 export const testOpenRouterConnection = async (): Promise<{ success: boolean; message: string }> => {
   try {
     console.log('Testing OpenRouter connection...');
-    const { supabase } = await import('@/integrations/supabase/client');
     
-    const { data, error } = await supabase.functions.invoke('openrouter', {
-      body: { 
+    // Make a direct fetch to the edge function
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openrouter`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
         prompt: "This is a test prompt. Please respond with 'OpenRouter is working correctly.'",
         agentType: "test",
         projectContext: {
@@ -726,21 +765,41 @@ export const testOpenRouterConnection = async (): Promise<{ success: boolean; me
           description: "Testing OpenRouter connection"
         },
         model: "anthropic/claude-3.7-sonnet:thinking"
-      }
+      })
     });
     
-    if (error) {
-      console.error('Error testing OpenRouter:', error);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('OpenRouter test error:', errorText);
+      
+      let errorMessage = "OpenRouter test failed";
+      try {
+        const errorData = JSON.parse(errorText);
+        errorMessage = errorData.error || `Status ${response.status}: ${response.statusText}`;
+      } catch (e) {
+        errorMessage = `Status ${response.status}: ${errorText.substring(0, 100)}`;
+      }
+      
       return { 
         success: false, 
-        message: `OpenRouter test failed: ${error.message}` 
+        message: `OpenRouter test failed: ${errorMessage}` 
       };
     }
     
+    const data = await response.json();
     console.log('OpenRouter test response:', data);
+    
+    // Check if the response has the expected format
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      return { 
+        success: false, 
+        message: 'OpenRouter returned an unexpected response format' 
+      };
+    }
+    
     return { 
       success: true, 
-      message: 'OpenRouter is accessible and responding'
+      message: 'OpenRouter is accessible and responding correctly' 
     };
   } catch (error) {
     console.error('Exception testing OpenRouter:', error);

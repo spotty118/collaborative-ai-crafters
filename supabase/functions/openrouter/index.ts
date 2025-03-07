@@ -29,10 +29,12 @@ serve(async (req) => {
       prompt, 
       agentType, 
       projectContext, 
+      multipartContent,
       model = "anthropic/claude-3.7-sonnet:thinking"
     } = requestData;
     
     console.log(`Processing ${agentType || 'unknown'} agent request with model: ${model}`);
+    console.log(`Multipart content: ${multipartContent ? 'Yes' : 'No'}`);
     
     if (!OPENROUTER_API_KEY) {
       console.error('OpenRouter API key is not configured');
@@ -66,23 +68,37 @@ PRIORITY: [high/medium/low]`;
 
     console.log('Sending request to OpenRouter API');
     
-    // Prepare request for Claude with thinking enabled
-    const requestBody = {
-      model: 'anthropic/claude-3.7-sonnet:thinking',
-      messages: [
-        {
-          role: 'system',
-          content: systemInstruction
-        },
-        {
-          role: 'user',
-          content: prompt || "Please help with this project."
-        }
-      ],
-      temperature: 0.3,
-      max_tokens: 4000,
-      thinking: true
-    };
+    // Build the request body based on whether we have multipart content or regular prompt
+    let requestBody;
+    
+    if (multipartContent) {
+      console.log('Building multimodal request');
+      requestBody = {
+        model: model,
+        messages: multipartContent,
+        temperature: 0.3,
+        max_tokens: 4000,
+        thinking: true
+      };
+    } else {
+      console.log('Building standard request');
+      requestBody = {
+        model: model,
+        messages: [
+          {
+            role: 'system',
+            content: systemInstruction
+          },
+          {
+            role: 'user',
+            content: prompt || "Please help with this project."
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 4000,
+        thinking: true
+      };
+    }
     
     console.log('Request body prepared');
     
