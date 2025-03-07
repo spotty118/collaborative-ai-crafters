@@ -28,8 +28,8 @@ serve(async (req) => {
   }
 
   try {
-    const { type, prompt, text } = await req.json();
-    console.log(`Processing request of type: ${type}`);
+    const { type, prompt, text, model = "gpt-4o-mini" } = await req.json();
+    console.log(`Processing request of type: ${type} with model: ${model}`);
 
     if (type === 'completion') {
       // Handle completion request
@@ -40,7 +40,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: model,
           messages: [
             { role: 'system', content: 'You are an AI assistant that helps with agent reasoning and planning.' },
             { role: 'user', content: prompt }

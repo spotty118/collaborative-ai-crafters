@@ -9,10 +9,12 @@ import { broadcastMessage } from './agent/messageBroker';
 export const sendAgentPrompt = async (
   agent: Agent,
   prompt: string,
-  project: Project
+  project: Project,
+  model: string = "google/gemini-2.0-flash-thinking-exp:free"
 ): Promise<string> => {
   try {
     console.log(`Sending prompt to ${agent.name}: ${prompt.substring(0, 50)}...`);
+    console.log(`Using model: ${model}`);
     
     // Add timestamp for debugging
     console.log(`Request started at: ${new Date().toISOString()}`);
@@ -26,6 +28,7 @@ export const sendAgentPrompt = async (
       body: JSON.stringify({
         prompt,
         agentType: agent.type,
+        model: model, // Explicitly pass the model parameter
         projectContext: {
           name: project.name,
           description: project.description,
@@ -386,10 +389,12 @@ function determineLanguage(filePath: string): string {
 export const sendTeamPrompt = async (
   agents: Agent[],
   prompt: string,
-  project: Project
+  project: Project,
+  model: string = "google/gemini-2.0-flash-thinking-exp:free"
 ): Promise<Record<string, string>> => {
   try {
     console.log(`Sending team prompt to ${agents.length} agents: ${prompt.substring(0, 50)}...`);
+    console.log(`Using model: ${model}`);
     
     // Create a map to store each agent's response
     const responses: Record<string, string> = {};
@@ -427,6 +432,7 @@ PRIORITY: [high/medium/low]`;
         body: JSON.stringify({
           prompt: enhancedPrompt,
           agentType: agent.type,
+          model: model, // Explicitly pass the model parameter
           projectContext: {
             name: project.name,
             description: project.description,
