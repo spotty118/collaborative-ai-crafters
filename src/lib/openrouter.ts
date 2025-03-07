@@ -10,7 +10,7 @@ export const sendAgentPrompt = async (
   agent: Agent,
   prompt: string,
   project: Project,
-  model: string = "google/gemini-2.0-flash-thinking-exp:free",
+  model: string = "anthropic/claude-3.7-sonnet:thinking",
   multipartContent = null
 ): Promise<string> => {
   try {
@@ -29,7 +29,7 @@ export const sendAgentPrompt = async (
     const requestBody = multipartContent 
       ? {
           agentType: agent.type,
-          model: "google/gemini-2.0-flash-thinking-exp:free", // Ensure consistent model usage
+          model: "anthropic/claude-3.7-sonnet:thinking", // Ensure consistent model usage
           multipartContent: multipartContent,
           projectContext: {
             name: project.name,
@@ -43,7 +43,7 @@ export const sendAgentPrompt = async (
       : {
           prompt,
           agentType: agent.type,
-          model: "google/gemini-2.0-flash-thinking-exp:free", // Ensure consistent model usage
+          model: "anthropic/claude-3.7-sonnet:thinking", // Ensure consistent model usage
           projectContext: {
             name: project.name,
             description: project.description,
@@ -313,7 +313,7 @@ export const sendMultimodalPrompt = async (
   agent: Agent,
   messages: any[],
   project: Project,
-  model: string = "google/gemini-2.0-flash"
+  model: string = "anthropic/claude-3.7-sonnet"
 ): Promise<string> => {
   // Validate that the messages format is correct for multimodal
   const isValidMultimodal = messages.some(msg => 
@@ -336,7 +336,7 @@ export const sendMultimodalPrompt = async (
     }))));
   
   // Use the sendAgentPrompt function but with multipartContent and force the model to be the thinking model
-  return sendAgentPrompt(agent, "", project, "google/gemini-2.0-flash-thinking-exp:free", messages);
+  return sendAgentPrompt(agent, "", project, "anthropic/claude-3.7-sonnet:thinking", messages);
 };
 
 /**
@@ -504,7 +504,7 @@ export const sendTeamPrompt = async (
   agents: Agent[],
   prompt: string,
   project: Project,
-  model: string = "google/gemini-2.0-flash-thinking-exp:free"
+  model: string = "anthropic/claude-3.7-sonnet:thinking"
 ): Promise<Record<string, string>> => {
   try {
     console.log(`Sending team prompt to ${agents.length} agents: ${prompt.substring(0, 50)}...`);
@@ -549,7 +549,7 @@ PRIORITY: [high/medium/low]`;
           body: JSON.stringify({
             prompt: enhancedPrompt,
             agentType: agent.type,
-            model: "google/gemini-2.0-flash-thinking-exp:free", // Ensure consistent model usage
+            model: "anthropic/claude-3.7-sonnet:thinking", // Ensure consistent model usage
             projectContext: {
               name: project.name,
               description: project.description,
@@ -708,3 +708,4 @@ PRIORITY: [high/medium/low]`;
     throw error;
   }
 };
+

@@ -28,7 +28,7 @@ serve(async (req) => {
       prompt, 
       agentType, 
       projectContext, 
-      model = "google/gemini-2.0-flash-thinking-exp:free", 
+      model = "anthropic/claude-3.7-sonnet:thinking", 
       multipartContent = null 
     } = requestData;
     
@@ -59,8 +59,8 @@ serve(async (req) => {
       return await handleMultimodalRequest(multipartContent, model, req, corsHeaders);
     }
 
-    // Always use the gemini thinking implementation for consistency
-    return await handleGeminiThinkingModel(prompt, agentType, projectContext, req, corsHeaders);
+    // Use Claude thinking model for all requests
+    return await handleClaudeThinkingModel(prompt, agentType, projectContext, req, corsHeaders);
   } catch (error) {
     console.error('Error in OpenRouter function:', error);
     console.error('Error stack:', error.stack);
@@ -85,7 +85,7 @@ async function handleMultimodalRequest(multipartContent, model, req, corsHeaders
     }))));
     
     // Force the correct model
-    const modelToUse = "google/gemini-2.0-flash-thinking-exp:free";
+    const modelToUse = "anthropic/claude-3.7-sonnet:thinking";
     console.log(`Using model: ${modelToUse} (overriding ${model} if different)`);
     
     // Prepare the request to OpenRouter with multipart content
@@ -150,8 +150,8 @@ async function handleMultimodalRequest(multipartContent, model, req, corsHeaders
   }
 }
 
-// Special handler for the Gemini thinking model
-async function handleGeminiThinkingModel(prompt, agentType, projectContext, req, corsHeaders) {
+// Special handler for the Claude thinking model
+async function handleClaudeThinkingModel(prompt, agentType, projectContext, req, corsHeaders) {
   // The system instruction tailored for the "thinking" model
   const systemInstruction = `You are an AI agent specialized in ${agentType} work for a software development project.
     
@@ -176,22 +176,22 @@ ASSIGNED TO: [Agent type, e.g. Frontend]
 DESCRIPTION: [Detailed description]
 PRIORITY: [high/medium/low]`;
     
-  console.log('Sending request to OpenRouter API with model: google/gemini-2.0-flash-thinking-exp:free');
+  console.log('Sending request to OpenRouter API with model: anthropic/claude-3.7-sonnet:thinking');
   console.log(`OpenRouter API Key available: ${OPENROUTER_API_KEY ? 'Yes' : 'No'}`);
   console.log(`API Key prefix: ${OPENROUTER_API_KEY?.substring(0, 8)}...`);
   
   // Log more details about the request
   console.log('Request details:', {
-    model: 'google/gemini-2.0-flash-thinking-exp:free',
+    model: 'anthropic/claude-3.7-sonnet:thinking',
     prompt: prompt?.substring(0, 100) + '...',
     temperature: 0.3,
     thinking: true
   });
   
   try {
-    // For Gemini Flash with thinking enabled
+    // For Claude with thinking enabled
     const requestBody = {
-      model: 'google/gemini-2.0-flash-thinking-exp:free',
+      model: 'anthropic/claude-3.7-sonnet:thinking',
       messages: [
         {
           role: 'system',
@@ -291,10 +291,10 @@ PRIORITY: [high/medium/low]`;
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('Error in Gemini thinking model request:', error);
+    console.error('Error in Claude thinking model request:', error);
     console.error('Error stack:', error.stack);
     return new Response(
-      JSON.stringify({ error: `Error processing Gemini thinking model request: ${error.message}`, stack: error.stack }),
+      JSON.stringify({ error: `Error processing Claude thinking model request: ${error.message}`, stack: error.stack }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
