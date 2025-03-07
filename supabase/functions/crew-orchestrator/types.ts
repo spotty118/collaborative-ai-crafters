@@ -1,45 +1,40 @@
-// Deno and Request types
-/// <reference lib="dom" />
-
-declare global {
-  interface DenoNamespace {
-    serve(handler: (request: Request) => Promise<Response> | Response): void;
-    env: {
-      get(key: string): string | undefined;
-      set(key: string, value: string): void;
-    };
-  }
-
-  const Deno: DenoNamespace;
-}
-
-// Agent types and statuses
-export type AgentType = 'architect' | 'frontend' | 'backend' | 'testing' | 'devops';
-export type AgentStatus = 'idle' | 'working' | 'completed' | 'error';
 
 export interface AgentData {
   id: string;
   name: string;
-  agent_type: AgentType;
-  type: AgentType;  // Some parts of the code use type, others use agent_type
-  status?: AgentStatus;
+  agent_type?: string;
+  type?: string;
+  status?: string;
+  description?: string;
   progress?: number;
   project_id?: string;
 }
 
-// Task related types
 export interface TaskData {
   id: string;
   title: string;
   description: string;
-  status: 'pending' | 'in_progress' | 'completed';
-  priority: 'high' | 'medium' | 'low';
+  status: string;
+  priority?: string;
+  assigned_to?: string;
+  dependencies?: string[];
   project_id: string;
-  assigned_to: string;
-  parent_task_id?: string;
-  created_at?: string;
-  updated_at?: string;
-  completed_at?: string;
+}
+
+export interface ProjectData {
+  id: string;
+  name: string;
+  description?: string;
+  status?: string;
+  progress?: number;
+  tech_stack?: string[];
+  source_type?: string;
+  source_url?: string;
+}
+
+export interface CodeSnippet {
+  filePath: string;
+  code: string;
 }
 
 export interface TaskInfo {
@@ -49,34 +44,21 @@ export interface TaskInfo {
   priority: string;
 }
 
-// Project related types
-export interface ProjectData {
-  id: string;
-  name: string;
-  description?: string;
-  status?: string;
-}
+export type AgentType = 'architect' | 'frontend' | 'backend' | 'testing' | 'devops';
 
-// Code related types
-export interface CodeSnippet {
-  filePath: string;
-  code: string;
-}
-
-// Request body type
 export interface RequestBody {
   projectId: string;
   agentId?: string;
-  taskId?: string;
   action?: 'start' | 'stop' | 'team_collaborate' | 'initialize' | 'update' | 'complete_task';
   agents?: AgentData[];
-  projectContext?: Record<string, unknown>;
-  autostart?: boolean;
   verbose?: boolean;
+  task?: string;
+  projectName?: string;
+  description?: string;
+  techStack?: any;
   temperature?: number;
-  updates?: unknown;
-  result?: unknown;
+  updates?: any;
+  taskId?: string;
+  result?: any;
+  agentType?: string;
 }
-
-// Export to make the file a module
-export {};
