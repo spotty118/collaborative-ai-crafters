@@ -206,13 +206,13 @@ const Project: React.FC = () => {
 
   const handleStartAgent = async (agentId: string) => {
     const agent = agents.find(a => a.id === agentId);
-    if (!agent || !id) return;
+    if (!agent || !id || !project) return;
     
     updateAgentMutation.mutate({
       id: agentId,
       updates: { 
         status: 'working',
-        progress: 10
+        progress: 5
       }
     });
     
@@ -222,7 +222,167 @@ const Project: React.FC = () => {
       console.log(`Agent ${agent.name} starting work`);
       
       if (agent.type === 'architect') {
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        updateAgentMutation.mutate({
+          id: agentId,
+          updates: { 
+            status: 'working',
+            progress: 20
+          }
+        });
+        toast.info(`${agent.name} is analyzing project requirements...`);
+        
+        const analysisPrompt = `Analyze the requirements for project: ${project.name}\n\n${project.description || ''}\n\n${project.requirements || ''}`;
+        const analysisResult = await sendAgentPrompt(agent, analysisPrompt, project);
+        
+        if (!analysisResult) {
+          throw new Error("Failed to analyze requirements");
+        }
+        
+        await createMessage({
+          project_id: id,
+          content: analysisResult,
+          sender: agent.name,
+          type: "text"
+        });
+        
+        updateAgentMutation.mutate({
+          id: agentId,
+          updates: { 
+            status: 'working',
+            progress: 50
+          }
+        });
+        toast.info(`${agent.name} is designing system architecture...`);
+        
+        const designPrompt = `Design the architecture for project: ${project.name} based on these requirements:\n\n${project.description || ''}\n\n${project.requirements || ''}`;
+        const designResult = await sendAgentPrompt(agent, designPrompt, project);
+        
+        if (!designResult) {
+          throw new Error("Failed to design architecture");
+        }
+        
+        await createMessage({
+          project_id: id,
+          content: designResult,
+          sender: agent.name,
+          type: "text"
+        });
+        
+        updateAgentMutation.mutate({
+          id: agentId,
+          updates: { 
+            status: 'working',
+            progress: 80
+          }
+        });
+        toast.info(`${agent.name} is delegating tasks to specialized agents...`);
+        
+        updateAgentMutation.mutate({
+          id: agentId,
+          updates: { 
+            status: 'completed',
+            progress: 100
+          }
+        });
+        
+        toast.success(`${agent.name} completed analysis and architecture design`);
+        
+        const otherAgents = agents.filter(a => a.type !== 'architect' && a.status === 'idle');
+        
+        if (otherAgents.length > 0) {
+          toast.info("Architect is activating specialized agents...");
+          
+          if (tasks.filter(t => t.agent_id === agentId).length === 0) {
+            const defaultTasks = getDefaultTasksForAgent(agent, id);
+            
+            for (const taskData of defaultTasks) {
+              await createTask({
+                project_id: id,
+                agent_id: agentId,
+                title: taskData.title,
+                description: taskData.description,
+                status: 'pending',
+                priority: 'medium'
+              });
+            }
+            
+            queryClient.invalidateQueries({ queryKey: ['tasks', id] });
+          }
+          
+          for (const [index, specializedAgent] of otherAgents.entries()) {
+            updateAgentMutation.mutate({
+              id: specializedAgent.id,
+              updates: {
+                status: 'working',
+                progress: 10
+              }
+            });
+            
+            toast.info(`${specializedAgent.name} activated by Architect`);
+            
+            if (tasks.filter(t => t.agent_id === specializedAgent.id).length === 0) {
+              const agentTasks = getDefaultTasksForAgent(specializedAgent, id);
+              
+              for (const taskData of agentTasks) {
+                await createTask({
+                  project_id: id,
+                  agent_id: specializedAgent.id,
+                  title: taskData.title,
+                  description: taskData.description,
+                  status: 'pending',
+                  priority: 'medium'
+                });
+              }
+            }
+            
+            const setupPrompt = `As the ${specializedAgent.type} agent, analyze the project ${project.name} and prepare your initial setup plan. The project description is: ${project.description || ''}`;
+            const setupResult = await sendAgentPrompt(specializedAgent, setupPrompt, project);
+            
+            if (setupResult) {
+              await createMessage({
+                project_id: id,
+                content: setupResult,
+                sender: specializedAgent.name,
+                type: "text"
+              });
+              
+              updateAgentMutation.mutate({
+                id: specializedAgent.id,
+                updates: {
+                  status: 'working',
+                  progress: 60
+                }
+              });
+              
+              updateAgentMutation.mutate({
+                id: specializedAgent.id,
+                updates: {
+                  status: 'completed',
+                  progress: 100
+                }
+              });
+              
+              toast.success(`${specializedAgent.name} completed initial setup`);
+            } else {
+              updateAgentMutation.mutate({
+                id: specializedAgent.id,
+                updates: {
+                  status: 'failed',
+                  progress: 0
+                }
+              });
+              
+              toast.error(`${specializedAgent.name} failed to complete setup`);
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+          
+          queryClient.invalidateQueries({ queryKey: ['agents', id] });
+          queryClient.invalidateQueries({ queryKey: ['tasks', id] });
+          queryClient.invalidateQueries({ queryKey: ['messages', id] });
+        }
+      } else {
         updateAgentMutation.mutate({
           id: agentId,
           updates: { 
@@ -230,107 +390,54 @@ const Project: React.FC = () => {
             progress: 30
           }
         });
-        toast.info(`${agent.name} is analyzing project requirements...`);
         
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        updateAgentMutation.mutate({
-          id: agentId,
-          updates: { 
-            status: 'working',
-            progress: 60
-          }
-        });
-        toast.info(`${agent.name} is designing system architecture...`);
+        const agentPrompt = `As the ${agent.type} agent for project ${project.name}, analyze the requirements and provide your professional insights. The project description is: ${project.description || ''}`;
+        const agentResult = await sendAgentPrompt(agent, agentPrompt, project);
         
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        updateAgentMutation.mutate({
-          id: agentId,
-          updates: { 
-            status: 'working',
-            progress: 85
-          }
-        });
-        toast.info(`${agent.name} is preparing task delegation plan...`);
-        
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        updateAgentMutation.mutate({
-          id: agentId,
-          updates: { 
-            status: 'completed',
-            progress: 100
-          }
-        });
-        
-        toast.success(`${agent.name} completed analysis and is now coordinating other agents`);
-      } else {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        updateAgentMutation.mutate({
-          id: agentId,
-          updates: { 
-            status: 'completed',
-            progress: 100
-          }
-        });
-        
-        toast.success(`${agent.name} completed analysis`);
-      }
-      
-      if (tasks.filter(t => t.agent_id === agentId).length === 0) {
-        const defaultTasks = getDefaultTasksForAgent(agent, id);
-        
-        for (const taskData of defaultTasks) {
-          await createTask({
+        if (agentResult) {
+          await createMessage({
             project_id: id,
-            agent_id: agentId,
-            title: taskData.title,
-            description: taskData.description,
-            status: 'pending',
-            priority: 'medium'
+            content: agentResult,
+            sender: agent.name,
+            type: "text"
           });
-        }
-        
-        queryClient.invalidateQueries({ queryKey: ['tasks', id] });
-      }
-
-      if (agent.type === 'architect') {
-        const otherAgents = agents.filter(a => a.type !== 'architect' && a.status === 'idle');
-        
-        if (otherAgents.length > 0) {
-          toast.info("Architect is activating specialized agents...");
           
-          for (const [index, specializedAgent] of otherAgents.entries()) {
-            await new Promise(resolve => setTimeout(resolve, 800 * (index + 1)));
+          updateAgentMutation.mutate({
+            id: agentId,
+            updates: { 
+              status: 'working',
+              progress: 70
+            }
+          });
+          
+          if (tasks.filter(t => t.agent_id === agentId).length === 0) {
+            const agentTasks = getDefaultTasksForAgent(agent, id);
             
-            updateAgentMutation.mutate({
-              id: specializedAgent.id,
-              updates: {
-                status: 'working',
-                progress: 20
-              }
-            });
+            for (const taskData of agentTasks) {
+              await createTask({
+                project_id: id,
+                agent_id: agentId,
+                title: taskData.title,
+                description: taskData.description,
+                status: 'pending',
+                priority: 'medium'
+              });
+            }
             
-            toast.info(`${specializedAgent.name} activated by Architect`);
-            
-            await new Promise(resolve => setTimeout(resolve, 1500));
-            updateAgentMutation.mutate({
-              id: specializedAgent.id,
-              updates: {
-                status: 'working',
-                progress: 60
-              }
-            });
-            
-            await new Promise(resolve => setTimeout(resolve, 1200));
-            updateAgentMutation.mutate({
-              id: specializedAgent.id,
-              updates: {
-                status: 'completed',
-                progress: 100
-              }
-            });
-            
-            toast.success(`${specializedAgent.name} completed initial setup`);
+            queryClient.invalidateQueries({ queryKey: ['tasks', id] });
           }
+          
+          updateAgentMutation.mutate({
+            id: agentId,
+            updates: { 
+              status: 'completed',
+              progress: 100
+            }
+          });
+          
+          toast.success(`${agent.name} completed analysis`);
+        } else {
+          throw new Error("Agent returned empty response");
         }
       }
     } catch (error) {

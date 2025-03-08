@@ -45,7 +45,7 @@ const AgentStatus: React.FC<AgentStatusProps> = ({ status, className }) => {
 
   return (
     <div className={cn("flex items-center gap-2", className)}>
-      <div className={`${getStatusColor()} w-2.5 h-2.5 rounded-full transition-colors duration-300`} />
+      <div className={`${getStatusColor()} w-2.5 h-2.5 rounded-full transition-colors duration-500`} />
       <span className="text-xs font-medium text-gray-600">{getStatusText()}</span>
     </div>
   );
