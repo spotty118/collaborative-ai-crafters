@@ -1,3 +1,6 @@
+
+import { Json } from '@/integrations/supabase/types';
+
 export type ProjectMode = "new" | "existing";
 
 export type AgentStatus = "idle" | "working" | "completed" | "failed" | "waiting";
@@ -29,7 +32,7 @@ export interface Project {
   created_at?: string;
   updated_at?: string;
   requirements?: string;
-  metadata?: Record<string, any>;
+  metadata?: Json | Record<string, any>; // Updated to accept both types
 }
 
 export type AgentType = 'architect' | 'frontend' | 'backend' | 'testing' | 'devops';
@@ -45,7 +48,7 @@ export interface Agent {
   avatar?: string;
   created_at?: string;
   updated_at?: string;
-  metadata?: Record<string, any>;
+  metadata?: Json | Record<string, any>; // Updated to accept both types
 }
 
 export interface GitHubConfig {
@@ -72,13 +75,13 @@ export interface Task {
   priority?: TaskPriority;
   status?: TaskStatus;
   assigned_to?: string;
-  agent_id?: string; // Add agent_id field
+  agent_id?: string; 
   project_id: string;
   dependencies?: string[];
   created_at?: string;
   updated_at?: string;
   completed_at?: string;
-  metadata?: Record<string, any>;
+  metadata?: Json | Record<string, any>; // Updated to accept both types
 }
 
 export interface Message {
@@ -117,19 +120,19 @@ export type ProjectDB = {
   status?: string;
   progress?: number;
   requirements?: string;
-  metadata?: Record<string, any>;
+  metadata?: Json | Record<string, any>; // Updated to accept both types
 };
 
 export type AgentDB = Omit<Agent, 'type' | 'id'> & {
   id?: string; // Optional for inserts
   agent_type: AgentType;
-  metadata?: Record<string, any>;
+  metadata?: Json | Record<string, any>; // Updated to accept both types
 };
 
 export type TaskDB = Omit<Task, 'id'> & {
   id?: string; // Optional for inserts
-  agent_id?: string; // Add agent_id field
-  metadata?: Record<string, any>;
+  agent_id?: string; 
+  metadata?: Json | Record<string, any>; // Updated to accept both types
 };
 
 export type MessageDB = Message;

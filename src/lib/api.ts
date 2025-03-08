@@ -26,6 +26,7 @@ export const getProjects = async (): Promise<Project[]> => {
     requirements: item.requirements,
     created_at: item.created_at,
     updated_at: item.updated_at,
+    metadata: item.metadata,
     mode: item.source_type ? 'existing' : 'new'
   }));
 };
@@ -53,6 +54,7 @@ export const getProject = async (id: string): Promise<Project | null> => {
     requirements: data.requirements,
     created_at: data.created_at,
     updated_at: data.updated_at,
+    metadata: data.metadata,
     mode: data.source_type ? 'existing' : 'new'
   };
 };
@@ -81,6 +83,7 @@ export const createProject = async (project: ProjectDB): Promise<Project> => {
     requirements: data.requirements,
     created_at: data.created_at,
     updated_at: data.updated_at,
+    metadata: data.metadata,
     mode: data.source_type ? 'existing' : 'new'
   };
 };
@@ -107,11 +110,11 @@ export const updateProject = async (id: string, updates: Partial<ProjectDB>): Pr
     requirements: data.requirements,
     created_at: data.created_at,
     updated_at: data.updated_at,
+    metadata: data.metadata,
     mode: data.source_type ? 'existing' : 'new'
   };
 };
 
-// Fix the current error by adding a function to check if a project ID exists
 export const checkProjectExists = async (id: string | number): Promise<boolean> => {
   // Convert id to string if it's a number
   const projectId = typeof id === 'number' ? id.toString() : id;
@@ -126,7 +129,6 @@ export const checkProjectExists = async (id: string | number): Promise<boolean> 
   return !!data;
 };
 
-// Properly export the deleteProject function
 export const deleteProject = async (id: string): Promise<void> => {
   const { error } = await supabase
     .from('projects')
@@ -154,6 +156,7 @@ export const getAgents = async (projectId: string): Promise<Agent[]> => {
     status: agent.status as AgentStatus,
     progress: agent.progress || 0,
     project_id: agent.project_id,
+    metadata: agent.metadata,
     avatar: getAgentAvatar(agent.agent_type as AgentType),
   }));
 };
@@ -217,6 +220,7 @@ export const createAgents = async (projectId: string): Promise<Agent[]> => {
     status: agent.status as AgentStatus,
     progress: agent.progress || 0,
     project_id: agent.project_id,
+    metadata: agent.metadata,
     avatar: getAgentAvatar(agent.agent_type as AgentType),
   }));
 };
@@ -229,6 +233,7 @@ export const updateAgent = async (id: string, updates: Partial<Agent>): Promise<
   if (updates.description) dbUpdates.description = updates.description;
   if (updates.name) dbUpdates.name = updates.name;
   if (updates.type) dbUpdates.agent_type = updates.type;
+  if (updates.metadata) dbUpdates.metadata = updates.metadata;
 
   const { data, error } = await supabase
     .from('agent_statuses')
@@ -247,6 +252,7 @@ export const updateAgent = async (id: string, updates: Partial<Agent>): Promise<
     status: data.status as AgentStatus,
     progress: data.progress || 0,
     project_id: data.project_id,
+    metadata: data.metadata,
     avatar: getAgentAvatar(data.agent_type as AgentType),
   };
 };
