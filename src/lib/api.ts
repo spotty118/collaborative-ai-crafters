@@ -267,12 +267,14 @@ export const getTasks = async (projectId: string): Promise<Task[]> => {
     description: task.description || '',
     status: task.status as TaskStatus,
     assigned_to: task.assigned_to,
+    agent_id: task.agent_id,
     priority: task.priority as TaskPriority,
     project_id: task.project_id,
     created_at: task.created_at,
     updated_at: task.updated_at,
     completed_at: task.completed_at,
-    dependencies: task.dependencies || []
+    dependencies: task.dependencies || [],
+    metadata: task.metadata
   }));
 };
 
@@ -294,12 +296,14 @@ export const createTask = async (task: Omit<TaskDB, 'id'>): Promise<Task> => {
     description: data.description || '',
     status: data.status as TaskStatus,
     assigned_to: data.assigned_to,
+    agent_id: data.agent_id,
     priority: data.priority as TaskPriority,
     project_id: data.project_id,
     created_at: data.created_at,
     updated_at: data.updated_at,
     completed_at: data.completed_at,
-    dependencies: data.dependencies || []
+    dependencies: data.dependencies || [],
+    metadata: data.metadata
   };
 };
 
@@ -319,12 +323,14 @@ export const updateTask = async (id: string, updates: Partial<TaskDB>): Promise<
     description: data.description || '',
     status: data.status as TaskStatus,
     assigned_to: data.assigned_to,
+    agent_id: data.agent_id,
     priority: data.priority as TaskPriority,
     project_id: data.project_id,
     created_at: data.created_at,
     updated_at: data.updated_at,
     completed_at: data.completed_at,
-    dependencies: data.dependencies || []
+    dependencies: data.dependencies || [],
+    metadata: data.metadata
   };
 };
 

@@ -29,6 +29,7 @@ export interface Project {
   created_at?: string;
   updated_at?: string;
   requirements?: string;
+  metadata?: Record<string, any>;
 }
 
 export type AgentType = 'architect' | 'frontend' | 'backend' | 'testing' | 'devops';
@@ -44,6 +45,7 @@ export interface Agent {
   avatar?: string;
   created_at?: string;
   updated_at?: string;
+  metadata?: Record<string, any>;
 }
 
 export interface GitHubConfig {
@@ -70,11 +72,13 @@ export interface Task {
   priority?: TaskPriority;
   status?: TaskStatus;
   assigned_to?: string;
+  agent_id?: string; // Add agent_id field
   project_id: string;
   dependencies?: string[];
   created_at?: string;
   updated_at?: string;
   completed_at?: string;
+  metadata?: Record<string, any>;
 }
 
 export interface Message {
@@ -113,15 +117,19 @@ export type ProjectDB = {
   status?: string;
   progress?: number;
   requirements?: string;
+  metadata?: Record<string, any>;
 };
 
 export type AgentDB = Omit<Agent, 'type' | 'id'> & {
   id?: string; // Optional for inserts
   agent_type: AgentType;
+  metadata?: Record<string, any>;
 };
 
 export type TaskDB = Omit<Task, 'id'> & {
   id?: string; // Optional for inserts
+  agent_id?: string; // Add agent_id field
+  metadata?: Record<string, any>;
 };
 
 export type MessageDB = Message;

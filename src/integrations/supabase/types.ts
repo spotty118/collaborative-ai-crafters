@@ -9,12 +9,57 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      agent_responses: {
+        Row: {
+          confidence: number
+          created_at: string | null
+          id: string
+          metadata: Json | null
+          model_used: string
+          prompt: string
+          response: string
+          task_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          confidence: number
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          model_used: string
+          prompt: string
+          response: string
+          task_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          confidence?: number
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          model_used?: string
+          prompt?: string
+          response?: string
+          task_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_responses_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_statuses: {
         Row: {
           agent_type: string
           created_at: string
           description: string | null
           id: string
+          metadata: Json | null
           name: string
           progress: number | null
           project_id: string
@@ -26,6 +71,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          metadata?: Json | null
           name: string
           progress?: number | null
           project_id: string
@@ -37,6 +83,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          metadata?: Json | null
           name?: string
           progress?: number | null
           project_id?: string
@@ -138,11 +185,89 @@ export type Database = {
           },
         ]
       }
+      collaboration_sessions: {
+        Row: {
+          created_at: string | null
+          end_time: string | null
+          id: string
+          primary_agent_id: string
+          start_time: string
+          status: string
+          supporting_agent_ids: string[]
+          task_context: Json
+          task_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          end_time?: string | null
+          id?: string
+          primary_agent_id: string
+          start_time: string
+          status: string
+          supporting_agent_ids: string[]
+          task_context: Json
+          task_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          end_time?: string | null
+          id?: string
+          primary_agent_id?: string
+          start_time?: string
+          status?: string
+          supporting_agent_ids?: string[]
+          task_context?: Json
+          task_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collaboration_sessions_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      edge_function_status: {
+        Row: {
+          created_at: string | null
+          error: string | null
+          function_name: string
+          id: string
+          last_check: string
+          status: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          error?: string | null
+          function_name: string
+          id?: string
+          last_check?: string
+          status?: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          error?: string | null
+          function_name?: string
+          id?: string
+          last_check?: string
+          status?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       projects: {
         Row: {
           created_at: string
           description: string | null
           id: string
+          metadata: Json | null
           name: string
           progress: number | null
           requirements: string | null
@@ -156,6 +281,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          metadata?: Json | null
           name: string
           progress?: number | null
           requirements?: string | null
@@ -169,6 +295,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          metadata?: Json | null
           name?: string
           progress?: number | null
           requirements?: string | null
@@ -182,12 +309,14 @@ export type Database = {
       }
       tasks: {
         Row: {
+          agent_id: string | null
           assigned_to: string | null
           completed_at: string | null
           created_at: string
           dependencies: string[] | null
           description: string | null
           id: string
+          metadata: Json | null
           priority: string
           project_id: string
           status: string
@@ -195,12 +324,14 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          agent_id?: string | null
           assigned_to?: string | null
           completed_at?: string | null
           created_at?: string
           dependencies?: string[] | null
           description?: string | null
           id?: string
+          metadata?: Json | null
           priority?: string
           project_id: string
           status?: string
@@ -208,12 +339,14 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          agent_id?: string | null
           assigned_to?: string | null
           completed_at?: string | null
           created_at?: string
           dependencies?: string[] | null
           description?: string | null
           id?: string
+          metadata?: Json | null
           priority?: string
           project_id?: string
           status?: string
