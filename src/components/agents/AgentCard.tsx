@@ -72,7 +72,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, o
           Chat
         </Button>
         
-        {agent.status === "idle" || agent.status === "failed" ? (
+        {agent.status === "idle" ? (
           <Button
             variant="outline"
             size="sm"
@@ -91,6 +91,16 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, o
           >
             <RefreshCw className="mr-1 h-3.5 w-3.5" />
             Restart
+          </Button>
+        ) : agent.status === "failed" ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 text-xs text-green-600 border-green-200 hover:bg-green-50"
+            onClick={() => onStart(agent.id)}
+          >
+            <PlayCircle className="mr-1 h-3.5 w-3.5" />
+            Start
           </Button>
         ) : (
           <Button
