@@ -75,6 +75,18 @@ export const isGitHubServiceInitialized = () => {
   return instance !== null;
 };
 
+// Create a local content cache
+const localContentCache: Record<string, string> = {};
+
+// Export functions to get and set local content
+export const setLocalFileContent = (path: string, content: string) => {
+  localContentCache[path] = content;
+};
+
+export const getLocalFileContent = (path: string): string | null => {
+  return localContentCache[path] || null;
+};
+
 // Try to restore from localStorage on module load
 try {
   const storedToken = localStorage.getItem('github-token');

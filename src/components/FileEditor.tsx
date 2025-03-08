@@ -41,6 +41,10 @@ export const FileEditor: React.FC<FileEditorProps> = ({ file, onClose }) => {
 
   const verifyContent = async (path: string, expectedContent: string): Promise<boolean> => {
     try {
+      if (!github.isConnected) {
+        return false;
+      }
+      
       const savedContent = await github.getFileContent(path);
       if (savedContent !== expectedContent) {
         console.warn('GitHub content verification failed - content mismatch');
@@ -55,7 +59,11 @@ export const FileEditor: React.FC<FileEditorProps> = ({ file, onClose }) => {
 
   const handleSave = async () => {
     if (!github.isConnected) {
-      toast.error('GitHub connection not configured');
+      toast.error('GitHub connection not configured. Changes will be saved locally only.');
+      // Still update the local content
+      file.content = content;
+      setLastSavedContent(content);
+      setIsEditing(false);
       return;
     }
 
@@ -161,14 +169,16 @@ export const FileEditor: React.FC<FileEditorProps> = ({ file, onClose }) => {
               >
                 Edit
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handlePushToGitHub}
-                disabled={isSaving}
-              >
-                Push to GitHub
-              </Button>
+              {github.isConnected && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePushToGitHub}
+                  disabled={isSaving}
+                >
+                  Push to GitHub
+                </Button>
+              )}
             </>
           )}
           {onClose && (
@@ -191,7 +201,7 @@ export const FileEditor: React.FC<FileEditorProps> = ({ file, onClose }) => {
             disabled={isSaving}
           />
         ) : (
-          <pre className="font-mono text-sm whitespace-pre-wrap">
+          <pre className="font-mono text-sm whitespace-pre-wrap overflow-auto">
             {content}
           </pre>
         )}
