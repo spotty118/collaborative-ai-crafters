@@ -59,7 +59,19 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, 
     return agent ? agent.name : "Unassigned";
   };
 
-  const handleExecuteTask = (taskId: string, agentId: string) => {
+  const handleExecuteTask = (taskId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) {
+      toast.error('Task not found');
+      return;
+    }
+    
+    const agentId = task.agent_id || task.assigned_to;
+    if (!agentId) {
+      toast.error('No agent assigned to this task');
+      return;
+    }
+    
     if (onExecuteTask) {
       toast.info(`Starting task execution...`);
       onExecuteTask(taskId, agentId);
@@ -93,9 +105,9 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, 
                     {task.description}
                   </p>
                   
-                  {task.assigned_to && (
+                  {(task.assigned_to || task.agent_id) && (
                     <div className="mt-2 text-xs text-gray-600">
-                      Assigned to: {getAgentNameById(task.assigned_to)}
+                      Assigned to: {getAgentNameById(task.assigned_to || task.agent_id || '')}
                     </div>
                   )}
                   
@@ -104,12 +116,12 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, agents = [], onExecuteTask, 
                       Updated: {formatDate(task.updated_at)}
                     </span>
                     
-                    {task.status === 'pending' && task.assigned_to && (
+                    {task.status === 'pending' && (task.assigned_to || task.agent_id) && (
                       <Button 
                         size="sm" 
                         variant="outline"
                         className="h-7 gap-1 text-xs"
-                        onClick={() => handleExecuteTask(task.id, task.assigned_to as string)}
+                        onClick={() => handleExecuteTask(task.id)}
                       >
                         <Play className="h-3 w-3" />
                         Execute

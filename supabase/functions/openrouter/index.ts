@@ -125,6 +125,13 @@ serve(async (req) => {
         messages.push({ role: 'user', content: prompt });
       }
       
+      console.log('Full request body to OpenRouter:', JSON.stringify({
+        model: model,
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 1024,
+      }));
+      
       const response = await fetch(openRouterUrl, {
         method: 'POST',
         headers: {
@@ -152,7 +159,7 @@ serve(async (req) => {
 
       const data = await response.json();
       console.log('OpenRouter response received successfully');
-      console.log('Response data:', JSON.stringify(data).substring(0, 200) + '...');
+      console.log('Response data:', JSON.stringify(data));
       
       return new Response(JSON.stringify(data), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

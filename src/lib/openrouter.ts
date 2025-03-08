@@ -65,14 +65,18 @@ export const sendAgentPrompt = async (
       images: options?.images || []
     });
     
+    const requestPayload = {
+      agentType: agent.type,
+      prompt: enhancedPrompt,
+      projectContext,
+      model,
+      images: options?.images || []
+    };
+    
+    console.log('Request payload to OpenRouter function:', JSON.stringify(requestPayload));
+    
     const { data, error } = await supabase.functions.invoke('openrouter', {
-      body: {
-        agentType: agent.type,
-        prompt: enhancedPrompt,
-        projectContext,
-        model,
-        images: options?.images || []
-      }
+      body: requestPayload
     });
 
     if (error) {
