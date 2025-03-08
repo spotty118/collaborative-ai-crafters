@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project } from '@/lib/types';
 import { createTask } from './api';
@@ -48,6 +49,12 @@ export const sendAgentPrompt = async (
       }
     }
     
+    console.log('Calling OpenRouter function with body:', {
+      agentType: agent.type, 
+      prompt: enhancedPrompt,
+      projectContext
+    });
+    
     const { data, error } = await supabase.functions.invoke('openrouter', {
       body: {
         agentType: agent.type,
@@ -61,6 +68,8 @@ export const sendAgentPrompt = async (
       return `Error: ${error.message}`;
     }
 
+    console.log('Response from OpenRouter function:', data);
+    
     const response = data as OpenRouterResponse;
     
     if (response.error) {

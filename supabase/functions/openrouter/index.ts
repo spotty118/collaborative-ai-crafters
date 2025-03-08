@@ -15,6 +15,8 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  console.log('OpenRouter function called with method:', req.method);
+
   // Check if API key is available
   if (!OPENROUTER_API_KEY) {
     console.error('OpenRouter API key is not set');
@@ -25,9 +27,38 @@ serve(async (req) => {
   }
 
   try {
-    const { prompt, agentType, projectContext = {} } = await req.json();
+    let requestBody;
+    try {
+      requestBody = await req.json();
+      console.log('Request body parsed successfully:', JSON.stringify(requestBody));
+    } catch (parseError) {
+      console.error('Error parsing request body:', parseError);
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON in request body' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { prompt, agentType, projectContext = {} } = requestBody;
     
-    console.log(`Processing request for ${agentType} agent with project context: ${JSON.stringify(projectContext)}`);
+    if (!prompt) {
+      console.error('Prompt is missing from request');
+      return new Response(
+        JSON.stringify({ error: 'Prompt is required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    if (!agentType) {
+      console.error('Agent type is missing from request');
+      return new Response(
+        JSON.stringify({ error: 'Agent type is required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    console.log(`Processing request for ${agentType} agent with prompt: "${prompt.substring(0, 50)}..."`);
+    console.log(`Project context: ${JSON.stringify(projectContext)}`);
     
     // Different system prompts based on agent type
     const systemPrompts = {
@@ -61,42 +92,54 @@ serve(async (req) => {
     console.log('Sending request to OpenRouter API with model: google/gemini-2.0-flash-thinking-exp:free');
     console.log('System prompt:', fullSystemPrompt);
     
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://lovable.dev', // Replace with your actual domain
-        'X-Title': 'Agentic Development Platform',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-thinking-exp:free',
-        messages: [
-          { role: 'system', content: fullSystemPrompt },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.7,
-        max_tokens: 1024,
-      }),
-    });
+    try {
+      const openRouterUrl = 'https://openrouter.ai/api/v1/chat/completions';
+      console.log(`Making fetch request to: ${openRouterUrl}`);
+      
+      const response = await fetch(openRouterUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://lovable.dev', // Replace with your actual domain
+          'X-Title': 'Agentic Development Platform',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.0-flash-thinking-exp:free',
+          messages: [
+            { role: 'system', content: fullSystemPrompt },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.7,
+          max_tokens: 1024,
+        }),
+      });
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error('OpenRouter API error:', errorData);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`OpenRouter API error: ${response.status} - ${errorText}`);
+        return new Response(
+          JSON.stringify({ error: `OpenRouter API returned status ${response.status}: ${errorText}` }),
+          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const data = await response.json();
+      console.log('OpenRouter response received successfully');
+      console.log('Response data:', JSON.stringify(data).substring(0, 200) + '...');
+      
+      return new Response(JSON.stringify(data), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } catch (fetchError) {
+      console.error('Fetch error when calling OpenRouter API:', fetchError);
       return new Response(
-        JSON.stringify({ error: `OpenRouter API returned status ${response.status}: ${errorData}` }),
-        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: `Fetch error: ${fetchError.message}` }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
-    const data = await response.json();
-    console.log('OpenRouter response received successfully');
-    
-    return new Response(JSON.stringify(data), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
   } catch (error) {
-    console.error('Error in openrouter function:', error);
+    console.error('General error in openrouter function:', error);
     return new Response(
       JSON.stringify({ error: error.message || 'Unknown error occurred' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
