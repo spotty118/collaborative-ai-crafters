@@ -1,14 +1,13 @@
-
 import React, { useState } from "react";
 import AgentCard from "@/components/agents/AgentCard";
 import TaskList from "@/components/ui/TaskList";
-import { Agent, Task, Message } from "@/lib/types";
+import { Agent, Task, Message, ProjectMode } from "@/lib/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { SendHorizontal, Play } from "lucide-react";
+import { SendHorizontal } from "lucide-react";
 import AgentOrchestration from "@/components/agents/AgentOrchestration";
 
 interface DashboardProps {
@@ -25,7 +24,7 @@ interface DashboardProps {
   project: {
     name: string;
     description: string;
-    mode: string;
+    mode: ProjectMode;
     id?: string;
   };
   isLoading: {
