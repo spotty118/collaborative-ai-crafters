@@ -1,5 +1,5 @@
 
-// This is a re-export file to maintain backward compatibility
-import { supabase, isSupabaseConnected } from "@/integrations/supabase/client";
-
-export { supabase, isSupabaseConnected };
+// Re-export supabase client from the integrated location
+// This file exists for backward compatibility
+export { supabase } from "@/integrations/supabase/client";
+export * from "@/integrations/supabase/types";

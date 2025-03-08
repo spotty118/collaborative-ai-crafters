@@ -7,12 +7,18 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Use environment variable or fallback to a direct key
+// CrewAI API constants
+const CREWAI_API_URL = "https://could-you-clarify-if-this-chat-is-intended--fc133f12.crewai.com";
+const CREWAI_API_TOKEN = Deno.env.get('CREWAI_API_TOKEN') || "8b45b95c0542";
+const CREWAI_UUID = Deno.env.get('CREWAI_UUID') || "8f975a62-fed4-4c2f-88ac-30c374646154";
+
+// Use environment variable or fallback to a direct key (for backward compatibility)
 const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY') || "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";
 
 console.log("OpenRouter function loaded");
 console.log(`OpenRouter API Key available: ${OPENROUTER_API_KEY ? 'Yes' : 'No'}`);
 console.log(`API Key prefix: ${OPENROUTER_API_KEY?.substring(0, 8)}...`);
+console.log(`CrewAI API Token available: ${CREWAI_API_TOKEN ? 'Yes' : 'No'}`);
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -25,14 +31,129 @@ serve(async (req) => {
     console.log("Parsing request body");
     const requestData = await req.json();
     
+    // Determine if this is a CrewAI request or an OpenRouter request
     const { 
       prompt, 
       agentType, 
       projectContext, 
       multipartContent,
+      useCrewAI = false,
+      crewId,
+      agentId,
+      taskId,
+      crewAction,
       model = "anthropic/claude-3.7-sonnet:thinking"
     } = requestData;
     
+    console.log(`Request mode: ${useCrewAI ? 'CrewAI' : 'OpenRouter'}`);
+    
+    // Handle CrewAI requests
+    if (useCrewAI) {
+      console.log(`Processing CrewAI request: ${crewAction}`);
+      
+      if (!CREWAI_API_TOKEN) {
+        console.error('CrewAI API token is not configured');
+        return new Response(
+          JSON.stringify({ error: 'CrewAI API token is not configured' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      const headers = {
+        'Authorization': `Bearer ${CREWAI_API_TOKEN}`,
+        'Content-Type': 'application/json'
+      };
+      
+      let crewAIResponse;
+      
+      switch (crewAction) {
+        case 'create_crew':
+          console.log('Creating new CrewAI crew');
+          crewAIResponse = await fetch(`${CREWAI_API_URL}/crews`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              name: projectContext?.name || 'New Project',
+              description: projectContext?.description || 'No description provided',
+              uuid: CREWAI_UUID
+            })
+          });
+          break;
+          
+        case 'create_agent':
+          console.log(`Creating new CrewAI agent in crew ${crewId}`);
+          crewAIResponse = await fetch(`${CREWAI_API_URL}/crews/${crewId}/agents`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(requestData.agentData)
+          });
+          break;
+          
+        case 'create_task':
+          console.log(`Creating new CrewAI task in crew ${crewId}`);
+          crewAIResponse = await fetch(`${CREWAI_API_URL}/crews/${crewId}/tasks`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(requestData.taskData)
+          });
+          break;
+          
+        case 'run_crew':
+          console.log(`Running CrewAI crew ${crewId}`);
+          crewAIResponse = await fetch(`${CREWAI_API_URL}/crews/${crewId}/run`, {
+            method: 'POST',
+            headers
+          });
+          break;
+          
+        case 'get_crew':
+          console.log(`Getting CrewAI crew ${crewId}`);
+          crewAIResponse = await fetch(`${CREWAI_API_URL}/crews/${crewId}`, {
+            method: 'GET',
+            headers
+          });
+          break;
+          
+        case 'get_agent_results':
+          console.log(`Getting CrewAI agent results for ${agentId} in crew ${crewId}`);
+          crewAIResponse = await fetch(`${CREWAI_API_URL}/crews/${crewId}/agents/${agentId}/results`, {
+            method: 'GET',
+            headers
+          });
+          break;
+          
+        case 'get_task_result':
+          console.log(`Getting CrewAI task result for ${taskId} in crew ${crewId}`);
+          crewAIResponse = await fetch(`${CREWAI_API_URL}/crews/${crewId}/tasks/${taskId}/results`, {
+            method: 'GET',
+            headers
+          });
+          break;
+          
+        default:
+          throw new Error(`Unsupported CrewAI action: ${crewAction}`);
+      }
+      
+      if (!crewAIResponse.ok) {
+        const errorText = await crewAIResponse.text();
+        console.error(`CrewAI API error response: ${errorText}`);
+        
+        return new Response(
+          JSON.stringify({ error: `CrewAI API error: ${crewAIResponse.status} ${errorText}` }),
+          { status: crewAIResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      const crewAIData = await crewAIResponse.json();
+      console.log('CrewAI response received successfully');
+      
+      return new Response(
+        JSON.stringify(crewAIData),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // Handle OpenRouter requests (for backward compatibility)
     console.log(`Processing ${agentType || 'unknown'} agent request with model: ${model}`);
     console.log(`Multipart content: ${multipartContent ? 'Yes' : 'No'}`);
     
@@ -156,7 +277,7 @@ PRIORITY: [high/medium/low]`;
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('Error in OpenRouter function:', error);
+    console.error('Error in function:', error);
     console.error('Error stack:', error.stack);
     
     return new Response(
