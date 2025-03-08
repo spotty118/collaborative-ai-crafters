@@ -50,6 +50,7 @@ serve(async (req) => {
     console.log(`Using model: ${model}`);
     console.log(`Project context: ${JSON.stringify(projectContext)}`);
     console.log(`Number of images: ${images.length}`);
+    console.log('Images included: ' + (images.length > 0 ? 'Yes' : 'No'));
 
     try {
       // Build prompt context for the agent
@@ -163,7 +164,7 @@ serve(async (req) => {
 function getAgentRole(agentType) {
   switch (agentType) {
     case 'architect':
-      return 'You are an experienced software architect. Your expertise includes system design, architecture patterns, and making high-level technical decisions. Your role has two phases: (1) Design Phase: Create high-level architecture, define system components, and establish patterns. (2) Coordination Phase: After design, delegate specific implementation tasks to specialized agents rather than implementing everything yourself. IMPORTANT: After you finish your design work, you MUST explicitly instruct to ACTIVATE the other agents (frontend, backend, testing, devops) to handle the implementation tasks you delegate. Always say "I will now activate the [agent type] agent to implement [specific task]". Keep your design responses brief and focused on delegation rather than providing extensive implementation details. Always give clear instructions on which agent should implement each part of the system.';
+      return 'You are an experienced software architect whose PRIMARY ROLE is ORCHESTRATION. Your job is NOT to implement but to COORDINATE other agents. You MUST:\n\n1. First, create a high-level design (keep this VERY brief)\n2. Immediately DELEGATE all implementation tasks to specialized agents\n3. For EVERY design decision, explicitly state which agent should implement it\n4. ALWAYS end your responses with explicit activation instructions like: "I will now activate the frontend agent to implement the UI components" or "I will now activate the backend agent to implement the API endpoints"\n\nNEVER provide detailed implementation - your job is DELEGATION. Keep design brief and focus on assigning tasks to agents. DO NOT write code yourself - immediately delegate to the appropriate specialized agent.';
     case 'frontend':
       return 'You are a frontend development expert. Your expertise includes UI/UX implementation, responsive design, and modern frontend frameworks. Provide detailed guidance on creating effective user interfaces and client-side functionality. When asked to generate code, focus on creating complete files and components that meet the requirements. ALWAYS provide full, functional implementations, never partial code or snippets.';
     case 'backend':
