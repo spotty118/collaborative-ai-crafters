@@ -5,7 +5,7 @@ import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress";
 import AgentStatus from "./AgentStatus";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, PlayCircle, PauseCircle } from "lucide-react";
+import { MessageSquare, PlayCircle, PauseCircle, StopCircle } from "lucide-react";
 
 interface AgentCardProps {
   agent: Agent;
@@ -80,16 +80,25 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, i
             <PlayCircle className="mr-1 h-3.5 w-3.5" />
             Start
           </Button>
-        ) : (
+        ) : agent.status === "completed" ? (
           <Button
             variant="outline"
             size="sm"
             className="flex-1 text-xs text-amber-600 border-amber-200 hover:bg-amber-50"
-            onClick={() => onStop(agent.id)}
-            disabled={agent.status === "completed"}
+            disabled
           >
-            <PauseCircle className="mr-1 h-3.5 w-3.5" />
-            Pause
+            <StopCircle className="mr-1 h-3.5 w-3.5" />
+            Done
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 text-xs text-red-600 border-red-200 hover:bg-red-50"
+            onClick={() => onStop(agent.id)}
+          >
+            <StopCircle className="mr-1 h-3.5 w-3.5" />
+            Stop
           </Button>
         )}
       </CardFooter>

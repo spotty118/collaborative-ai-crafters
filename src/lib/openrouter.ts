@@ -25,6 +25,12 @@ export const sendAgentPrompt = async (
   console.log(`Prompt: ${prompt.substring(0, 100)}...`);
   
   try {
+    // Check if agent is in a stopped state
+    if (agent.status === 'idle') {
+      console.log(`Agent ${agent.name} is in idle state, stopping the operation`);
+      throw new Error(`Agent ${agent.name} has been stopped or is idle. Please restart the agent to continue.`);
+    }
+    
     // Choose the model based on agent type or use the one specified in options
     const model = options?.model || getDefaultModelForAgentType(agent.type);
     
@@ -86,15 +92,15 @@ function getDefaultModelForAgentType(agentType: string): string {
   switch (agentType) {
     case 'architect':
     case 'backend':
-      return 'google/gemini-2.0-flash-thinking-exp:free';
+      return 'anthropic/claude-3.5-sonnet:thinking';
     case 'frontend':
-      return 'google/gemini-2.0-flash-thinking-exp:free';
+      return 'anthropic/claude-3.5-sonnet:thinking';
     case 'testing':
-      return 'google/gemini-2.0-flash-thinking-exp:free';
+      return 'anthropic/claude-3.5-sonnet:thinking';
     case 'devops':
-      return 'google/gemini-2.0-flash-thinking-exp:free';
+      return 'anthropic/claude-3.5-sonnet:thinking';
     default:
-      return 'google/gemini-2.0-flash-thinking-exp:free';
+      return 'anthropic/claude-3.5-sonnet:thinking';
   }
 }
 
@@ -105,6 +111,8 @@ function addProjectContextToPrompt(prompt: string, project: Project): string {
   return `Project: ${project.name}
 Description: ${project.description || 'No description'}
 ${project.tech_stack && project.tech_stack.length > 0 ? `Tech Stack: ${project.tech_stack.join(', ')}` : ''}
+
+IMPORTANT: When asked to create or modify code, you MUST provide complete, functional code files that can be directly used in the project. Don't provide snippets or partial code. Always include imports and full implementation.
 
 ${prompt}`;
 }
