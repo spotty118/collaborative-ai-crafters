@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import {
   Dialog,
@@ -19,29 +18,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ProjectMode } from "@/lib/types";
+import { ProjectMode, Project } from "@/lib/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { toast } from "sonner";
 
 interface ProjectSetupProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreateProject: (projectData: {
-    name: string;
-    description: string;
-    mode: ProjectMode;
-    techStack: {
-      frontend: string;
-      backend: string;
-      database: string;
-      deployment: string;
-    };
-    githubToken?: string;
-    repositoryUrl?: string;
-    requirements?: string;
-  }) => void;
+  onCreateProject: (projectData: Omit<Project, "id">) => void;
 }
 
 const ProjectSetup: React.FC<ProjectSetupProps> = ({
@@ -60,19 +45,14 @@ const ProjectSetup: React.FC<ProjectSetupProps> = ({
   const [database, setDatabase] = useState("supabase");
   const [deployment, setDeployment] = useState("vercel");
   const [validationError, setValidationError] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [requirements, setRequirements] = useState("");
 
   const validateGithubUrl = (url: string): boolean => {
     const githubRegex = /^https:\/\/github\.com\/[\w-]+\/[\w-]+/;
     return githubRegex.test(url);
   };
 
-  const handleCreateProject = async () => {
-    if (!name) {
-      setValidationError("Project name is required");
-      return;
-    }
+  const handleCreateProject = () => {
+    if (!name) return;
     
     if (projectMode === "existing" && repoUrl) {
       if (!validateGithubUrl(repoUrl)) {
@@ -88,32 +68,22 @@ const ProjectSetup: React.FC<ProjectSetupProps> = ({
     }
     
     setValidationError("");
-    setIsSubmitting(true);
     
-    try {
-      await onCreateProject({
-        name,
-        description,
-        mode: projectMode,
-        techStack: {
-          frontend,
-          backend,
-          database,
-          deployment,
-        },
-        githubToken: projectMode === "existing" ? githubToken : undefined,
-        repositoryUrl: projectMode === "existing" ? repoUrl : undefined,
-        requirements,
-      });
-      
-      // Clear form (even though dialog will close)
-      resetForm();
-      toast.success(`Project "${name}" created successfully!`);
-    } catch (error) {
-      console.error("Error creating project:", error);
-      toast.error("Failed to create project. Please try again.");
-      setIsSubmitting(false);
-    }
+    onCreateProject({
+      name,
+      description,
+      mode: projectMode,
+      techStack: {
+        frontend,
+        backend,
+        database,
+        deployment,
+      },
+      githubToken: projectMode === "existing" ? githubToken : undefined,
+      repoUrl: projectMode === "existing" ? repoUrl : undefined,
+    });
+    
+    resetForm();
   };
 
   const resetForm = () => {
@@ -128,8 +98,6 @@ const ProjectSetup: React.FC<ProjectSetupProps> = ({
     setDatabase("supabase");
     setDeployment("vercel");
     setValidationError("");
-    setRequirements("");
-    setIsSubmitting(false);
   };
 
   return (
@@ -173,17 +141,6 @@ const ProjectSetup: React.FC<ProjectSetupProps> = ({
                 placeholder="A brief description of your project"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                rows={3}
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="project-requirements">Requirements (Optional)</Label>
-              <Textarea
-                id="project-requirements"
-                placeholder="Specific requirements or features you want in your project"
-                value={requirements}
-                onChange={(e) => setRequirements(e.target.value)}
                 rows={3}
               />
             </div>
@@ -311,21 +268,11 @@ const ProjectSetup: React.FC<ProjectSetupProps> = ({
         </Tabs>
 
         <DialogFooter className="mt-6">
-          <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
+          <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button 
-            onClick={handleCreateProject}
-            disabled={!name || isSubmitting}
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating...
-              </>
-            ) : (
-              projectMode === "new" ? "Create Project" : "Import Project"
-            )}
+          <Button onClick={handleCreateProject} disabled={!name}>
+            {projectMode === "new" ? "Create Project" : "Import Project"}
           </Button>
         </DialogFooter>
       </DialogContent>

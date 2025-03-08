@@ -1,197 +1,182 @@
 
-// Mock data for testing and development
-import { Agent, Task, Message, Project, CodeFile, AgentType, AgentStatus, TaskStatus } from "./types";
+import { Project, Agent, Task, Message, CodeFile, AgentType, AgentStatus, TaskStatus } from './types';
 
-// Agent mock data
-export const agentsMock: Agent[] = [
+// Sample data for development and testing
+
+export const mockAgents: Agent[] = [
   {
-    id: "1",
-    name: "Architect Agent",
-    type: "architect",
-    description: "Designs system architecture and project structure",
-    status: "idle",
+    id: 'agent-1',
+    name: 'Architect Agent',
+    type: 'architect',
+    status: 'idle',
     progress: 0,
-    avatar: "👨‍💻",
-    project_id: "project-1"
+    description: 'Designs system architecture and project structure',
+    avatar: '👨‍💻'
   },
   {
-    id: "2",
-    name: "Frontend Agent",
-    type: "frontend",
-    description: "Builds UI components and client-side functionality",
-    status: "working",
-    progress: 45,
-    avatar: "🎨",
-    project_id: "project-1"
+    id: 'agent-2',
+    name: 'Frontend Agent',
+    type: 'frontend',
+    status: 'working',
+    progress: 65,
+    description: 'Builds UI components and client-side functionality',
+    avatar: '🎨'
   },
   {
-    id: "3",
-    name: "Backend Agent",
-    type: "backend",
-    description: "Develops APIs and database models",
-    status: "completed",
+    id: 'agent-3',
+    name: 'Backend Agent',
+    type: 'backend',
+    status: 'completed',
     progress: 100,
-    avatar: "🔧",
-    project_id: "project-1"
+    description: 'Develops APIs and database models',
+    avatar: '🔧'
   },
   {
-    id: "4",
-    name: "Testing Agent",
-    type: "testing",
-    description: "Creates tests and ensures quality",
-    status: "idle",
+    id: 'agent-4',
+    name: 'Testing Agent',
+    type: 'testing',
+    status: 'waiting',
     progress: 0,
-    avatar: "🧪",
-    project_id: "project-1"
+    description: 'Creates tests and ensures quality',
+    avatar: '🧪'
   },
   {
-    id: "5",
-    name: "DevOps Agent",
-    type: "devops",
-    description: "Handles deployment and CI/CD setup",
-    status: "idle",
+    id: 'agent-5',
+    name: 'DevOps Agent',
+    type: 'devops',
+    status: 'idle',
     progress: 0,
-    avatar: "🚀",
-    project_id: "project-1"
+    description: 'Handles deployment and CI/CD setup',
+    avatar: '🚀'
   }
 ];
 
-// Task mock data
-export const tasksMock: Task[] = [
+export const mockTasks: Task[] = [
   {
-    id: "task-1",
-    title: "Design System Architecture",
-    description: "Create the overall system architecture including component structure and data flow",
-    status: "completed",
-    assigned_to: "1",
-    priority: "high",
-    project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
-    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
-    completed_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
-    dependencies: []
+    id: 'task-1',
+    title: 'Design system architecture',
+    description: 'Create the initial system architecture diagram',
+    status: 'completed',
+    priority: 'high',
+    assigned_to: 'agent-1',
+    project_id: 'project-1',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    completed_at: new Date().toISOString()
   },
   {
-    id: "task-2",
-    title: "Create API Service Modules",
-    description: "Implement backend service modules for data retrieval and processing",
-    status: "in_progress",
-    assigned_to: "3",
-    priority: "medium",
-    project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
-    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
-    dependencies: ["task-1"]
+    id: 'task-2',
+    title: 'Set up React project structure',
+    description: 'Initialize the React project and set up directory structure',
+    status: 'in_progress',
+    priority: 'medium',
+    assigned_to: 'agent-2',
+    project_id: 'project-1',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
   },
   {
-    id: "task-3",
-    title: "Implement User Dashboard Components",
-    description: "Create React components for the user dashboard interface",
-    status: "in_progress",
-    assigned_to: "2",
-    priority: "high",
-    project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 1).toISOString(),
-    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-    dependencies: ["task-1"]
+    id: 'task-3',
+    title: 'Design database schema',
+    description: 'Create the database schema for user management',
+    status: 'pending',
+    priority: 'medium',
+    assigned_to: 'agent-3',
+    project_id: 'project-1',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
   },
   {
-    id: "task-4",
-    title: "Set up Testing Framework",
-    description: "Configure Jest and React Testing Library for component testing",
-    status: "pending",
-    assigned_to: "4",
-    priority: "low",
-    project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
-    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
-    dependencies: ["task-2", "task-3"]
+    id: 'task-4',
+    title: 'Set up testing framework',
+    description: 'Configure Jest and React Testing Library',
+    status: 'pending',
+    priority: 'low',
+    assigned_to: 'agent-4',
+    project_id: 'project-1',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
   }
 ];
 
-// Project mock data
-export const projectMock: Project = {
-  id: "project-1",
-  name: "AI Developer Platform",
-  description: "An intelligent platform for collaborative software development with AI agents",
-  mode: "existing",
+export const mockProject: Project = {
+  id: 'project-1',
+  name: 'E-commerce Platform',
+  description: 'A modern e-commerce platform with React and Node.js',
+  mode: 'new',
+  status: 'in_progress',
+  progress: 40,
   techStack: {
-    frontend: "React",
-    backend: "Node.js",
-    database: "PostgreSQL",
-    deployment: "AWS"
+    frontend: 'React',
+    backend: 'Node.js',
+    database: 'PostgreSQL',
+    deployment: 'AWS'
   },
-  status: "in_progress",
-  progress: 35,
-  tech_stack: ["React", "TypeScript", "Node.js", "Express", "PostgreSQL"],
-  sourceType: "git",
-  sourceUrl: "https://github.com/example/ai-dev-platform",
-  requirements: "Building a scalable platform for AI-driven software development...",
-  created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString(),
-  updated_at: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString()
+  source_type: 'git',
+  source_url: 'https://github.com/user/repo',
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString()
 };
 
-// Message mock data
-export const messagesMock: Message[] = [
+export const mockMessages: Message[] = [
   {
-    id: "msg-1",
-    content: "Can you help me design the user authentication system?",
-    sender: "You",
-    type: "text",
-    project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString()
+    id: 'msg-1',
+    project_id: 'project-1',
+    content: 'Hello! I am the architect agent. How can I help you today?',
+    sender: 'Architect Agent',
+    type: 'text',
+    created_at: new Date().toISOString()
   },
   {
-    id: "msg-2",
-    content: "I'll design a secure authentication system using JWT tokens with refresh capability and role-based access control.",
-    sender: "Architect Agent",
-    type: "text",
-    project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 28).toISOString()
+    id: 'msg-2',
+    project_id: 'project-1',
+    content: 'Can you explain the current architecture of our project?',
+    sender: 'You',
+    type: 'text',
+    created_at: new Date().toISOString()
   },
   {
-    id: "msg-3",
-    content: "Great, also make sure it integrates with the existing user database.",
-    sender: "You",
-    type: "text",
-    project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 25).toISOString()
+    id: 'msg-3',
+    project_id: 'project-1',
+    content: 'Of course! We are using a React frontend with a Node.js backend. The application follows a microservices pattern...',
+    sender: 'Architect Agent',
+    type: 'text',
+    created_at: new Date().toISOString()
   },
   {
-    id: "msg-4",
-    content: "Here's a code example for the integration:\n\n```typescript\nconst authenticateUser = async (email, password) => {\n  // Implementation details\n};\n```",
-    sender: "Backend Agent",
-    type: "code",
-    code_language: "typescript",
-    project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 20).toISOString()
+    id: 'msg-4',
+    project_id: 'project-1',
+    content: '```javascript\nconst calculateTotal = (items) => {\n  return items.reduce((total, item) => total + item.price, 0);\n};\n```',
+    sender: 'Frontend Agent',
+    type: 'code',
+    code_language: 'javascript',
+    created_at: new Date().toISOString()
   }
 ];
 
-// Code files mock data
-export const codeFilesMock: CodeFile[] = [
+export const mockCodeFiles: CodeFile[] = [
   {
-    id: "file-1",
-    name: "auth.service.ts",
-    path: "src/services/auth.service.ts",
-    content: `import { User } from '../models/user';\n\nexport class AuthService {\n  async login(email: string, password: string): Promise<User> {\n    // Implementation\n    return user;\n  }\n}`,
-    language: "typescript",
-    created_by: "Backend Agent",
-    last_modified_by: "Backend Agent",
-    project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString()
+    id: 'file-1',
+    name: 'index.js',
+    path: 'src/index.js',
+    content: 'import React from "react";\nimport ReactDOM from "react-dom";\nimport App from "./App";\n\nReactDOM.render(<App />, document.getElementById("root"));',
+    language: 'javascript',
+    created_by: 'Frontend Agent',
+    last_modified_by: 'Frontend Agent',
+    project_id: 'project-1',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
   },
   {
-    id: "file-2",
-    name: "Login.tsx",
-    path: "src/components/auth/Login.tsx",
-    content: `import React from 'react';\n\nconst Login: React.FC = () => {\n  return (\n    <div>\n      {/* Implementation */}\n    </div>\n  );\n};\n\nexport default Login;`,
-    language: "typescript",
-    created_by: "Frontend Agent",
-    last_modified_by: "Frontend Agent",
-    project_id: "project-1",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
-    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString()
+    id: 'file-2',
+    name: 'server.js',
+    path: 'server/server.js',
+    content: 'const express = require("express");\nconst app = express();\n\napp.get("/api", (req, res) => {\n  res.json({ message: "Hello from server" });\n});\n\napp.listen(5000, () => console.log("Server running on port 5000"));',
+    language: 'javascript',
+    created_by: 'Backend Agent',
+    last_modified_by: 'Backend Agent',
+    project_id: 'project-1',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
   }
 ];

@@ -1,11 +1,7 @@
 
 import { GitHubService as BaseGitHubService, createGitHubService } from '../github';
 
-// Store the service instance
 let instance: BaseGitHubService | null = null;
-let currentBranch: string = 'main'; // Default branch
-let currentRepo: string = '';
-let currentToken: string = '';
 
 export const getGitHubService = () => {
   if (!instance) {
@@ -14,98 +10,64 @@ export const getGitHubService = () => {
   return instance;
 };
 
-export const initGitHubService = (url: string, token: string, branch?: string) => {
+export const initGitHubService = (url: string, token: string) => {
   if (!url.trim() || !token.trim()) {
     throw new Error('GitHub URL and token are required');
   }
   
   try {
-    // Clean up URL if needed
-    const cleanUrl = url.trim();
-    currentRepo = cleanUrl;
-    currentToken = token;
-    
-    // Create a new instance
-    instance = createGitHubService(cleanUrl, token);
-    
-    // Set the branch if provided
-    if (branch && branch.trim()) {
-      currentBranch = branch.trim();
+    // Clear any previous instance
+    if (instance) {
+      console.log('Clearing previous GitHub service instance');
+      instance = null;
     }
     
-    console.log(`GitHub service initialized successfully on branch: ${currentBranch}`);
-    console.log(`Repository URL: ${currentRepo}`);
+    // Validate token format - basic check
+    if (!token.match(/^(ghp_|github_pat_)[a-zA-Z0-9_]+$/)) {
+      console.warn('GitHub token format might be invalid. It should start with ghp_ or github_pat_');
+    }
     
-    // Immediately test connection to verify everything is working
-    instance.testConnection()
-      .then(success => {
-        if (success) {
-          console.log('GitHub connection verified successfully');
-          // Check if branch exists
-          return instance?.listBranches() || [];
-        } else {
-          console.error('GitHub connection test failed');
-          return [];
-        }
-      })
-      .then(branches => {
-        if (branches.length > 0) {
-          if (branches.includes(currentBranch)) {
-            console.log(`Branch '${currentBranch}' exists and is valid`);
-          } else {
-            console.warn(`Branch '${currentBranch}' does not exist. Available branches: ${branches.join(', ')}`);
-            // Auto-select first available branch if current doesn't exist
-            if (branches.length > 0) {
-              console.log(`Auto-selecting branch '${branches[0]}'`);
-              currentBranch = branches[0];
-            }
-          }
-        }
-      })
-      .catch(err => {
-        console.error('Error during GitHub connection verification:', err);
+    // Create a new instance
+    instance = createGitHubService(url, token);
+    console.log('GitHub service initialized successfully');
+    
+    // Store token in localStorage for persistence
+    localStorage.setItem('github-token', token);
+    localStorage.setItem('github-url', url);
+    
+    // Test the connection with a simple API call
+    try {
+      // We'll use a Promise.race to limit the wait time
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('GitHub connection verification timed out')), 10000)
+      );
+      
+      Promise.race([
+        instance.getFileContent('.gitignore'),
+        timeoutPromise
+      ])
+      .then(() => console.log('GitHub connection verified successfully'))
+      .catch(error => {
+        console.error('Failed to verify GitHub connection:', error);
+        // Don't clear the instance here as the file might just not exist
       });
+    } catch (error) {
+      console.error('Failed to verify GitHub connection:', error);
+    }
     
     return instance;
   } catch (error) {
     console.error('Failed to initialize GitHub service:', error);
+    instance = null; // Ensure instance is cleared on error
     throw error;
-  }
-};
-
-export const getCurrentBranch = () => {
-  return currentBranch;
-};
-
-export const setCurrentBranch = (branch: string) => {
-  if (!branch.trim()) {
-    throw new Error('Branch name cannot be empty');
-  }
-  
-  currentBranch = branch.trim();
-  console.log(`GitHub service branch set to: ${currentBranch}`);
-  
-  // Verify the branch exists if we have an initialized service
-  if (instance) {
-    instance.listBranches()
-      .then(branches => {
-        if (!branches.includes(currentBranch)) {
-          console.warn(`Warning: Branch '${currentBranch}' might not exist. Available branches: ${branches.join(', ')}`);
-        } else {
-          console.log(`Confirmed branch '${currentBranch}' exists`);
-        }
-      })
-      .catch(err => {
-        console.error('Error checking branch existence:', err);
-      });
   }
 };
 
 export const clearGitHubService = () => {
   instance = null;
-  currentBranch = 'main'; // Reset to default
-  currentRepo = '';
-  currentToken = '';
+  // Clear stored values
+  localStorage.removeItem('github-token');
+  localStorage.removeItem('github-url');
   console.log('GitHub service cleared');
 };
 
@@ -113,28 +75,19 @@ export const isGitHubServiceInitialized = () => {
   return instance !== null;
 };
 
-export const getRepositoryInfo = () => {
-  return {
-    url: currentRepo,
-    branch: currentBranch
-  };
-};
-
-export const reinitializeGitHubService = () => {
-  if (currentRepo && currentToken) {
-    return initGitHubService(currentRepo, currentToken, currentBranch);
+// Try to restore from localStorage on module load
+try {
+  const storedToken = localStorage.getItem('github-token');
+  const storedUrl = localStorage.getItem('github-url');
+  
+  if (storedToken && storedUrl) {
+    console.log('Attempting to restore GitHub service from localStorage');
+    try {
+      initGitHubService(storedUrl, storedToken);
+    } catch (error) {
+      console.error('Failed to restore GitHub service from localStorage:', error);
+    }
   }
-  return null;
-};
-
-// Helper function to normalize file paths for GitHub API
-export const normalizeFilePath = (path: string): string => {
-  // Remove any leading slash or backslash
-  let normalizedPath = path.replace(/^[/\\]+/, '');
-  
-  // Replace backslashes with forward slashes (for Windows paths)
-  normalizedPath = normalizedPath.replace(/\\/g, '/');
-  
-  console.log(`Normalized path: ${path} → ${normalizedPath}`);
-  return normalizedPath;
-};
+} catch (error) {
+  console.error('Failed to access localStorage:', error);
+}

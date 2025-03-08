@@ -2,7 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { 
   Project, Agent, Task, Message, CodeFile, 
   AgentType, AgentStatus, TaskStatus, TaskPriority,
-  ProjectDB, AgentDB, TaskDB, MessageDB, CodeFileDB, MessageType
+  ProjectDB, AgentDB, TaskDB, MessageDB, CodeFileDB
 } from "./types";
 
 // Projects API
@@ -21,19 +21,12 @@ export const getProjects = async (): Promise<Project[]> => {
     status: item.status,
     progress: item.progress || 0,
     tech_stack: item.tech_stack || [],
-    sourceType: item.source_type,
-    sourceUrl: item.source_url,
+    source_type: item.source_type,
+    source_url: item.source_url,
     requirements: item.requirements,
     created_at: item.created_at,
     updated_at: item.updated_at,
-    metadata: item.metadata,
-    mode: item.source_type ? 'existing' : 'new',
-    techStack: {
-      frontend: item.tech_stack?.[0] || '',
-      backend: item.tech_stack?.[1] || '',
-      database: item.tech_stack?.[2] || '',
-      deployment: item.tech_stack?.[3] || ''
-    }
+    mode: item.source_type ? 'existing' : 'new'
   }));
 };
 
@@ -55,26 +48,22 @@ export const getProject = async (id: string): Promise<Project | null> => {
     status: data.status,
     progress: data.progress || 0,
     tech_stack: data.tech_stack || [],
-    sourceType: data.source_type,
-    sourceUrl: data.source_url,
+    source_type: data.source_type,
+    source_url: data.source_url,
     requirements: data.requirements,
     created_at: data.created_at,
     updated_at: data.updated_at,
-    metadata: data.metadata,
-    mode: data.source_type ? 'existing' : 'new',
-    techStack: {
-      frontend: data.tech_stack?.[0] || '',
-      backend: data.tech_stack?.[1] || '',
-      database: data.tech_stack?.[2] || '',
-      deployment: data.tech_stack?.[3] || ''
-    }
+    mode: data.source_type ? 'existing' : 'new'
   };
 };
 
 export const createProject = async (project: ProjectDB): Promise<Project> => {
+  // Map the github token to the appropriate field if needed
+  const projectToCreate = { ...project };
+  
   const { data, error } = await supabase
     .from('projects')
-    .insert([project])
+    .insert([projectToCreate])
     .select()
     .single();
   
@@ -87,19 +76,12 @@ export const createProject = async (project: ProjectDB): Promise<Project> => {
     status: data.status,
     progress: data.progress || 0,
     tech_stack: data.tech_stack || [],
-    sourceType: data.source_type,
-    sourceUrl: data.source_url,
+    source_type: data.source_type,
+    source_url: data.source_url,
     requirements: data.requirements,
     created_at: data.created_at,
     updated_at: data.updated_at,
-    metadata: data.metadata,
-    mode: data.source_type ? 'existing' : 'new',
-    techStack: {
-      frontend: data.tech_stack?.[0] || '',
-      backend: data.tech_stack?.[1] || '',
-      database: data.tech_stack?.[2] || '',
-      deployment: data.tech_stack?.[3] || ''
-    }
+    mode: data.source_type ? 'existing' : 'new'
   };
 };
 
@@ -120,65 +102,18 @@ export const updateProject = async (id: string, updates: Partial<ProjectDB>): Pr
     status: data.status,
     progress: data.progress || 0,
     tech_stack: data.tech_stack || [],
-    sourceType: data.source_type,
-    sourceUrl: data.source_url,
+    source_type: data.source_type,
+    source_url: data.source_url,
     requirements: data.requirements,
     created_at: data.created_at,
     updated_at: data.updated_at,
-    metadata: data.metadata,
-    mode: data.source_type ? 'existing' : 'new',
-    techStack: {
-      frontend: data.tech_stack?.[0] || '',
-      backend: data.tech_stack?.[1] || '',
-      database: data.tech_stack?.[2] || '',
-      deployment: data.tech_stack?.[3] || ''
-    }
+    mode: data.source_type ? 'existing' : 'new'
   };
 };
 
-export const deleteProject = async (id: string): Promise<void> => {
-  const projectExists = await checkProjectExists(id);
-  if (!projectExists) {
-    throw new Error('Project not found');
-  }
-
-  const { error: agentError } = await supabase
-    .from('agent_statuses')
-    .delete()
-    .eq('project_id', id);
-    
-  if (agentError) throw agentError;
-  
-  const { error: taskError } = await supabase
-    .from('tasks')
-    .delete()
-    .eq('project_id', id);
-    
-  if (taskError) throw taskError;
-  
-  const { error: messageError } = await supabase
-    .from('chat_messages')
-    .delete()
-    .eq('project_id', id);
-    
-  if (messageError) throw messageError;
-  
-  const { error: codeFileError } = await supabase
-    .from('code_files')
-    .delete()
-    .eq('project_id', id);
-    
-  if (codeFileError) throw codeFileError;
-  
-  const { error: projectError } = await supabase
-    .from('projects')
-    .delete()
-    .eq('id', id);
-    
-  if (projectError) throw projectError;
-};
-
+// Fix the current error by adding a function to check if a project ID exists
 export const checkProjectExists = async (id: string | number): Promise<boolean> => {
+  // Convert id to string if it's a number
   const projectId = typeof id === 'number' ? id.toString() : id;
   
   const { data, error } = await supabase
@@ -191,6 +126,16 @@ export const checkProjectExists = async (id: string | number): Promise<boolean> 
   return !!data;
 };
 
+// Properly export the deleteProject function
+export const deleteProject = async (id: string): Promise<void> => {
+  const { error } = await supabase
+    .from('projects')
+    .delete()
+    .eq('id', id);
+  
+  if (error) throw error;
+};
+
 // Agents API
 export const getAgents = async (projectId: string): Promise<Agent[]> => {
   const { data, error } = await supabase
@@ -200,6 +145,7 @@ export const getAgents = async (projectId: string): Promise<Agent[]> => {
   
   if (error) throw error;
   
+  // Transform from DB schema to our app types
   return (data || []).map(agent => ({
     id: agent.id,
     type: agent.agent_type as AgentType,
@@ -208,51 +154,50 @@ export const getAgents = async (projectId: string): Promise<Agent[]> => {
     status: agent.status as AgentStatus,
     progress: agent.progress || 0,
     project_id: agent.project_id,
-    metadata: agent.metadata,
     avatar: getAgentAvatar(agent.agent_type as AgentType),
   }));
 };
 
 export const createAgents = async (projectId: string): Promise<Agent[]> => {
-  const defaultAgents: AgentDB[] = [
+  const defaultAgents = [
     {
       project_id: projectId,
-      agent_type: 'architect',
+      agent_type: 'architect' as AgentType,
       name: 'Architect Agent',
       description: 'Designs system architecture and project structure',
-      status: 'idle',
+      status: 'idle' as AgentStatus,
       progress: 0
     },
     {
       project_id: projectId,
-      agent_type: 'frontend',
+      agent_type: 'frontend' as AgentType,
       name: 'Frontend Agent',
       description: 'Builds UI components and client-side functionality',
-      status: 'idle',
+      status: 'idle' as AgentStatus,
       progress: 0
     },
     {
       project_id: projectId,
-      agent_type: 'backend',
+      agent_type: 'backend' as AgentType,
       name: 'Backend Agent',
       description: 'Develops APIs and database models',
-      status: 'idle',
+      status: 'idle' as AgentStatus,
       progress: 0
     },
     {
       project_id: projectId,
-      agent_type: 'testing',
+      agent_type: 'testing' as AgentType,
       name: 'Testing Agent',
       description: 'Creates tests and ensures quality',
-      status: 'idle',
+      status: 'idle' as AgentStatus,
       progress: 0
     },
     {
       project_id: projectId,
-      agent_type: 'devops',
+      agent_type: 'devops' as AgentType,
       name: 'DevOps Agent',
       description: 'Handles deployment and CI/CD setup',
-      status: 'idle',
+      status: 'idle' as AgentStatus,
       progress: 0
     }
   ];
@@ -272,19 +217,18 @@ export const createAgents = async (projectId: string): Promise<Agent[]> => {
     status: agent.status as AgentStatus,
     progress: agent.progress || 0,
     project_id: agent.project_id,
-    metadata: agent.metadata,
     avatar: getAgentAvatar(agent.agent_type as AgentType),
   }));
 };
 
 export const updateAgent = async (id: string, updates: Partial<Agent>): Promise<Agent> => {
+  // Transform our app types to DB schema
   const dbUpdates: Partial<AgentDB> = {};
   if (updates.status) dbUpdates.status = updates.status;
   if (updates.progress !== undefined) dbUpdates.progress = updates.progress;
   if (updates.description) dbUpdates.description = updates.description;
   if (updates.name) dbUpdates.name = updates.name;
   if (updates.type) dbUpdates.agent_type = updates.type;
-  if (updates.metadata) dbUpdates.metadata = updates.metadata;
 
   const { data, error } = await supabase
     .from('agent_statuses')
@@ -303,7 +247,6 @@ export const updateAgent = async (id: string, updates: Partial<Agent>): Promise<
     status: data.status as AgentStatus,
     progress: data.progress || 0,
     project_id: data.project_id,
-    metadata: data.metadata,
     avatar: getAgentAvatar(data.agent_type as AgentType),
   };
 };
@@ -329,12 +272,11 @@ export const getTasks = async (projectId: string): Promise<Task[]> => {
     created_at: task.created_at,
     updated_at: task.updated_at,
     completed_at: task.completed_at,
-    dependencies: task.dependencies || [],
-    metadata: task.metadata
+    dependencies: task.dependencies || []
   }));
 };
 
-export const createTask = async (task: TaskDB): Promise<Task> => {
+export const createTask = async (task: Omit<TaskDB, 'id'>): Promise<Task> => {
   const { data, error } = await supabase
     .from('tasks')
     .insert([{
@@ -357,8 +299,7 @@ export const createTask = async (task: TaskDB): Promise<Task> => {
     created_at: data.created_at,
     updated_at: data.updated_at,
     completed_at: data.completed_at,
-    dependencies: data.dependencies || [],
-    metadata: data.metadata
+    dependencies: data.dependencies || []
   };
 };
 
@@ -383,8 +324,7 @@ export const updateTask = async (id: string, updates: Partial<TaskDB>): Promise<
     created_at: data.created_at,
     updated_at: data.updated_at,
     completed_at: data.completed_at,
-    dependencies: data.dependencies || [],
-    metadata: data.metadata
+    dependencies: data.dependencies || []
   };
 };
 
@@ -402,7 +342,7 @@ export const getMessages = async (projectId: string): Promise<Message[]> => {
     id: msg.id,
     content: msg.content,
     sender: msg.sender,
-    type: msg.type as MessageType,
+    type: msg.type,
     code_language: msg.code_language,
     project_id: msg.project_id,
     created_at: msg.created_at
@@ -420,7 +360,7 @@ export const createMessage = async (message: MessageDB): Promise<Message> => {
       content: message.content,
       project_id: message.project_id,
       sender: message.sender,
-      type: message.type || 'text' as MessageType,
+      type: message.type || 'text',
       code_language: message.code_language
     }])
     .select()
@@ -432,7 +372,7 @@ export const createMessage = async (message: MessageDB): Promise<Message> => {
     id: data.id,
     content: data.content,
     sender: data.sender,
-    type: data.type as MessageType,
+    type: data.type,
     code_language: data.code_language,
     project_id: data.project_id,
     created_at: data.created_at

@@ -1,175 +1,385 @@
-
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { getProjects, createProject, deleteProject } from "@/lib/api";
+import React, { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
-import { ProjectCard } from "@/components/ProjectCard";
+import { useNavigate } from "react-router-dom";
+import { createProject, getProjects, deleteProject, createAgents } from "@/lib/api";
 import ProjectSetup from "@/components/layout/ProjectSetup";
-import ProjectDeleteDialog from "@/components/ProjectDeleteDialog";
-import { Project } from "@/lib/types";
+import { Badge } from "@/components/ui/badge";
+import { Pencil, Trash, Eye, ArrowRight } from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Trash2, Loader2 } from "lucide-react";
+import { Project, Agent, AgentType, ProjectDB } from "@/lib/types";
+import { formatDistanceToNow } from "date-fns";
+import { sendAgentPrompt } from "@/lib/openrouter";
+import { createMessage } from "@/lib/api";
+
+interface ProjectCardProps {
+  project: Project;
+  onDelete: (id: string) => void;
+}
+
+const ProjectCard: React.FC<ProjectCardProps> = ({ project, onDelete }) => {
+  const navigate = useNavigate();
+
+  return (
+    <Card className="bg-white shadow-md rounded-lg overflow-hidden">
+      <CardHeader>
+        <CardTitle className="text-lg font-semibold">{project.name}</CardTitle>
+        <CardDescription className="text-gray-500">
+          {project.description}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="p-4">
+        <div className="flex items-center space-x-2">
+          <Badge variant="secondary">
+            {project.sourceType ? "Existing Repo" : "New Project"}
+          </Badge>
+          {project.tech_stack && (
+            <Badge className="bg-blue-100 text-blue-800">
+              {project.tech_stack.join(", ")}
+            </Badge>
+          )}
+        </div>
+        <div className="mt-2 text-sm text-gray-600">
+          Updated{" "}
+          {project.updated_at &&
+            formatDistanceToNow(new Date(project.updated_at), {
+              addSuffix: true,
+            })}
+        </div>
+      </CardContent>
+      <CardFooter className="flex justify-between items-center p-4">
+        <div className="flex space-x-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate(`/project/${project.id}`)}
+          >
+            <Eye className="h-4 w-4 mr-2" />
+            View
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              // Logic to edit project
+            }}
+          >
+            <Pencil className="h-4 w-4 mr-2" />
+            Edit
+          </Button>
+        </div>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="destructive" size="sm">
+              <Trash className="h-4 w-4 mr-2" />
+              Delete
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete your
+                project and remove all of its data.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  onDelete(project.id);
+                }}
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </CardFooter>
+    </Card>
+  );
+};
 
 const Index: React.FC = () => {
+  const [isProjectSetupOpen, setIsProjectSetupOpen] = useState(false);
+  const [activeProject, setActiveProject] = useState<Project | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<AgentType | null>(null);
+  const [chatMessages, setChatMessages] = useState<
+    { sender: string; content: string }[]
+  >([]);
+  const [messageInput, setMessageInput] = useState("");
+  const [activeTab, setActiveTab] = useState("projects");
   const navigate = useNavigate();
-  const [showNewProject, setShowNewProject] = useState(false);
-  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
-  
-  const { 
-    data: projects = [], 
-    isLoading, 
+
+  const queryClient = useQueryClient();
+
+  const {
+    data: projects,
+    isLoading,
     error,
-    refetch
   } = useQuery({
-    queryKey: ['projects'],
+    queryKey: ["projects"],
     queryFn: getProjects
   });
 
-  const handleCreateProject = async (project: any) => {
+  const createProjectMutation = useMutation({
+    mutationFn: (projectData: Omit<Project, "id">) => {
+      // Transform the project data to match ProjectDB type
+      const dbProject: ProjectDB = {
+        name: projectData.name,
+        description: projectData.description,
+        tech_stack: projectData.techStack ? 
+          [projectData.techStack.frontend, projectData.techStack.backend, projectData.techStack.database, projectData.techStack.deployment] : 
+          undefined,
+        source_type: projectData.mode === 'existing' ? 'github' : undefined,
+        source_url: projectData.repoUrl
+      };
+      
+      return createProject(dbProject);
+    },
+    onSuccess: (createdProject) => {
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      
+      // Create agents for the new project
+      if (createdProject && createdProject.id) {
+        createAgents(createdProject.id.toString())
+          .then(() => {
+            console.log("Agents created successfully for project:", createdProject.id);
+          })
+          .catch(error => {
+            console.error("Failed to create agents:", error);
+            toast.error(`Failed to create agents: ${error.message}`);
+          });
+      }
+      
+      setIsProjectSetupOpen(false);
+      toast.success("Project created successfully!");
+    },
+    onError: (error: any) => {
+      toast.error(`Failed to create project: ${error.message}`);
+    },
+  });
+
+  const deleteProjectMutation = useMutation({
+    mutationFn: deleteProject,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      toast.success("Project deleted successfully!");
+    },
+    onError: (error: any) => {
+      toast.error(`Failed to delete project: ${error.message}`);
+    },
+  });
+
+  const handleCreateProject = async (projectData: Omit<Project, "id">) => {
+    createProjectMutation.mutate(projectData);
+  };
+
+  const handleDeleteProject = async (id: string) => {
+    deleteProjectMutation.mutate(id);
+  };
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+  };
+
+  const executeAgentTasks = async (
+    agent: AgentType,
+    activeProject: Project
+  ) => {
+    if (!activeProject) return;
+
+    createMessage({
+      project_id: activeProject.id.toString(),
+      sender: `${agent.charAt(0).toUpperCase() + agent.slice(1)} Agent`,
+      content: "I'm now analyzing the project and will help improve it. This might take a moment...",
+      type: "text",
+    });
+
+    const loadingToastId = toast.loading(`${agent} agent is analyzing the project...`);
+
     try {
-      setIsCreating(true);
-      const newProject = await createProject({
-        name: project.name,
-        description: project.description,
-        status: "setup",
-        progress: 0,
-        tech_stack: [
-          project.techStack.frontend,
-          project.techStack.backend,
-          project.techStack.database,
-          project.techStack.deployment
-        ],
-        source_type: project.mode === 'existing' ? 'github' : undefined,
-        source_url: project.mode === 'existing' ? project.repositoryUrl : undefined,
-        requirements: project.requirements
+      const response = await sendAgentPrompt(
+        {
+          id: `${agent}-agent`,
+          name: `${agent.charAt(0).toUpperCase() + agent.slice(1)} Agent`,
+          type: agent,
+        },
+        "Analyze this project and create tasks for improvements",
+        activeProject
+      );
+
+      createMessage({
+        project_id: activeProject.id.toString(),
+        sender: `${agent.charAt(0).toUpperCase() + agent.slice(1)} Agent`,
+        content: "I've analyzed the GitHub repository and created tasks for improvements. Check the task list for details.",
+        type: "text",
+      });
+
+      toast.dismiss(loadingToastId);
+      toast.success(`${agent.charAt(0).toUpperCase() + agent.slice(1)} agent completed analysis`);
+    } catch (error) {
+      toast.dismiss(loadingToastId);
+      toast.error(`Error with ${agent} agent: ${error instanceof Error ? error.message : "Unknown error"}`);
+      console.error(`Error with ${agent} agent:`, error);
+    }
+  };
+
+  const handleAgentSelect = (agent: AgentType) => {
+    setSelectedAgent(agent);
+    if (activeProject) {
+      executeAgentTasks(agent, activeProject);
+    }
+  };
+
+  const handleSendMessage = async (message: string) => {
+    if (!activeProject || !selectedAgent) return;
+    
+    createMessage({
+      project_id: activeProject.id.toString(),
+      sender: "You",
+      content: message,
+      type: "text",
+    });
+    
+    const agentName = `${selectedAgent.charAt(0).toUpperCase() + selectedAgent.slice(1)} Agent`;
+    const loadingToastId = toast.loading(`${agentName} is thinking...`);
+    
+    try {
+      const response = await sendAgentPrompt(
+        {
+          id: `${selectedAgent}-agent`,
+          name: agentName,
+          type: selectedAgent as AgentType,
+        },
+        message,
+        activeProject
+      );
+      
+      createMessage({
+        project_id: activeProject.id.toString(),
+        sender: agentName,
+        content: response || "I couldn't generate a response at this time.",
+        type: "text",
       });
       
-      toast.success(`Project "${project.name}" created successfully!`);
-      setShowNewProject(false);
-      console.log("Created project:", newProject);
+      toast.dismiss(loadingToastId);
+    } catch (error) {
+      toast.dismiss(loadingToastId);
+      toast.error(`Error getting response: ${error instanceof Error ? error.message : "Unknown error"}`);
+      console.error("Error getting agent response:", error);
       
-      // Add a slight delay before navigation to ensure project is fully created
-      setTimeout(() => {
-        setIsCreating(false);
-        navigate(`/project/${newProject.id}`);
-      }, 500);
-    } catch (error) {
-      console.error("Error creating project:", error);
-      toast.error("Failed to create project: " + (error instanceof Error ? error.message : "Unknown error"));
-      setIsCreating(false);
+      createMessage({
+        project_id: activeProject.id.toString(),
+        sender: agentName,
+        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : "Unknown error"}`,
+        type: "text",
+      });
     }
   };
 
-  const handleDeleteClick = (e: React.MouseEvent, project: Project) => {
-    e.stopPropagation();
-    setProjectToDelete(project);
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!projectToDelete) return;
-    
-    setIsDeleting(true);
-    try {
-      await deleteProject(projectToDelete.id);
-      toast.success(`Project "${projectToDelete.name}" deleted successfully`);
-      refetch();
-    } catch (error) {
-      console.error("Error deleting project:", error);
-      toast.error("Failed to delete project: " + (error instanceof Error ? error.message : "Unknown error"));
-    } finally {
-      setIsDeleting(false);
-      setProjectToDelete(null);
-    }
-  };
-
-  const closeDeleteDialog = () => {
-    setProjectToDelete(null);
-  };
-  
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header 
-        onNewProject={() => setShowNewProject(true)}
-        onImportProject={() => setShowNewProject(true)}
+    <div className="min-h-screen bg-gray-100">
+      <Header
+        onNewProject={() => setIsProjectSetupOpen(true)}
+        onImportProject={() => setIsProjectSetupOpen(true)}
       />
-      
-      <main className="container mx-auto px-4 py-8">
-        {showNewProject ? (
-          <ProjectSetup 
-            isOpen={true}
-            onClose={() => {
-              if (!isCreating) {
-                setShowNewProject(false);
-              }
-            }}
-            onCreateProject={handleCreateProject}
-          />
-        ) : null}
-        
-        <div>
-          <div className="flex justify-between items-center mb-8">
-            <h1 className="text-2xl font-bold">Your Projects</h1>
-          </div>
-          
-          {isLoading ? (
-            <div className="flex justify-center py-20">
-              <div className="flex flex-col items-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <p className="mt-4 text-gray-600">Loading projects...</p>
-              </div>
-            </div>
-          ) : error ? (
-            <div className="text-center py-20 text-red-500">
-              <p>Error loading projects. Please try again.</p>
-              <button 
-                onClick={() => refetch()} 
-                className="mt-4 px-4 py-2 bg-primary text-white rounded"
-              >
-                Retry
-              </button>
-            </div>
-          ) : projects.length === 0 ? (
-            <div className="text-center py-20">
-              <p className="text-lg text-gray-600 mb-4">You don't have any projects yet.</p>
-              <button 
-                onClick={() => setShowNewProject(true)} 
-                className="px-4 py-2 bg-primary text-white rounded"
-              >
-                Create Your First Project
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {projects.map((project) => (
-                <div key={project.id} className="relative group">
-                  <ProjectCard 
-                    project={project} 
-                    onClick={() => navigate(`/project/${project.id}`)}
-                  />
-                  <button
-                    onClick={(e) => handleDeleteClick(e, project)}
-                    className="absolute top-2 right-2 bg-white p-2 rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-red-50"
-                    aria-label={`Delete project ${project.name}`}
-                  >
-                    <Trash2 className="h-4 w-4 text-red-500" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
 
-        <ProjectDeleteDialog 
-          isOpen={!!projectToDelete}
-          projectName={projectToDelete?.name || ''}
-          onClose={closeDeleteDialog}
-          onConfirm={handleDeleteConfirm}
-          isDeleting={isDeleting}
-        />
-      </main>
+      <ProjectSetup
+        isOpen={isProjectSetupOpen}
+        onClose={() => setIsProjectSetupOpen(false)}
+        onCreateProject={handleCreateProject}
+      />
+
+      <div className="container mx-auto mt-8">
+        <Tabs value={activeTab} onValueChange={handleTabChange}>
+          <TabsList className="bg-white rounded-md shadow-sm p-2">
+            <TabsTrigger value="projects" className="data-[state=active]:bg-gray-200">
+              Projects
+            </TabsTrigger>
+            <TabsTrigger value="agents" className="data-[state=active]:bg-gray-200">
+              Agents
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="projects" className="mt-4">
+            {isLoading ? (
+              <div className="text-center">Loading projects...</div>
+            ) : error ? (
+              <div className="text-center text-red-500">
+                Error: {(error as Error).message}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {projects && projects.map((project) => (
+                  <ProjectCard
+                    key={project.id}
+                    project={project}
+                    onDelete={handleDeleteProject}
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+          <TabsContent value="agents" className="mt-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {["architect", "frontend", "backend", "testing"].map(
+                (agent) => (
+                  <Card
+                    key={agent}
+                    className="cursor-pointer hover:shadow-md transition-shadow duration-300 ease-in-out"
+                    onClick={() => handleAgentSelect(agent as AgentType)}
+                  >
+                    <CardHeader>
+                      <CardTitle>
+                        {agent.charAt(0).toUpperCase() + agent.slice(1)} Agent
+                      </CardTitle>
+                      <CardDescription>
+                        {`The ${agent} agent is responsible for ${agent} tasks.`}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-gray-500">
+                        Click to activate this agent.
+                      </p>
+                    </CardContent>
+                  </Card>
+                )
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   );
 };
