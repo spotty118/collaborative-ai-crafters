@@ -34,7 +34,7 @@ const AgentOrchestration: React.FC<AgentOrchestrationProps> = ({
   const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState('');
   const [results, setResults] = useState<any>(null);
-  const [orchestrationMethod, setOrchestrationMethod] = useState<'client' | 'function' | 'integrated'>('integrated');
+  const [orchestrationMethod, setOrchestrationMethod] = useState<'client' | 'function' | 'integrated'>('function');
 
   const runOrchestration = async () => {
     if (!prompt.trim()) {
@@ -73,6 +73,7 @@ const AgentOrchestration: React.FC<AgentOrchestrationProps> = ({
           throw new Error(`Edge function error: ${error.message}`);
         }
         
+        setProgress(100);
         orchestrationResults = data;
         
       // Direct OpenRouter client-side orchestration
@@ -223,7 +224,7 @@ const AgentOrchestration: React.FC<AgentOrchestrationProps> = ({
               <h3 className="text-lg font-medium">Completed Tasks</h3>
               <ScrollArea className="h-64 w-full rounded-md border">
                 <div className="p-4 space-y-4">
-                  {results.results.map((task: any, index: number) => (
+                  {results.results && results.results.map((task: any, index: number) => (
                     <div key={index} className="space-y-2">
                       <div className="flex justify-between">
                         <h4 className="font-medium">{task.description}</h4>
