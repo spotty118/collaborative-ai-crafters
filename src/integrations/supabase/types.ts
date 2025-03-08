@@ -59,6 +59,7 @@ export type Database = {
           created_at: string
           description: string | null
           id: string
+          metadata: Json | null
           name: string
           progress: number | null
           project_id: string
@@ -70,6 +71,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          metadata?: Json | null
           name: string
           progress?: number | null
           project_id: string
@@ -81,6 +83,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          metadata?: Json | null
           name?: string
           progress?: number | null
           project_id?: string
@@ -264,6 +267,7 @@ export type Database = {
           created_at: string
           description: string | null
           id: string
+          metadata: Json | null
           name: string
           progress: number | null
           requirements: string | null
@@ -277,6 +281,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          metadata?: Json | null
           name: string
           progress?: number | null
           requirements?: string | null
@@ -290,6 +295,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          metadata?: Json | null
           name?: string
           progress?: number | null
           requirements?: string | null
@@ -309,6 +315,7 @@ export type Database = {
           dependencies: string[] | null
           description: string | null
           id: string
+          metadata: Json | null
           priority: string
           project_id: string
           status: string
@@ -322,6 +329,7 @@ export type Database = {
           dependencies?: string[] | null
           description?: string | null
           id?: string
+          metadata?: Json | null
           priority?: string
           project_id: string
           status?: string
@@ -335,6 +343,7 @@ export type Database = {
           dependencies?: string[] | null
           description?: string | null
           id?: string
+          metadata?: Json | null
           priority?: string
           project_id?: string
           status?: string

@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import { 
   Project, Agent, Task, Message, CodeFile, 
@@ -27,6 +26,7 @@ export const getProjects = async (): Promise<Project[]> => {
     requirements: item.requirements,
     created_at: item.created_at,
     updated_at: item.updated_at,
+    metadata: item.metadata,
     mode: item.source_type ? 'existing' : 'new',
     techStack: {
       frontend: item.tech_stack?.[0] || '',
@@ -60,6 +60,7 @@ export const getProject = async (id: string): Promise<Project | null> => {
     requirements: data.requirements,
     created_at: data.created_at,
     updated_at: data.updated_at,
+    metadata: data.metadata,
     mode: data.source_type ? 'existing' : 'new',
     techStack: {
       frontend: data.tech_stack?.[0] || '',
@@ -91,6 +92,7 @@ export const createProject = async (project: ProjectDB): Promise<Project> => {
     requirements: data.requirements,
     created_at: data.created_at,
     updated_at: data.updated_at,
+    metadata: data.metadata,
     mode: data.source_type ? 'existing' : 'new',
     techStack: {
       frontend: data.tech_stack?.[0] || '',
@@ -123,6 +125,7 @@ export const updateProject = async (id: string, updates: Partial<ProjectDB>): Pr
     requirements: data.requirements,
     created_at: data.created_at,
     updated_at: data.updated_at,
+    metadata: data.metadata,
     mode: data.source_type ? 'existing' : 'new',
     techStack: {
       frontend: data.tech_stack?.[0] || '',
@@ -205,6 +208,7 @@ export const getAgents = async (projectId: string): Promise<Agent[]> => {
     status: agent.status as AgentStatus,
     progress: agent.progress || 0,
     project_id: agent.project_id,
+    metadata: agent.metadata,
     avatar: getAgentAvatar(agent.agent_type as AgentType),
   }));
 };
@@ -268,6 +272,7 @@ export const createAgents = async (projectId: string): Promise<Agent[]> => {
     status: agent.status as AgentStatus,
     progress: agent.progress || 0,
     project_id: agent.project_id,
+    metadata: agent.metadata,
     avatar: getAgentAvatar(agent.agent_type as AgentType),
   }));
 };
@@ -279,6 +284,7 @@ export const updateAgent = async (id: string, updates: Partial<Agent>): Promise<
   if (updates.description) dbUpdates.description = updates.description;
   if (updates.name) dbUpdates.name = updates.name;
   if (updates.type) dbUpdates.agent_type = updates.type;
+  if (updates.metadata) dbUpdates.metadata = updates.metadata;
 
   const { data, error } = await supabase
     .from('agent_statuses')
@@ -297,6 +303,7 @@ export const updateAgent = async (id: string, updates: Partial<Agent>): Promise<
     status: data.status as AgentStatus,
     progress: data.progress || 0,
     project_id: data.project_id,
+    metadata: data.metadata,
     avatar: getAgentAvatar(data.agent_type as AgentType),
   };
 };
@@ -322,7 +329,8 @@ export const getTasks = async (projectId: string): Promise<Task[]> => {
     created_at: task.created_at,
     updated_at: task.updated_at,
     completed_at: task.completed_at,
-    dependencies: task.dependencies || []
+    dependencies: task.dependencies || [],
+    metadata: task.metadata
   }));
 };
 
@@ -349,7 +357,8 @@ export const createTask = async (task: TaskDB): Promise<Task> => {
     created_at: data.created_at,
     updated_at: data.updated_at,
     completed_at: data.completed_at,
-    dependencies: data.dependencies || []
+    dependencies: data.dependencies || [],
+    metadata: data.metadata
   };
 };
 
@@ -374,7 +383,8 @@ export const updateTask = async (id: string, updates: Partial<TaskDB>): Promise<
     created_at: data.created_at,
     updated_at: data.updated_at,
     completed_at: data.completed_at,
-    dependencies: data.dependencies || []
+    dependencies: data.dependencies || [],
+    metadata: data.metadata
   };
 };
 

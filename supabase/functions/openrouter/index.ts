@@ -42,7 +42,7 @@ serve(async (req) => {
       agentId,
       taskId,
       crewAction,
-      model = "anthropic/claude-3.7-sonnet:thinking"
+      model = "anthropic/claude-3.5-sonnet:thinking"
     } = requestData;
     
     console.log(`Request mode: ${useCrewAI ? 'CrewAI' : 'OpenRouter'}`);
