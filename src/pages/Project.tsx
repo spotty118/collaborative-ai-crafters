@@ -221,15 +221,59 @@ const Project: React.FC = () => {
     try {
       console.log(`Agent ${agent.name} starting work`);
       
-      updateAgentMutation.mutate({
-        id: agentId,
-        updates: { 
-          status: 'completed',
-          progress: 100
-        }
-      });
-      
-      toast.success(`${agent.name} completed analysis`);
+      if (agent.type === 'architect') {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        updateAgentMutation.mutate({
+          id: agentId,
+          updates: { 
+            status: 'working',
+            progress: 30
+          }
+        });
+        toast.info(`${agent.name} is analyzing project requirements...`);
+        
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        updateAgentMutation.mutate({
+          id: agentId,
+          updates: { 
+            status: 'working',
+            progress: 60
+          }
+        });
+        toast.info(`${agent.name} is designing system architecture...`);
+        
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        updateAgentMutation.mutate({
+          id: agentId,
+          updates: { 
+            status: 'working',
+            progress: 85
+          }
+        });
+        toast.info(`${agent.name} is preparing task delegation plan...`);
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        updateAgentMutation.mutate({
+          id: agentId,
+          updates: { 
+            status: 'completed',
+            progress: 100
+          }
+        });
+        
+        toast.success(`${agent.name} completed analysis and is now coordinating other agents`);
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        updateAgentMutation.mutate({
+          id: agentId,
+          updates: { 
+            status: 'completed',
+            progress: 100
+          }
+        });
+        
+        toast.success(`${agent.name} completed analysis`);
+      }
       
       if (tasks.filter(t => t.agent_id === agentId).length === 0) {
         const defaultTasks = getDefaultTasksForAgent(agent, id);
@@ -254,19 +298,39 @@ const Project: React.FC = () => {
         if (otherAgents.length > 0) {
           toast.info("Architect is activating specialized agents...");
           
-          setTimeout(() => {
-            for (const specializedAgent of otherAgents) {
-              updateAgentMutation.mutate({
-                id: specializedAgent.id,
-                updates: {
-                  status: 'working',
-                  progress: 20
-                }
-              });
-              
-              toast.info(`${specializedAgent.name} activated by Architect`);
-            }
-          }, 1500);
+          for (const [index, specializedAgent] of otherAgents.entries()) {
+            await new Promise(resolve => setTimeout(resolve, 800 * (index + 1)));
+            
+            updateAgentMutation.mutate({
+              id: specializedAgent.id,
+              updates: {
+                status: 'working',
+                progress: 20
+              }
+            });
+            
+            toast.info(`${specializedAgent.name} activated by Architect`);
+            
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            updateAgentMutation.mutate({
+              id: specializedAgent.id,
+              updates: {
+                status: 'working',
+                progress: 60
+              }
+            });
+            
+            await new Promise(resolve => setTimeout(resolve, 1200));
+            updateAgentMutation.mutate({
+              id: specializedAgent.id,
+              updates: {
+                status: 'completed',
+                progress: 100
+              }
+            });
+            
+            toast.success(`${specializedAgent.name} completed initial setup`);
+          }
         }
       }
     } catch (error) {

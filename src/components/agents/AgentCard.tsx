@@ -58,7 +58,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, o
             <span>Progress</span>
             <span>{agent.progress}%</span>
           </div>
-          <Progress value={agent.progress} className="h-1" />
+          <Progress value={agent.progress} className="h-1 transition-all duration-700 ease-in-out" />
         </div>
       </CardContent>
       <CardFooter className="p-4 pt-0 flex gap-2">

@@ -14,7 +14,7 @@ const AgentStatus: React.FC<AgentStatusProps> = ({ status, className }) => {
       case "idle":
         return "bg-gray-300";
       case "working":
-        return "bg-blue-500 animate-pulse-light";
+        return "bg-blue-500 animate-pulse";
       case "completed":
         return "bg-green-500";
       case "failed":
@@ -45,7 +45,7 @@ const AgentStatus: React.FC<AgentStatusProps> = ({ status, className }) => {
 
   return (
     <div className={cn("flex items-center gap-2", className)}>
-      <div className={`${getStatusColor()} w-2.5 h-2.5 rounded-full`} />
+      <div className={`${getStatusColor()} w-2.5 h-2.5 rounded-full transition-colors duration-300`} />
       <span className="text-xs font-medium text-gray-600">{getStatusText()}</span>
     </div>
   );
