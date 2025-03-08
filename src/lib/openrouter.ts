@@ -6,6 +6,9 @@ interface SendAgentPromptOptions {
   model?: string;
   images?: string[];
   ignoreStatus?: boolean; // Option to bypass status check
+  context?: string; // Additional context from other agents
+  task?: string; // Specific task information
+  expectCode?: boolean; // Signal that code output is expected
 }
 
 // Agent class for orchestration
@@ -15,6 +18,8 @@ class AgentOrchestrator {
   private taskQueue: any[] = [];
   private completedTasks: any[] = [];
   private projectPlan: any = null;
+  private agentMemory: Record<string, string[]> = {};
+  private lastAgentOutput: Record<string, string> = {};
 
   constructor(project: Project, agents: Agent[]) {
     this.project = project;
@@ -22,6 +27,7 @@ class AgentOrchestrator {
     // Register all agents by their type
     agents.forEach(agent => {
       this.agents[agent.type] = agent;
+      this.agentMemory[agent.type] = [];
     });
   }
 
@@ -40,6 +46,7 @@ Create a detailed breakdown of:
 3. Dependencies between tasks
 4. What specialized agent should handle each task (choose from: frontend, backend, testing, devops)
 5. Expected outputs for each task
+6. INCLUDE SPECIFIC CODE FILE NAMES that need to be created by each agent
 
 Format your response as a structured JSON object.`;
 
@@ -51,6 +58,10 @@ Format your response as a structured JSON object.`;
         this.project,
         { model: getDefaultModelForAgentType('architect'), ignoreStatus: true }
       );
+      
+      // Store in memory
+      this.agentMemory['architect'].push(designThinking);
+      this.lastAgentOutput['architect'] = designThinking;
       
       // Try to parse the JSON response
       try {
@@ -88,6 +99,8 @@ Format your response as a structured JSON object.`;
       status: 'pending',
       outputFormat: task.outputFormat || 'text',
       context: task.context || [],
+      filename: task.filename || null,
+      codeType: task.codeType || null,
       result: null
     }));
   }
@@ -139,11 +152,33 @@ Format your response as a structured JSON object.`;
         
         task.status = 'in_progress';
         try {
+          // Get previous work from all agents to provide context
+          const allAgentMemory = Object.entries(this.agentMemory)
+            .map(([agentType, memory]) => {
+              if (memory.length > 0) {
+                return `${agentType.toUpperCase()} AGENT PREVIOUSLY SAID:\n${memory[memory.length - 1]}\n\n`;
+              }
+              return '';
+            })
+            .join('\n');
+          
           // Prepare the task execution prompt
           const taskPrompt = `Execute the following task: ${task.description}
           
-Previous context: ${JSON.stringify(task.context)}
+YOU MUST OUTPUT ACTUAL CODE, not just descriptions. Create complete, functional files.
+
+${task.filename ? `Create this specific file: ${task.filename}` : ''}
+${task.codeType ? `Write code in: ${task.codeType}` : ''}
+
+Previous task context: ${JSON.stringify(task.context)}
+
+Here's what other agents have said:
+${allAgentMemory}
+
 Required output format: ${task.outputFormat}
+
+IMPORTANT: Always provide the entire code file with imports and all implementation details. DO NOT just provide code snippets.
+If you're writing React components, include all necessary imports and the full component implementation.
 `;
           
           // Use existing sendAgentPrompt to execute the task
@@ -153,11 +188,29 @@ Required output format: ${task.outputFormat}
             this.project,
             { 
               model: getDefaultModelForAgentType(agent.type),
-              ignoreStatus: true // Bypass status check for orchestration
+              ignoreStatus: true, // Bypass status check for orchestration
+              expectCode: true    // Signal that we expect code
             }
           );
           
+          // Store in agent memory
+          this.agentMemory[agent.type].push(task.result);
+          this.lastAgentOutput[agent.type] = task.result;
+          
           task.status = 'completed';
+          
+          // If this task is creating a code file, try to extract the code and save it
+          if (task.filename) {
+            try {
+              const extractedCode = extractCodeFromResponse(task.result, task.codeType || '');
+              if (extractedCode) {
+                // Save the code file to the database
+                await saveCodeFile(this.project.id, task.filename, extractedCode, agent.type);
+              }
+            } catch (codeError) {
+              console.error(`Failed to extract or save code:`, codeError);
+            }
+          }
           
           // Move from queue to completed
           this.taskQueue = this.taskQueue.filter(t => t.id !== task.id);
@@ -207,6 +260,82 @@ Provide a comprehensive evaluation including:
       }
     );
   }
+  
+  // Get the last output from a specific agent
+  getAgentOutput(agentType: string): string {
+    return this.lastAgentOutput[agentType] || '';
+  }
+}
+
+// Function to extract code from a response
+function extractCodeFromResponse(response: string, codeType: string): string | null {
+  // Try to extract code from markdown code blocks
+  const codeBlockRegex = new RegExp('```(?:' + codeType + ')?([\\s\\S]*?)```', 'g');
+  const matches = [...response.matchAll(codeBlockRegex)];
+  
+  if (matches.length > 0) {
+    // Return the contents of the first code block
+    return matches[0][1].trim();
+  }
+  
+  // If no code blocks found, return null
+  return null;
+}
+
+// Function to save code to the database
+async function saveCodeFile(projectId: string, filePath: string, content: string, createdBy: string): Promise<void> {
+  try {
+    const fileName = filePath.split('/').pop() || filePath;
+    const fileExtension = fileName.split('.').pop() || '';
+    let language = '';
+    
+    // Determine language based on file extension
+    switch (fileExtension.toLowerCase()) {
+      case 'js':
+        language = 'javascript';
+        break;
+      case 'jsx':
+        language = 'jsx';
+        break;
+      case 'ts':
+        language = 'typescript';
+        break;
+      case 'tsx':
+        language = 'tsx';
+        break;
+      case 'css':
+        language = 'css';
+        break;
+      case 'html':
+        language = 'html';
+        break;
+      case 'json':
+        language = 'json';
+        break;
+      default:
+        language = fileExtension;
+    }
+    
+    // Save to database
+    const { error } = await supabase.from('code_files').insert({
+      project_id: projectId,
+      name: fileName,
+      path: filePath,
+      content: content,
+      language: language,
+      created_by: createdBy,
+      last_modified_by: createdBy
+    });
+    
+    if (error) {
+      throw error;
+    }
+    
+    console.log(`Saved code file: ${filePath}`);
+  } catch (error) {
+    console.error('Error saving code file:', error);
+    throw error;
+  }
 }
 
 /**
@@ -237,7 +366,7 @@ export const sendAgentPrompt = async (
     const model = options?.model || getDefaultModelForAgentType(agent.type);
     
     // Enhance the prompt with project context
-    const enhancedPrompt = addProjectContextToPrompt(prompt, project);
+    const enhancedPrompt = addProjectContextToPrompt(prompt, project, options?.expectCode);
     
     const requestPayload = {
       agentType: agent.type,
@@ -249,7 +378,10 @@ export const sendAgentPrompt = async (
         status: project.status,
       },
       model,
-      images: options?.images || []
+      images: options?.images || [],
+      context: options?.context || '',
+      task: options?.task || '',
+      expectCode: options?.expectCode || false
     };
     
     console.log('Request payload to OpenRouter function:', JSON.stringify(requestPayload));
@@ -309,14 +441,29 @@ function getDefaultModelForAgentType(agentType: string): string {
 /**
  * Add project context to a prompt
  */
-function addProjectContextToPrompt(prompt: string, project: Project): string {
-  return `Project: ${project.name}
+function addProjectContextToPrompt(prompt: string, project: Project, expectCode?: boolean): string {
+  let baseContext = `Project: ${project.name}
 Description: ${project.description || 'No description'}
 ${project.tech_stack && project.tech_stack.length > 0 ? `Tech Stack: ${project.tech_stack.join(', ')}` : ''}
 
-IMPORTANT: When asked to create or modify code, you MUST provide complete, functional code files that can be directly used in the project. Don't provide snippets or partial code. Always include imports and full implementation.
+`;
 
-${prompt}`;
+  if (expectCode) {
+    baseContext += `IMPORTANT: I need you to write complete, functional code files. Do not provide explanations or partial snippets.
+1. Start by writing the full code file including all necessary imports
+2. Make sure your code is complete and can be directly used in the project
+3. Integrate with the existing tech stack: ${project.tech_stack?.join(', ') || 'React'}
+4. Provide the entire implementation - no placeholders or TODOs
+5. If you're writing a React component, include all necessary imports and the full component code
+
+`;
+  } else {
+    baseContext += `IMPORTANT: When asked to create or modify code, you MUST provide complete, functional code files that can be directly used in the project. Don't provide snippets or partial code. Always include imports and full implementation.
+
+`;
+  }
+
+  return baseContext + prompt;
 }
 
 /**
@@ -369,3 +516,4 @@ export const orchestrateAgents = async (
     throw error;
   }
 }
+

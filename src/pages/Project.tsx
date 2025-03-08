@@ -232,7 +232,10 @@ const Project: React.FC = () => {
         toast.info(`${agent.name} is analyzing project requirements...`);
         
         const analysisPrompt = `Analyze the requirements for project: ${project.name}\n\n${project.description || ''}\n\n${project.requirements || ''}`;
-        const analysisResult = await sendAgentPrompt(agent, analysisPrompt, project, { ignoreStatus: true });
+        const analysisResult = await sendAgentPrompt(agent, analysisPrompt, project, { 
+          ignoreStatus: true,
+          expectCode: false 
+        });
         
         if (!analysisResult) {
           throw new Error("Failed to analyze requirements");
@@ -254,8 +257,23 @@ const Project: React.FC = () => {
         });
         toast.info(`${agent.name} is designing system architecture...`);
         
-        const designPrompt = `Design the architecture for project: ${project.name} based on these requirements:\n\n${project.description || ''}\n\n${project.requirements || ''}`;
-        const designResult = await sendAgentPrompt(agent, designPrompt, project, { ignoreStatus: true });
+        const designPrompt = `
+Design the architecture for project: ${project.name} based on these requirements:
+${project.description || ''}\n${project.requirements || ''}
+
+Your response should include:
+1. Overall system architecture
+2. Key components and their responsibilities
+3. Data flow between components
+4. Required files to implement with their names and purposes
+5. Technology choices justified by requirements
+
+IMPORTANT: Be very specific about what code files need to be created. For each component, list the exact filename and what it should contain.`;
+
+        const designResult = await sendAgentPrompt(agent, designPrompt, project, { 
+          ignoreStatus: true,
+          expectCode: false
+        });
         
         if (!designResult) {
           throw new Error("Failed to design architecture");
@@ -321,7 +339,7 @@ const Project: React.FC = () => {
             toast.info(`${specializedAgent.name} activated by Architect`);
             
             if (tasks.filter(t => t.agent_id === specializedAgent.id).length === 0) {
-              const agentTasks = getDefaultTasksForAgent(specializedAgent, id);
+              const agentTasks = getCodeTasksForAgent(specializedAgent, id, project);
               
               for (const taskData of agentTasks) {
                 await createTask({
@@ -330,15 +348,24 @@ const Project: React.FC = () => {
                   title: taskData.title,
                   description: taskData.description,
                   status: 'pending',
-                  priority: 'medium'
+                  priority: 'medium',
+                  metadata: taskData.metadata
                 });
               }
             }
             
-            const setupPrompt = `As the ${specializedAgent.type} agent, analyze the project ${project.name} and prepare your initial setup plan. The project description is: ${project.description || ''}`;
+            const setupPrompt = getSpecializedAgentPrompt(specializedAgent.type, project);
             
             try {
-              const setupResult = await sendAgentPrompt(specializedAgent, setupPrompt, project, { ignoreStatus: true });
+              const setupResult = await sendAgentPrompt(
+                specializedAgent, 
+                setupPrompt, 
+                project, 
+                { 
+                  ignoreStatus: true,
+                  expectCode: true
+                }
+              );
               
               if (setupResult) {
                 await createMessage({
@@ -347,6 +374,25 @@ const Project: React.FC = () => {
                   sender: specializedAgent.name,
                   type: "text"
                 });
+                
+                try {
+                  const codeFiles = extractCodeFilesFromResponse(setupResult);
+                  if (codeFiles.length > 0) {
+                    for (const { filename, content, language } of codeFiles) {
+                      await createCodeFile({
+                        project_id: id,
+                        name: filename.split('/').pop() || filename,
+                        path: filename,
+                        content: content,
+                        language: language || 'unknown',
+                        created_by: specializedAgent.type,
+                        last_modified_by: specializedAgent.type
+                      });
+                    }
+                  }
+                } catch (codeError) {
+                  console.error(`Failed to extract code from ${specializedAgent.name}'s response:`, codeError);
+                }
                 
                 updateAgentMutation.mutate({
                   id: specializedAgent.id,
@@ -395,6 +441,7 @@ const Project: React.FC = () => {
           queryClient.invalidateQueries({ queryKey: ['agents', id] });
           queryClient.invalidateQueries({ queryKey: ['tasks', id] });
           queryClient.invalidateQueries({ queryKey: ['messages', id] });
+          queryClient.invalidateQueries({ queryKey: ['files', id] });
         }
       } else {
         updateAgentMutation.mutate({
@@ -425,7 +472,7 @@ const Project: React.FC = () => {
           });
           
           if (tasks.filter(t => t.agent_id === agentId).length === 0) {
-            const agentTasks = getDefaultTasksForAgent(agent, id);
+            const agentTasks = getCodeTasksForAgent(agent, id, project);
             
             for (const taskData of agentTasks) {
               await createTask({
@@ -546,7 +593,17 @@ const Project: React.FC = () => {
         }
       });
       
-      const prompt = `Task: ${task.title}\n\nDescription: ${task.description}\n\nPlease complete this task and provide a detailed solution.`;
+      const filePath = task.metadata?.filePath;
+      const codeType = task.metadata?.codeType;
+      
+      let prompt = `Task: ${task.title}\n\nDescription: ${task.description}\n\n`;
+      
+      if (filePath) {
+        prompt += `Create a complete implementation for this file: ${filePath}\n\n`;
+      }
+      
+      prompt += `Please provide a COMPLETE implementation with ALL necessary imports and code.
+Do not just provide explanations or descriptions - I need the actual code file.`;
       
       console.log(`Sending task to OpenRouter through sendAgentPrompt:`, {
         agent,
@@ -555,7 +612,16 @@ const Project: React.FC = () => {
       });
       
       try {
-        const result = await sendAgentPrompt(agent, prompt, project, { ignoreStatus: true });
+        const result = await sendAgentPrompt(
+          agent, 
+          prompt, 
+          project, 
+          { 
+            ignoreStatus: true,
+            expectCode: true,
+            task: task.title
+          }
+        );
         
         if (!result) {
           throw new Error("Empty response from agent");
@@ -563,10 +629,45 @@ const Project: React.FC = () => {
         
         await createMessage({
           project_id: id,
-          content: result || "Task completed, but no detailed response was provided.",
+          content: result,
           sender: agent.name,
           type: "text"
         });
+        
+        try {
+          const codeFiles = extractCodeFilesFromResponse(result);
+          if (codeFiles.length > 0) {
+            for (const { filename, content, language } of codeFiles) {
+              await createCodeFile({
+                project_id: id,
+                name: filename.split('/').pop() || filename,
+                path: filename || filePath || `${agent.type}/${task.title.toLowerCase().replace(/\s+/g, '-')}.js`,
+                content: content,
+                language: language || codeType || 'unknown',
+                created_by: agent.type,
+                last_modified_by: agent.type
+              });
+            }
+            
+            toast.success(`${agent.name} created ${codeFiles.length} code files`);
+            queryClient.invalidateQueries({ queryKey: ['files', id] });
+          } else if (filePath) {
+            await createCodeFile({
+              project_id: id,
+              name: filePath.split('/').pop() || filePath,
+              path: filePath,
+              content: result,
+              language: codeType || 'unknown',
+              created_by: agent.type,
+              last_modified_by: agent.type
+            });
+            
+            toast.success(`${agent.name} created a code file: ${filePath}`);
+            queryClient.invalidateQueries({ queryKey: ['files', id] });
+          }
+        } catch (codeError) {
+          console.error(`Failed to extract code from ${agent.name}'s response:`, codeError);
+        }
         
         updateTaskMutation.mutate({
           id: taskId,
@@ -767,7 +868,27 @@ const Project: React.FC = () => {
     const loadingToastId = toast.loading(`${agent.name} is thinking...`);
     
     try {
-      const response = await sendAgentPrompt(agent, message, project, { ignoreStatus: true });
+      const agentMessages = messages.filter(m => 
+        m.sender === agent.name || 
+        (m.sender === "You" && messages.findIndex(prev => prev.id === m.id) < messages.length - 1)
+      ).slice(-5);
+      
+      const messageContext = agentMessages.length > 0 
+        ? "Previous messages:\n" + agentMessages.map(m => `${m.sender}: ${m.content.substring(0, 100)}...`).join("\n")
+        : "";
+      
+      const expectCode = messages.filter(m => m.sender === agent.name).length > 0;
+      
+      const response = await sendAgentPrompt(
+        agent, 
+        message, 
+        project, 
+        { 
+          ignoreStatus: true,
+          context: messageContext,
+          expectCode
+        }
+      );
       
       createMessageMutation.mutate({
         project_id: id,
@@ -775,6 +896,34 @@ const Project: React.FC = () => {
         sender: agent.name,
         type: "text"
       });
+      
+      if (expectCode) {
+        try {
+          const codeFiles = extractCodeFilesFromResponse(response);
+          if (codeFiles.length > 0) {
+            for (const { filename, content, language } of codeFiles) {
+              if (filename && content) {
+                await createCodeFile({
+                  project_id: id,
+                  name: filename.split('/').pop() || filename,
+                  path: filename,
+                  content: content,
+                  language: language || 'unknown',
+                  created_by: agent.name,
+                  last_modified_by: agent.name
+                });
+              }
+            }
+            
+            if (codeFiles.length > 0) {
+              toast.success(`${agent.name} created ${codeFiles.length} code files`);
+              queryClient.invalidateQueries({ queryKey: ['files', id] });
+            }
+          }
+        } catch (codeError) {
+          console.error(`Failed to extract code from ${agent.name}'s response:`, codeError);
+        }
+      }
       
       toast.dismiss(loadingToastId);
     } catch (error) {
@@ -789,6 +938,218 @@ const Project: React.FC = () => {
       
       toast.dismiss(loadingToastId);
       toast.error("Failed to get response from agent.");
+    }
+  };
+
+  const getSpecializedAgentPrompt = (agentType: string, project: Project): string => {
+    switch (agentType) {
+      case 'frontend':
+        return `As the frontend agent for the ${project.name} project, create the following React components:
+
+1. A main Game component for ${project.name}
+2. Any necessary UI components for game controls
+3. A component to display the game score and status
+
+For each component, provide the COMPLETE code with ALL necessary imports. I need entire functional code files, not just snippets.
+
+IMPORTANT: Please write out the full implementation for each file, one at a time, with appropriate filenames.`;
+
+      case 'backend':
+        return `As the backend agent for the ${project.name} project, create the following files:
+
+1. Main server setup file
+2. API routes for game state management
+3. Database models for storing game data
+
+For each file, provide the COMPLETE code with ALL necessary imports. I need entire functional code files, not just snippets.
+
+IMPORTANT: Please write out the full implementation for each file, one at a time, with appropriate filenames.`;
+
+      case 'testing':
+        return `As the testing agent for the ${project.name} project, create the following test files:
+
+1. Unit tests for game logic
+2. Integration tests for API endpoints
+3. End-to-end tests for key user flows
+
+For each test file, provide the COMPLETE code with ALL necessary imports. I need entire functional code files, not just snippets.
+
+IMPORTANT: Please write out the full implementation for each file, one at a time, with appropriate filenames.`;
+
+      case 'devops':
+        return `As the devops agent for the ${project.name} project, create the following configuration files:
+
+1. Dockerfile for containerization
+2. CI/CD pipeline configuration
+3. Deployment scripts for Vercel
+
+For each file, provide the COMPLETE code with ALL necessary configurations. I need entire functional files, not just snippets.
+
+IMPORTANT: Please write out the full implementation for each file, one at a time, with appropriate filenames.`;
+
+      default:
+        return `As the ${agentType} agent, analyze the requirements for project ${project.name} and generate the necessary code files.
+
+IMPORTANT: Please write out the full implementation for each file, one at a time, with appropriate filenames.`;
+    }
+  };
+
+  const extractCodeFilesFromResponse = (response: string): Array<{ filename: string; content: string; language: string }> => {
+    const codeFiles: Array<{ filename: string; content: string; language: string }> = [];
+    
+    const codeBlockRegex = /```(?:([\w#]+)\s+)?([\w-./]+)?\s*\n([\s\S]*?)```/g;
+    let match;
+    
+    while ((match = codeBlockRegex.exec(response)) !== null) {
+      const language = match[1] || 'unknown';
+      const filename = match[2] || '';
+      const content = match[3].trim();
+      
+      if (content) {
+        codeFiles.push({ filename, content, language });
+      }
+    }
+    
+    const filenameRegex = /(\w+\.(js|jsx|ts|tsx|html|css))\s*:\s*```(?:\w+)?\s*\n([\s\S]*?)```/g;
+    
+    while ((match = filenameRegex.exec(response)) !== null) {
+      const filename = match[1];
+      const language = match[2];
+      const content = match[3].trim();
+      
+      if (content) {
+        codeFiles.push({ filename, content, language });
+      }
+    }
+    
+    return codeFiles;
+  };
+
+  const getCodeTasksForAgent = (agent: Agent, projectId: string, project: Project): Array<{
+    title: string; 
+    description: string;
+    metadata?: any;
+  }> => {
+    switch (agent.type) {
+      case 'frontend':
+        return [
+          {
+            title: 'Create Game Component',
+            description: `Implement the main Game component for ${project.name} with game board visualization`,
+            metadata: {
+              filePath: 'src/components/Game.jsx',
+              codeType: 'jsx'
+            }
+          },
+          {
+            title: 'Create Controls Component',
+            description: 'Build reusable controls for game interaction',
+            metadata: {
+              filePath: 'src/components/Controls.jsx',
+              codeType: 'jsx'
+            }
+          },
+          {
+            title: 'Implement Game Logic',
+            description: 'Create the core game logic for tetris',
+            metadata: {
+              filePath: 'src/hooks/useGameLogic.js',
+              codeType: 'javascript'
+            }
+          }
+        ];
+      case 'backend':
+        return [
+          {
+            title: 'Create API Routes',
+            description: 'Implement API endpoints for game state management',
+            metadata: {
+              filePath: 'src/api/gameRoutes.js',
+              codeType: 'javascript'
+            }
+          },
+          {
+            title: 'Setup Database Models',
+            description: 'Create database models for game data',
+            metadata: {
+              filePath: 'src/models/GameModel.js',
+              codeType: 'javascript'
+            }
+          },
+          {
+            title: 'Implement Authentication',
+            description: 'Add user authentication for saving scores',
+            metadata: {
+              filePath: 'src/auth/auth.js',
+              codeType: 'javascript'
+            }
+          }
+        ];
+      case 'testing':
+        return [
+          {
+            title: 'Write Game Logic Tests',
+            description: 'Create unit tests for the game logic',
+            metadata: {
+              filePath: 'tests/gameLogic.test.js',
+              codeType: 'javascript'
+            }
+          },
+          {
+            title: 'Create Integration Tests',
+            description: 'Write integration tests for the API endpoints',
+            metadata: {
+              filePath: 'tests/api.test.js',
+              codeType: 'javascript'
+            }
+          },
+          {
+            title: 'Implement E2E Tests',
+            description: 'Build end-to-end tests for key user flows',
+            metadata: {
+              filePath: 'tests/e2e.test.js',
+              codeType: 'javascript'
+            }
+          }
+        ];
+      case 'devops':
+        return [
+          {
+            title: 'Create Dockerfile',
+            description: 'Write a Dockerfile for containerization',
+            metadata: {
+              filePath: 'Dockerfile',
+              codeType: 'docker'
+            }
+          },
+          {
+            title: 'Setup CI/CD Pipeline',
+            description: 'Configure CI/CD pipeline for GitHub Actions',
+            metadata: {
+              filePath: '.github/workflows/ci.yml',
+              codeType: 'yaml'
+            }
+          },
+          {
+            title: 'Configure Vercel Deployment',
+            description: 'Setup Vercel deployment configuration',
+            metadata: {
+              filePath: 'vercel.json',
+              codeType: 'json'
+            }
+          }
+        ];
+      default:
+        return [
+          {
+            title: `${agent.name} task`,
+            description: `Default code-generating task for ${agent.name}.`,
+            metadata: {
+              filePath: `src/${agent.type}/index.js`,
+              codeType: 'javascript'
+            }
+          }
+        ];
     }
   };
 
