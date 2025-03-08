@@ -19,16 +19,23 @@ export interface OpenRouterResponse {
   error?: string;
 }
 
+export interface SendAgentPromptOptions {
+  model?: string;
+  images?: string[];
+}
+
 /**
  * Send a prompt to an agent and get a response via OpenRouter
  */
 export const sendAgentPrompt = async (
   agent: Agent,
   prompt: string,
-  project?: Project
+  project?: Project,
+  options?: SendAgentPromptOptions
 ): Promise<string> => {
   try {
-    console.log(`Sending prompt to ${agent.name} (${agent.type}) agent using google/gemini-2.0-flash-thinking-exp:free model`);
+    const model = options?.model || 'google/gemini-2.0-flash-thinking-exp:free';
+    console.log(`Sending prompt to ${agent.name} (${agent.type}) agent using ${model} model`);
     console.log(`Prompt: ${prompt.substring(0, 100)}...`);
     
     // Prepare detailed project context including GitHub repo if available
@@ -53,14 +60,18 @@ export const sendAgentPrompt = async (
     console.log('Calling OpenRouter function with body:', {
       agentType: agent.type, 
       prompt: enhancedPrompt,
-      projectContext
+      projectContext,
+      model,
+      images: options?.images || []
     });
     
     const { data, error } = await supabase.functions.invoke('openrouter', {
       body: {
         agentType: agent.type,
         prompt: enhancedPrompt,
-        projectContext
+        projectContext,
+        model,
+        images: options?.images || []
       }
     });
 

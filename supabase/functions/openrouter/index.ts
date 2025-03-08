@@ -39,7 +39,7 @@ serve(async (req) => {
       );
     }
 
-    const { prompt, agentType, projectContext = {} } = requestBody;
+    const { prompt, agentType, projectContext = {}, model = 'google/gemini-2.0-flash-thinking-exp:free', images = [] } = requestBody;
     
     if (!prompt) {
       console.error('Prompt is missing from request');
@@ -59,6 +59,8 @@ serve(async (req) => {
     
     console.log(`Processing request for ${agentType} agent with prompt: "${prompt.substring(0, 50)}..."`);
     console.log(`Project context: ${JSON.stringify(projectContext)}`);
+    console.log(`Using model: ${model}`);
+    console.log(`Images included: ${images.length > 0 ? 'Yes' : 'No'}`);
     
     // Different system prompts based on agent type
     const systemPrompts = {
@@ -89,27 +91,51 @@ serve(async (req) => {
       fullSystemPrompt += ` Format your response as a numbered list of specific, actionable tasks. Each task should start with a clear, concise title followed by a brief description of what needs to be done and why it would improve the project.`;
     }
     
-    console.log('Sending request to OpenRouter API with model: google/gemini-2.0-flash-thinking-exp:free');
-    console.log('System prompt:', fullSystemPrompt);
+    console.log(`System prompt: ${fullSystemPrompt}`);
     
     try {
       const openRouterUrl = 'https://openrouter.ai/api/v1/chat/completions';
       console.log(`Making fetch request to: ${openRouterUrl}`);
+      
+      // Create messages array with system prompt
+      const messages = [
+        { role: 'system', content: fullSystemPrompt },
+      ];
+      
+      // Handle text-only or text+image messages
+      if (images && images.length > 0) {
+        // Format as multimodal content array for models that support it
+        const contentArray = [
+          {
+            type: "text",
+            text: prompt
+          },
+          ...images.map(imageUrl => ({
+            type: "image_url",
+            image_url: {
+              url: imageUrl
+            }
+          }))
+        ];
+        
+        messages.push({ role: 'user', content: contentArray });
+        console.log('Using multimodal content format with images');
+      } else {
+        // Simple text-only message
+        messages.push({ role: 'user', content: prompt });
+      }
       
       const response = await fetch(openRouterUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
           'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://lovable.dev', // Replace with your actual domain
+          'HTTP-Referer': 'https://lovable.dev',
           'X-Title': 'Agentic Development Platform',
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.0-flash-thinking-exp:free',
-          messages: [
-            { role: 'system', content: fullSystemPrompt },
-            { role: 'user', content: prompt }
-          ],
+          model: model,
+          messages: messages,
           temperature: 0.7,
           max_tokens: 1024,
         }),
