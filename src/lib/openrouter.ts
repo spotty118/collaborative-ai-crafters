@@ -29,6 +29,7 @@ export const sendAgentPrompt = async (
 ): Promise<string> => {
   try {
     console.log(`Sending prompt to ${agent.name} (${agent.type}) agent using google/gemini-2.0-flash-thinking-exp:free model`);
+    console.log(`Prompt: ${prompt.substring(0, 100)}...`);
     
     // Prepare detailed project context including GitHub repo if available
     const projectContext = project ? {
@@ -89,13 +90,17 @@ export const sendAgentPrompt = async (
           const github = getGitHubService();
           for (const block of codeBlocks) {
             const path = block.path || inferFilePath(block);
-            await github.createOrUpdateFile(
-              path,
-              block.content,
-              `feat: ${agent.name} generated ${path}`
-            );
-            console.log(`Successfully committed ${path} to GitHub`);
-            toast.success(`Created/updated ${path}`);
+            if (path) {
+              await github.createOrUpdateFile(
+                path,
+                block.content,
+                `feat: ${agent.name} generated ${path}`
+              );
+              console.log(`Successfully committed ${path} to GitHub`);
+              toast.success(`Created/updated ${path}`);
+            } else {
+              console.warn('Code block has no path, skipping GitHub commit:', block);
+            }
           }
         } catch (error) {
           if (error instanceof Error && error.message.includes('not initialized')) {

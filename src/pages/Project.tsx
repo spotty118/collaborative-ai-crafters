@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -284,6 +285,8 @@ const Project: React.FC = () => {
     toast.info(`${agent.name} is working on: ${task.title}`);
     
     try {
+      console.log(`Agent ${agent.name} executing task: ${task.title}`);
+      
       updateAgentMutation.mutate({
         id: agentId,
         updates: { 
@@ -293,19 +296,23 @@ const Project: React.FC = () => {
       });
       
       try {
-        const result = await fetch('/api/execute-task', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            taskId,
-            agentId,
-            projectId: id,
-            taskTitle: task.title,
-            taskDescription: task.description,
-            agentType: agent.type
-          }),
+        // Use sendAgentPrompt instead of the non-existent /api/execute-task endpoint
+        const prompt = `Task: ${task.title}\n\nDescription: ${task.description}\n\nPlease complete this task and provide a detailed solution.`;
+        
+        console.log(`Sending task to OpenRouter through sendAgentPrompt:`, {
+          agent,
+          prompt,
+          project
+        });
+        
+        const result = await sendAgentPrompt(agent, prompt, project);
+        
+        // Create a message with the task result
+        await createMessage({
+          project_id: id,
+          content: result,
+          sender: agent.name,
+          type: "text"
         });
         
         updateTaskMutation.mutate({
@@ -324,22 +331,37 @@ const Project: React.FC = () => {
         });
         
         toast.success(`${agent.name} completed: ${task.title}`);
+        
+        // Refresh messages
+        queryClient.invalidateQueries({ queryKey: ['messages', id] });
+        
       } catch (error) {
         console.error('Error executing task:', error);
+        
+        // Create an error message
+        await createMessage({
+          project_id: id,
+          content: `Error completing task: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          sender: agent.name,
+          type: "text"
+        });
+        
         updateTaskMutation.mutate({
           id: taskId,
           updates: { 
-            status: 'completed'
+            status: 'failed'
           }
         });
         
         updateAgentMutation.mutate({
           id: agentId,
           updates: { 
-            status: 'completed',
-            progress: 100
+            status: 'idle',
+            progress: 0
           }
         });
+        
+        toast.error(`${agent.name} failed to complete task: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error executing task:', error);
@@ -347,17 +369,19 @@ const Project: React.FC = () => {
       updateTaskMutation.mutate({
         id: taskId,
         updates: { 
-          status: 'completed'
+          status: 'failed'
         }
       });
       
       updateAgentMutation.mutate({
         id: agentId,
         updates: { 
-          status: 'completed',
-          progress: 100
+          status: 'idle',
+          progress: 0
         }
       });
+      
+      toast.error(`${agent.name} encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
