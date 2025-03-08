@@ -7,7 +7,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SendHorizontal, Play } from "lucide-react";
+import AgentOrchestration from "@/components/agents/AgentOrchestration";
 
 interface DashboardProps {
   agents: Agent[];
@@ -47,6 +49,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   isLoading
 }) => {
   const [chatMessage, setChatMessage] = useState("");
+  const [activeTab, setActiveTab] = useState<string>("communication");
 
   const handleSendMessage = () => {
     if (chatMessage.trim() && activeChat) {
@@ -109,7 +112,16 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Main content */}
       <div className="flex-1 flex flex-col">
-        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-0">
+        <div className="border-b p-2">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid grid-cols-2 w-full max-w-md">
+              <TabsTrigger value="communication">Communication</TabsTrigger>
+              <TabsTrigger value="orchestration">Orchestration</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+        
+        <TabsContent value="communication" className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-0 pt-0">
           {/* Chat section */}
           <div className="border-r flex flex-col">
             <div className="border-b p-4">
@@ -192,7 +204,21 @@ const Dashboard: React.FC<DashboardProps> = ({
               />
             )}
           </div>
-        </div>
+        </TabsContent>
+        
+        <TabsContent value="orchestration" className="flex-1 p-4 pt-0">
+          {/* Orchestration section */}
+          {agents.length > 0 && (
+            <AgentOrchestration 
+              project={{
+                id: typeof project === 'object' && 'id' in project ? project.id : '',
+                name: project.name,
+                description: project.description,
+              }}
+              agents={agents} 
+            />
+          )}
+        </TabsContent>
       </div>
     </div>
   );

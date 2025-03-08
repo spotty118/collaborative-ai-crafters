@@ -1,10 +1,204 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project } from '@/lib/types';
 
 interface SendAgentPromptOptions {
   model?: string;
   images?: string[];
+}
+
+// Agent class for orchestration
+class AgentOrchestrator {
+  private agents: Record<string, Agent> = {};
+  private project: Project;
+  private taskQueue: any[] = [];
+  private completedTasks: any[] = [];
+  private projectPlan: any = null;
+
+  constructor(project: Project, agents: Agent[]) {
+    this.project = project;
+    
+    // Register all agents by their type
+    agents.forEach(agent => {
+      this.agents[agent.type] = agent;
+    });
+  }
+
+  async designProject(projectDescription: string): Promise<any> {
+    if (!this.agents['architect']) {
+      throw new Error('Architect agent is required for project design');
+    }
+
+    const designPrompt = `As the Architect agent, design a project plan for the following:
+    
+${projectDescription}
+
+Create a detailed breakdown of:
+1. Overall architecture and components needed
+2. Specific tasks that need to be accomplished
+3. Dependencies between tasks
+4. What specialized agent should handle each task (choose from: frontend, backend, testing, devops)
+5. Expected outputs for each task
+
+Format your response as a structured JSON object.`;
+
+    try {
+      // Use existing sendAgentPrompt to communicate with OpenRouter
+      const designThinking = await sendAgentPrompt(
+        this.agents['architect'], 
+        designPrompt, 
+        this.project,
+        { model: getDefaultModelForAgentType('architect') }
+      );
+      
+      // Try to parse the JSON response
+      try {
+        // First try parsing directly
+        this.projectPlan = JSON.parse(designThinking);
+      } catch (error) {
+        // If direct parsing fails, try to extract JSON from markdown code blocks
+        const jsonMatch = designThinking.match(/```json([\s\S]*?)```/);
+        if (jsonMatch && jsonMatch[1]) {
+          this.projectPlan = JSON.parse(jsonMatch[1].trim());
+        } else {
+          throw new Error("Architect failed to create a valid project plan");
+        }
+      }
+      
+      // Convert the project plan into actual tasks
+      this.createTasksFromPlan();
+      return this.projectPlan;
+    } catch (error) {
+      console.error("Failed to design project:", error);
+      throw error;
+    }
+  }
+
+  createTasksFromPlan() {
+    if (!this.projectPlan || !this.projectPlan.tasks) {
+      throw new Error("Invalid project plan");
+    }
+
+    this.taskQueue = this.projectPlan.tasks.map((task: any, index: number) => ({
+      id: `task-${index}`,
+      description: task.description,
+      assignedTo: task.assignedTo,
+      dependencies: task.dependencies || [],
+      status: 'pending',
+      outputFormat: task.outputFormat || 'text',
+      context: task.context || [],
+      result: null
+    }));
+  }
+
+  getReadyTasks() {
+    return this.taskQueue.filter((task: any) => {
+      if (task.status !== 'pending') return false;
+      
+      // Check if all dependencies are completed
+      const allDependenciesMet = task.dependencies.every((depId: string) => {
+        const depTask = this.completedTasks.find(t => t.id === depId);
+        return depTask && depTask.status === 'completed';
+      });
+      
+      return allDependenciesMet;
+    });
+  }
+
+  async orchestrate(): Promise<any[]> {
+    while (this.taskQueue.length > 0) {
+      const readyTasks = this.getReadyTasks();
+      
+      if (readyTasks.length === 0) {
+        if (this.taskQueue.some(t => t.status === 'pending')) {
+          throw new Error("Deadlock detected: There are pending tasks but none are ready to execute");
+        }
+        break;
+      }
+      
+      // Process all ready tasks
+      for (const task of readyTasks) {
+        console.log(`Executing task ${task.id}: ${task.description}`);
+        
+        // Update task context with results from dependencies
+        for (const depId of task.dependencies) {
+          const depTask = this.completedTasks.find(t => t.id === depId);
+          if (depTask) {
+            task.context.push({
+              from: depId,
+              result: depTask.result
+            });
+          }
+        }
+        
+        const agent = this.agents[task.assignedTo];
+        if (!agent) {
+          throw new Error(`No agent registered for role: ${task.assignedTo}`);
+        }
+        
+        task.status = 'in_progress';
+        try {
+          // Prepare the task execution prompt
+          const taskPrompt = `Execute the following task: ${task.description}
+          
+Previous context: ${JSON.stringify(task.context)}
+Required output format: ${task.outputFormat}
+`;
+          
+          // Use existing sendAgentPrompt to execute the task
+          task.result = await sendAgentPrompt(
+            agent, 
+            taskPrompt, 
+            this.project,
+            { model: getDefaultModelForAgentType(agent.type) }
+          );
+          
+          task.status = 'completed';
+          
+          // Move from queue to completed
+          this.taskQueue = this.taskQueue.filter(t => t.id !== task.id);
+          this.completedTasks.push(task);
+          
+          console.log(`Completed task ${task.id}`);
+        } catch (error) {
+          task.status = 'failed';
+          task.error = error instanceof Error ? error.message : 'Unknown error';
+          console.error(`Failed task ${task.id}:`, error);
+          
+          this.taskQueue = this.taskQueue.filter(t => t.id !== task.id);
+          this.completedTasks.push(task);
+        }
+      }
+    }
+    
+    return this.completedTasks;
+  }
+
+  async evaluateResults(): Promise<string> {
+    if (!this.agents['architect']) {
+      throw new Error('Architect agent is required for project evaluation');
+    }
+
+    const resultsPrompt = `As the Architect agent, evaluate the results of the project:
+    
+Project Plan: ${JSON.stringify(this.projectPlan)}
+
+Completed Tasks and Results:
+${JSON.stringify(this.completedTasks, null, 2)}
+
+Provide a comprehensive evaluation including:
+1. Overall success of the project
+2. Quality of individual task outputs
+3. Areas for improvement
+4. Recommendations for future iterations
+`;
+
+    return await sendAgentPrompt(
+      this.agents['architect'], 
+      resultsPrompt, 
+      this.project,
+      { model: getDefaultModelForAgentType('architect') }
+    );
+  }
 }
 
 /**
@@ -124,6 +318,46 @@ export const analyzeGitHubAndCreateTasks = async (
   repoUrl: string,
   project: Project
 ): Promise<void> => {
-  // Implement GitHub analysis functionality here
   console.log(`Analyzing GitHub repository: ${repoUrl} for project ${project.id}`);
 };
+
+/**
+ * Orchestrate agents for project execution
+ */
+export const orchestrateAgents = async (
+  project: Project,
+  agents: Agent[],
+  description: string
+): Promise<{
+  projectPlan: any;
+  results: any[];
+  evaluation: string;
+}> => {
+  try {
+    const orchestrator = new AgentOrchestrator(project, agents);
+    
+    // Step 1: Design the project
+    console.log("Architect designing project...");
+    const projectPlan = await orchestrator.designProject(description);
+    console.log("Project plan created:", JSON.stringify(projectPlan, null, 2));
+    
+    // Step 2: Execute the plan
+    console.log("Beginning project execution...");
+    const results = await orchestrator.orchestrate();
+    console.log("Project execution completed");
+    
+    // Step 3: Evaluate results
+    console.log("Evaluating project results...");
+    const evaluation = await orchestrator.evaluateResults();
+    console.log("Evaluation complete");
+    
+    return {
+      projectPlan,
+      results,
+      evaluation
+    };
+  } catch (error) {
+    console.error("Orchestration error:", error);
+    throw error;
+  }
+}
