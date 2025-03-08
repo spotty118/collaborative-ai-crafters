@@ -232,7 +232,7 @@ const Project: React.FC = () => {
         toast.info(`${agent.name} is analyzing project requirements...`);
         
         const analysisPrompt = `Analyze the requirements for project: ${project.name}\n\n${project.description || ''}\n\n${project.requirements || ''}`;
-        const analysisResult = await sendAgentPrompt(agent, analysisPrompt, project);
+        const analysisResult = await sendAgentPrompt(agent, analysisPrompt, project, { ignoreStatus: true });
         
         if (!analysisResult) {
           throw new Error("Failed to analyze requirements");
@@ -255,7 +255,7 @@ const Project: React.FC = () => {
         toast.info(`${agent.name} is designing system architecture...`);
         
         const designPrompt = `Design the architecture for project: ${project.name} based on these requirements:\n\n${project.description || ''}\n\n${project.requirements || ''}`;
-        const designResult = await sendAgentPrompt(agent, designPrompt, project);
+        const designResult = await sendAgentPrompt(agent, designPrompt, project, { ignoreStatus: true });
         
         if (!designResult) {
           throw new Error("Failed to design architecture");
@@ -336,34 +336,48 @@ const Project: React.FC = () => {
             }
             
             const setupPrompt = `As the ${specializedAgent.type} agent, analyze the project ${project.name} and prepare your initial setup plan. The project description is: ${project.description || ''}`;
-            const setupResult = await sendAgentPrompt(specializedAgent, setupPrompt, project);
             
-            if (setupResult) {
-              await createMessage({
-                project_id: id,
-                content: setupResult,
-                sender: specializedAgent.name,
-                type: "text"
-              });
+            try {
+              const setupResult = await sendAgentPrompt(specializedAgent, setupPrompt, project, { ignoreStatus: true });
               
-              updateAgentMutation.mutate({
-                id: specializedAgent.id,
-                updates: {
-                  status: 'working',
-                  progress: 60
-                }
-              });
-              
-              updateAgentMutation.mutate({
-                id: specializedAgent.id,
-                updates: {
-                  status: 'completed',
-                  progress: 100
-                }
-              });
-              
-              toast.success(`${specializedAgent.name} completed initial setup`);
-            } else {
+              if (setupResult) {
+                await createMessage({
+                  project_id: id,
+                  content: setupResult,
+                  sender: specializedAgent.name,
+                  type: "text"
+                });
+                
+                updateAgentMutation.mutate({
+                  id: specializedAgent.id,
+                  updates: {
+                    status: 'working',
+                    progress: 60
+                  }
+                });
+                
+                updateAgentMutation.mutate({
+                  id: specializedAgent.id,
+                  updates: {
+                    status: 'completed',
+                    progress: 100
+                  }
+                });
+                
+                toast.success(`${specializedAgent.name} completed initial setup`);
+              } else {
+                updateAgentMutation.mutate({
+                  id: specializedAgent.id,
+                  updates: {
+                    status: 'failed',
+                    progress: 0
+                  }
+                });
+                
+                toast.error(`${specializedAgent.name} failed to complete setup`);
+              }
+            } catch (error) {
+              console.error(`Error with ${specializedAgent.name}:`, error);
               updateAgentMutation.mutate({
                 id: specializedAgent.id,
                 updates: {
@@ -372,7 +386,7 @@ const Project: React.FC = () => {
                 }
               });
               
-              toast.error(`${specializedAgent.name} failed to complete setup`);
+              toast.error(`${specializedAgent.name} failed to initialize: ${error instanceof Error ? error.message : 'Unknown error'}`);
             }
             
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -392,7 +406,7 @@ const Project: React.FC = () => {
         });
         
         const agentPrompt = `As the ${agent.type} agent for project ${project.name}, analyze the requirements and provide your professional insights. The project description is: ${project.description || ''}`;
-        const agentResult = await sendAgentPrompt(agent, agentPrompt, project);
+        const agentResult = await sendAgentPrompt(agent, agentPrompt, project, { ignoreStatus: true });
         
         if (agentResult) {
           await createMessage({
@@ -541,7 +555,7 @@ const Project: React.FC = () => {
       });
       
       try {
-        const result = await sendAgentPrompt(agent, prompt, project);
+        const result = await sendAgentPrompt(agent, prompt, project, { ignoreStatus: true });
         
         if (!result) {
           throw new Error("Empty response from agent");
@@ -753,7 +767,7 @@ const Project: React.FC = () => {
     const loadingToastId = toast.loading(`${agent.name} is thinking...`);
     
     try {
-      const response = await sendAgentPrompt(agent, message, project);
+      const response = await sendAgentPrompt(agent, message, project, { ignoreStatus: true });
       
       createMessageMutation.mutate({
         project_id: id,

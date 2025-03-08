@@ -5,7 +5,7 @@ import { Agent, Project } from '@/lib/types';
 interface SendAgentPromptOptions {
   model?: string;
   images?: string[];
-  ignoreStatus?: boolean; // New option to bypass status check
+  ignoreStatus?: boolean; // Option to bypass status check
 }
 
 // Agent class for orchestration
