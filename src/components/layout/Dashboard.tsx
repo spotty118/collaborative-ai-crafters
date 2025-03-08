@@ -1,3 +1,4 @@
+
 import React, { useState } from "react";
 import AgentCard from "@/components/agents/AgentCard";
 import TaskList from "@/components/ui/TaskList";
@@ -209,6 +210,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 id: project.id || '',
                 name: project.name,
                 description: project.description,
+                mode: project.mode,
               }}
               agents={agents} 
             />
