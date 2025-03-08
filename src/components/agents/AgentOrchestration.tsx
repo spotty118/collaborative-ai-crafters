@@ -55,6 +55,13 @@ const AgentOrchestration: React.FC<AgentOrchestrationProps> = ({
         setStage('Designing project with Architect agent');
         setProgress(10);
         
+        // Verify that all agents are available
+        const architectAgent = agents.find(a => a.type === 'architect');
+        if (!architectAgent) {
+          throw new Error('Architect agent is required for orchestration');
+        }
+        
+        // Start the orchestration process with agent status check bypass
         orchestrationResults = await orchestrateAgents(project, agents, prompt);
         
       // Edge function orchestration

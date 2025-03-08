@@ -1,9 +1,11 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project } from '@/lib/types';
 
 interface SendAgentPromptOptions {
   model?: string;
   images?: string[];
+  ignoreStatus?: boolean; // New option to bypass status check
 }
 
 // Agent class for orchestration
@@ -47,7 +49,7 @@ Format your response as a structured JSON object.`;
         this.agents['architect'], 
         designPrompt, 
         this.project,
-        { model: getDefaultModelForAgentType('architect') }
+        { model: getDefaultModelForAgentType('architect'), ignoreStatus: true }
       );
       
       // Try to parse the JSON response
@@ -149,7 +151,10 @@ Required output format: ${task.outputFormat}
             agent, 
             taskPrompt, 
             this.project,
-            { model: getDefaultModelForAgentType(agent.type) }
+            { 
+              model: getDefaultModelForAgentType(agent.type),
+              ignoreStatus: true // Bypass status check for orchestration
+            }
           );
           
           task.status = 'completed';
@@ -196,7 +201,10 @@ Provide a comprehensive evaluation including:
       this.agents['architect'], 
       resultsPrompt, 
       this.project,
-      { model: getDefaultModelForAgentType('architect') }
+      { 
+        model: getDefaultModelForAgentType('architect'),
+        ignoreStatus: true // Bypass status check for evaluations
+      }
     );
   }
 }
@@ -206,7 +214,7 @@ Provide a comprehensive evaluation including:
  * @param agent The agent to send the prompt to
  * @param prompt The prompt to send
  * @param project The project context
- * @param options Additional options like model and images
+ * @param options Additional options like model, images, and status check bypass
  * @returns The response from the agent
  */
 export const sendAgentPrompt = async (
@@ -219,8 +227,8 @@ export const sendAgentPrompt = async (
   console.log(`Prompt: ${prompt.substring(0, 100)}...`);
   
   try {
-    // Check if agent is in a stopped state
-    if (agent.status === 'idle') {
+    // Check if agent is in a stopped state, unless ignoreStatus is true
+    if (!options?.ignoreStatus && agent.status === 'idle') {
       console.log(`Agent ${agent.name} is in idle state, stopping the operation`);
       throw new Error(`Agent ${agent.name} has been stopped or is idle. Please restart the agent to continue.`);
     }
