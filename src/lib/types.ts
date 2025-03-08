@@ -6,6 +6,9 @@ export type TaskStatus = "pending" | "in_progress" | "completed" | "failed";
 export type TaskPriority = "low" | "medium" | "high";
 export type MessageType = "text" | "code" | "task" | "error" | "progress" | "notification" | "request" | "response" | "thinking";
 
+// Import Json type from Supabase for proper metadata typing
+import { Json } from "@/integrations/supabase/types";
+
 // Agent-related interfaces
 export interface AgentIdentity {
   id: string;
@@ -32,7 +35,7 @@ export interface Project {
   sourceUrl?: string;
   progress?: number;
   tech_stack?: string[]; // For backward compatibility
-  metadata?: Record<string, any>; // Added metadata field for CrewAI integration
+  metadata?: Json; // Changed from Record<string, any> to Json
   // Additional fields needed based on API usage
   created_at?: string;
   updated_at?: string;
@@ -50,7 +53,7 @@ export interface ProjectDB {
   source_type?: string;
   source_url?: string;
   requirements?: string;
-  metadata?: Record<string, any>; // Added metadata field for CrewAI integration
+  metadata?: Json; // Changed from Record<string, any> to Json
 }
 
 export type AgentType = 'architect' | 'frontend' | 'backend' | 'testing' | 'devops';
@@ -64,7 +67,7 @@ export interface Agent {
   progress?: number;
   project_id?: string;
   avatar?: string;
-  metadata?: Record<string, any>; // Added metadata field for CrewAI integration
+  metadata?: Json; // Changed from Record<string, any> to Json
 }
 
 export interface AgentDB {
@@ -74,7 +77,7 @@ export interface AgentDB {
   description?: string;
   status: AgentStatus;
   progress: number;
-  metadata?: Record<string, any>; // Added metadata field for CrewAI integration
+  metadata?: Json; // Changed from Record<string, any> to Json
 }
 
 export interface GitHubConfig {
@@ -106,7 +109,7 @@ export interface Task {
   created_at?: string;
   completed_at?: string;
   dependencies?: string[];
-  metadata?: Record<string, any>; // Added metadata field for CrewAI integration
+  metadata?: Json; // Changed from Record<string, any> to Json
 }
 
 export interface TaskDB {
@@ -117,7 +120,7 @@ export interface TaskDB {
   assigned_to?: string;
   project_id: string;
   dependencies?: string[];
-  metadata?: Record<string, any>; // Added metadata field for CrewAI integration
+  metadata?: Json; // Changed from Record<string, any> to Json
 }
 
 export interface Message {

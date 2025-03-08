@@ -1,310 +1,306 @@
 
 import { supabase } from "@/integrations/supabase/client";
-import { Agent, Project, Task } from "@/lib/types";
+import {
+  Project, ProjectDB, Agent, AgentDB, Task, TaskDB,
+  AgentType, TaskPriority, TaskStatus, AgentStatus
+} from "@/lib/types";
+import { Json } from "@/integrations/supabase/types";
 
-/**
- * Initialize a project with CrewAI
- * @param projectId The project ID to initialize
- * @returns The initialized project
- */
-export async function initializeProjectWithCrewAI(projectId: string): Promise<Project | null> {
-  try {
-    // Get project details from the database
-    const { data: project, error } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('id', projectId)
-      .single();
-
-    if (error) {
-      console.error('Error fetching project:', error);
-      return null;
-    }
-
-    // Call the CrewAI endpoint to initialize the project
-    const response = await fetch(`${window.location.origin}/api/functions/v1/crew-orchestrator`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'initialize',
-        projectId,
-      }),
-    });
-
-    const result = await response.json();
-    
-    if (!result.success) {
-      console.error('Error initializing project with CrewAI:', result.message);
-      return null;
-    }
-
-    // Update the project with the CrewAI ID
-    const { data: updatedProject, error: updateError } = await supabase
-      .from('projects')
-      .update({
-        metadata: {
-          crewai_id: result.crewId
-        }
-      })
-      .eq('id', projectId)
-      .select()
-      .single();
-
-    if (updateError) {
-      console.error('Error updating project:', updateError);
-      return null;
-    }
-
-    console.log('Project initialized with CrewAI:', updatedProject);
-    return updatedProject;
-  } catch (error) {
-    console.error('Error in initializeProjectWithCrewAI:', error);
-    return null;
+export const getProjectById = async (projectId: string): Promise<Project> => {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*')
+    .eq('id', projectId)
+    .single();
+  
+  if (error) {
+    console.error('Error fetching project:', error);
+    throw error;
   }
-}
-
-/**
- * Create CrewAI agents for a project
- * @param projectId The project ID to create agents for
- * @returns Whether the agents were created successfully
- */
-export async function createCrewAIAgents(projectId: string): Promise<Agent[] | null> {
-  try {
-    const response = await fetch(`${window.location.origin}/api/functions/v1/crew-orchestrator`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'create_crew_agents',
-        projectId,
-      }),
-    });
-
-    const result = await response.json();
-    
-    if (!result.success) {
-      console.error('Error creating CrewAI agents:', result.message);
-      return null;
+  
+  // Transform the database record to the Project type
+  return {
+    id: data.id,
+    name: data.name,
+    description: data.description || '',
+    status: data.status,
+    progress: data.progress || 0,
+    tech_stack: data.tech_stack || [],
+    sourceType: data.source_type,
+    sourceUrl: data.source_url,
+    requirements: data.requirements,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+    metadata: data.metadata,
+    mode: data.source_type ? 'existing' : 'new',
+    techStack: {
+      frontend: data.tech_stack?.[0] || '',
+      backend: data.tech_stack?.[1] || '',
+      database: data.tech_stack?.[2] || '',
+      deployment: data.tech_stack?.[3] || ''
     }
+  };
+};
 
-    // Update the agents in the database with their CrewAI IDs
-    for (const agent of result.agents) {
-      // First, find the agent in our database
-      const { data: ourAgents, error: fetchError } = await supabase
-        .from('agent_statuses')
-        .select('*')
-        .eq('project_id', projectId)
-        .eq('name', agent.name);
-        
-      if (fetchError || !ourAgents || ourAgents.length === 0) {
-        console.error(`Error fetching agent ${agent.name}:`, fetchError);
-        continue;
-      }
-      
-      const ourAgent = ourAgents[0];
-      
-      // Update the agent with the CrewAI ID
-      const { error: updateError } = await supabase
-        .from('agent_statuses')
-        .update({
-          metadata: {
-            crewai_id: agent.id
-          }
-        })
-        .eq('id', ourAgent.id);
-        
-      if (updateError) {
-        console.error(`Error updating agent ${ourAgent.name}:`, updateError);
-      }
-    }
-
-    // Fetch all the agents for the project
-    const { data: agents, error } = await supabase
-      .from('agent_statuses')
-      .select('*')
-      .eq('project_id', projectId);
-      
-    if (error) {
-      console.error('Error fetching agents:', error);
-      return null;
-    }
-    
-    return agents;
-  } catch (error) {
-    console.error('Error in createCrewAIAgents:', error);
-    return null;
+export const updateProjectMetadata = async (projectId: string, metadata: any): Promise<Project> => {
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ metadata })
+    .eq('id', projectId)
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error updating project metadata:', error);
+    throw error;
   }
-}
+  
+  // Transform the database record to the Project type
+  return {
+    id: data.id,
+    name: data.name,
+    description: data.description || '',
+    status: data.status,
+    progress: data.progress || 0,
+    tech_stack: data.tech_stack || [],
+    sourceType: data.source_type,
+    sourceUrl: data.source_url,
+    requirements: data.requirements,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+    metadata: data.metadata,
+    mode: data.source_type ? 'existing' : 'new',
+    techStack: {
+      frontend: data.tech_stack?.[0] || '',
+      backend: data.tech_stack?.[1] || '',
+      database: data.tech_stack?.[2] || '',
+      deployment: data.tech_stack?.[3] || ''
+    }
+  };
+};
 
-/**
- * Start a task with CrewAI
- * @param projectId The project ID
- * @param agentId The agent ID to start
- * @param taskId Optional task ID to assign
- * @returns Whether the task was started successfully
- */
-export async function startCrewAITask(
+export const createAgentWithMetadata = async (
   projectId: string,
-  agentId: string,
-  taskId?: string
-): Promise<boolean> {
-  try {
-    // If there's a task, update it to assign it to the agent
-    if (taskId) {
-      const { error: updateError } = await supabase
-        .from('tasks')
-        .update({
-          assigned_to: agentId,
-          status: 'in_progress',
-          metadata: {
-            start_time: new Date().toISOString()
-          }
-        })
-        .eq('id', taskId);
-        
-      if (updateError) {
-        console.error('Error updating task:', updateError);
-        return false;
-      }
-    }
-
-    // Start the agent through the CrewAI API
-    const response = await fetch(`${window.location.origin}/api/functions/v1/crew-orchestrator`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'start',
-        projectId,
-        agentId,
-        taskId,
-      }),
-    });
-
-    const result = await response.json();
-    
-    if (!result.success) {
-      console.error('Error starting CrewAI task:', result.message);
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Error in startCrewAITask:', error);
-    return false;
+  agentType: AgentType,
+  name: string,
+  description: string,
+  metadata: any
+): Promise<Agent> => {
+  const agentData: AgentDB = {
+    project_id: projectId,
+    agent_type: agentType,
+    name,
+    description,
+    status: 'idle' as AgentStatus,
+    progress: 0,
+    metadata
+  };
+  
+  const { data, error } = await supabase
+    .from('agent_statuses')
+    .insert([agentData])
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error creating agent:', error);
+    throw error;
   }
-}
+  
+  // Transform the database record to the Agent type
+  return {
+    id: data.id,
+    type: data.agent_type as AgentType,
+    name: data.name,
+    description: data.description || '',
+    status: data.status as AgentStatus,
+    progress: data.progress || 0,
+    project_id: data.project_id,
+    metadata: data.metadata,
+    avatar: getAgentAvatar(data.agent_type as AgentType)
+  };
+};
 
-/**
- * Stop a task with CrewAI
- * @param projectId The project ID
- * @param agentId The agent ID to stop
- * @returns Whether the task was stopped successfully
- */
-export async function stopCrewAITask(projectId: string, agentId: string): Promise<boolean> {
-  try {
-    const response = await fetch(`${window.location.origin}/api/functions/v1/crew-orchestrator`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'stop',
-        projectId,
-        agentId,
-      }),
-    });
-
-    const result = await response.json();
-    
-    // Even if there's an error, we want to update our local state
-    // to reflect that the agent is no longer working
-    
-    // Update the agent status
-    const { error: updateError } = await supabase
-      .from('agent_statuses')
-      .update({
-        status: 'idle'
-      })
-      .eq('id', agentId);
-      
-    if (updateError) {
-      console.error('Error updating agent status:', updateError);
-    }
-    
-    if (!result.success) {
-      console.error('Error stopping CrewAI task:', result.message);
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Error in stopCrewAITask:', error);
-    
-    // Even if there's an error, try to update the agent status
-    try {
-      await supabase
-        .from('agent_statuses')
-        .update({
-          status: 'idle'
-        })
-        .eq('id', agentId);
-    } catch (updateError) {
-      console.error('Error updating agent status:', updateError);
-    }
-    
-    return false;
+export const getAgentsByProjectId = async (projectId: string): Promise<Agent[]> => {
+  const { data, error } = await supabase
+    .from('agent_statuses')
+    .select('*')
+    .eq('project_id', projectId);
+  
+  if (error) {
+    console.error('Error fetching agents:', error);
+    throw error;
   }
-}
+  
+  // Transform the database records to Agent types
+  return (data || []).map(agent => ({
+    id: agent.id,
+    type: agent.agent_type as AgentType, // Add type property
+    name: agent.name,
+    description: agent.description || '',
+    status: agent.status as AgentStatus,
+    progress: agent.progress || 0,
+    project_id: agent.project_id,
+    metadata: agent.metadata,
+    avatar: getAgentAvatar(agent.agent_type as AgentType)
+  }));
+};
 
-/**
- * Get the CrewAI ID for a project
- * @param projectId The project ID
- * @returns The CrewAI ID or null
- */
-export async function getCrewAIId(projectId: string): Promise<string | null> {
-  try {
-    const { data, error } = await supabase
-      .from('projects')
-      .select('metadata')
-      .eq('id', projectId)
-      .single();
-      
-    if (error || !data || !data.metadata) {
-      return null;
-    }
-    
-    return data.metadata.crewai_id || null;
-  } catch (error) {
-    console.error('Error in getCrewAIId:', error);
+export const updateAgentMetadata = async (agentId: string, metadata: any): Promise<Agent> => {
+  const { data, error } = await supabase
+    .from('agent_statuses')
+    .update({ metadata })
+    .eq('id', agentId)
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error updating agent metadata:', error);
+    throw error;
+  }
+  
+  // Transform the database record to the Agent type
+  return {
+    id: data.id,
+    type: data.agent_type as AgentType,
+    name: data.name,
+    description: data.description || '',
+    status: data.status as AgentStatus,
+    progress: data.progress || 0,
+    project_id: data.project_id,
+    metadata: data.metadata,
+    avatar: getAgentAvatar(data.agent_type as AgentType)
+  };
+};
+
+export const createTaskWithMetadata = async (
+  projectId: string,
+  title: string,
+  description: string,
+  priority: TaskPriority,
+  assignedTo: string,
+  metadata: any
+): Promise<Task> => {
+  const taskData: TaskDB = {
+    project_id: projectId,
+    title,
+    description,
+    priority,
+    assigned_to: assignedTo,
+    status: 'pending' as TaskStatus,
+    metadata
+  };
+  
+  const { data, error } = await supabase
+    .from('tasks')
+    .insert([taskData])
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error creating task:', error);
+    throw error;
+  }
+  
+  // Transform the database record to the Task type
+  return {
+    id: data.id,
+    title: data.title,
+    description: data.description || '',
+    status: data.status as TaskStatus,
+    assigned_to: data.assigned_to,
+    priority: data.priority as TaskPriority,
+    project_id: data.project_id,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+    completed_at: data.completed_at,
+    dependencies: data.dependencies || [],
+    metadata: data.metadata
+  };
+};
+
+export const updateTaskMetadata = async (taskId: string, metadata: any): Promise<Task> => {
+  const { data, error } = await supabase
+    .from('tasks')
+    .update({ metadata })
+    .eq('id', taskId)
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error updating task metadata:', error);
+    throw error;
+  }
+  
+  // Transform the database record to the Task type
+  return {
+    id: data.id,
+    title: data.title,
+    description: data.description || '',
+    status: data.status as TaskStatus,
+    assigned_to: data.assigned_to,
+    priority: data.priority as TaskPriority,
+    project_id: data.project_id,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+    completed_at: data.completed_at,
+    dependencies: data.dependencies || [],
+    metadata: data.metadata
+  };
+};
+
+// Helper to get the correct crewId from metadata
+export const getCrewId = (metadata: Json): string | null => {
+  if (!metadata) return null;
+  
+  // Check if metadata is an object with a crewai_id property
+  if (typeof metadata === 'object' && metadata !== null && 'crewai_id' in metadata) {
+    return (metadata as any).crewai_id;
+  }
+  
+  return null;
+};
+
+// Helper to get a project's CrewAI ID
+export const getProjectCrewId = async (projectId: string): Promise<string | null> => {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('metadata')
+    .eq('id', projectId)
+    .single();
+  
+  if (error || !data) {
+    console.error('Error fetching project metadata:', error);
     return null;
   }
-}
+  
+  return getCrewId(data.metadata);
+};
 
-/**
- * Get the CrewAI ID for an agent
- * @param agentId The agent ID
- * @returns The CrewAI ID or null
- */
-export async function getAgentCrewAIId(agentId: string): Promise<string | null> {
-  try {
-    const { data, error } = await supabase
-      .from('agent_statuses')
-      .select('metadata')
-      .eq('id', agentId)
-      .single();
-      
-    if (error || !data || !data.metadata) {
-      return null;
-    }
-    
-    return data.metadata.crewai_id || null;
-  } catch (error) {
-    console.error('Error in getAgentCrewAIId:', error);
+// Helper to get an agent's CrewAI ID
+export const getAgentCrewId = async (agentId: string): Promise<string | null> => {
+  const { data, error } = await supabase
+    .from('agent_statuses')
+    .select('metadata')
+    .eq('id', agentId)
+    .single();
+  
+  if (error || !data) {
+    console.error('Error fetching agent metadata:', error);
     return null;
+  }
+  
+  return getCrewId(data.metadata);
+};
+
+// Helper function to get agent avatars
+function getAgentAvatar(agentType: AgentType): string {
+  switch (agentType) {
+    case 'architect': return '👨‍💻';
+    case 'frontend': return '🎨';
+    case 'backend': return '🔧';
+    case 'testing': return '🧪';
+    case 'devops': return '🚀';
+    default: return '🤖';
   }
 }
