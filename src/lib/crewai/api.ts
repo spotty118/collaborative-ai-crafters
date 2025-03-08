@@ -1,317 +1,310 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { Agent, Project, Task } from "@/lib/types";
-import { toast } from "sonner";
-import { crewAIClient, CrewAIAgent, CrewAICrew, CrewAITask } from "./client";
 
-// Function to create a new crew for a project
-export const createCrewForProject = async (project: Project): Promise<string | null> => {
+/**
+ * Initialize a project with CrewAI
+ * @param projectId The project ID to initialize
+ * @returns The initialized project
+ */
+export async function initializeProjectWithCrewAI(projectId: string): Promise<Project | null> {
   try {
-    console.log(`Creating CrewAI crew for project ${project.id}`);
-    
-    // Create the crew via OpenRouter edge function (to avoid CORS)
-    const { data, error } = await supabase.functions.invoke('openrouter', {
-      body: {
-        useCrewAI: true,
-        crewAction: 'create_crew',
-        projectContext: {
-          name: project.name,
-          description: project.description
-        }
-      }
-    });
-    
-    if (error) {
-      console.error("Error creating CrewAI crew:", error);
-      toast.error(`Failed to create CrewAI crew: ${error.message}`);
-      return null;
-    }
-    
-    const crewId = data.id;
-    console.log(`CrewAI crew created with ID: ${crewId}`);
-    
-    // Update project with CrewAI ID
-    const { error: updateError } = await supabase
+    // Get project details from the database
+    const { data: project, error } = await supabase
       .from('projects')
-      .update({ 
-        metadata: { 
-          crewai_id: crewId 
-        }
-      })
-      .eq('id', project.id);
-      
-    if (updateError) {
-      console.error("Error updating project with CrewAI ID:", updateError);
-      toast.error(`Failed to update project with CrewAI ID: ${updateError.message}`);
-    }
-    
-    return crewId;
-  } catch (error) {
-    console.error("Exception creating CrewAI crew:", error);
-    toast.error(`Exception creating CrewAI crew: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    return null;
-  }
-};
+      .select('*')
+      .eq('id', projectId)
+      .single();
 
-// Function to create a CrewAI agent
-export const createCrewAgent = async (
-  crewId: string, 
-  agent: Agent
-): Promise<string | null> => {
-  try {
-    console.log(`Creating CrewAI agent for ${agent.name} in crew ${crewId}`);
-    
-    // Map agent type to role and goal
-    const agentData = getAgentRoleAndGoal(agent.type);
-    
-    // Create the agent via OpenRouter edge function
-    const { data, error } = await supabase.functions.invoke('openrouter', {
-      body: {
-        useCrewAI: true,
-        crewAction: 'create_agent',
-        crewId,
-        agentData: {
-          name: agent.name,
-          role: agentData.role,
-          goal: agentData.goal,
-          backstory: agentData.backstory
-        }
-      }
-    });
-    
     if (error) {
-      console.error("Error creating CrewAI agent:", error);
-      toast.error(`Failed to create CrewAI agent: ${error.message}`);
+      console.error('Error fetching project:', error);
       return null;
     }
+
+    // Call the CrewAI endpoint to initialize the project
+    const response = await fetch(`${window.location.origin}/api/functions/v1/crew-orchestrator`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'initialize',
+        projectId,
+      }),
+    });
+
+    const result = await response.json();
     
-    const crewAgentId = data.id;
-    console.log(`CrewAI agent created with ID: ${crewAgentId}`);
+    if (!result.success) {
+      console.error('Error initializing project with CrewAI:', result.message);
+      return null;
+    }
+
+    // Update the project with the CrewAI ID
+    const { data: updatedProject, error: updateError } = await supabase
+      .from('projects')
+      .update({
+        metadata: {
+          crewai_id: result.crewId
+        }
+      })
+      .eq('id', projectId)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('Error updating project:', updateError);
+      return null;
+    }
+
+    console.log('Project initialized with CrewAI:', updatedProject);
+    return updatedProject;
+  } catch (error) {
+    console.error('Error in initializeProjectWithCrewAI:', error);
+    return null;
+  }
+}
+
+/**
+ * Create CrewAI agents for a project
+ * @param projectId The project ID to create agents for
+ * @returns Whether the agents were created successfully
+ */
+export async function createCrewAIAgents(projectId: string): Promise<Agent[] | null> {
+  try {
+    const response = await fetch(`${window.location.origin}/api/functions/v1/crew-orchestrator`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'create_crew_agents',
+        projectId,
+      }),
+    });
+
+    const result = await response.json();
     
-    // Update agent with CrewAI ID
-    const { error: updateError } = await supabase
+    if (!result.success) {
+      console.error('Error creating CrewAI agents:', result.message);
+      return null;
+    }
+
+    // Update the agents in the database with their CrewAI IDs
+    for (const agent of result.agents) {
+      // First, find the agent in our database
+      const { data: ourAgents, error: fetchError } = await supabase
+        .from('agent_statuses')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('name', agent.name);
+        
+      if (fetchError || !ourAgents || ourAgents.length === 0) {
+        console.error(`Error fetching agent ${agent.name}:`, fetchError);
+        continue;
+      }
+      
+      const ourAgent = ourAgents[0];
+      
+      // Update the agent with the CrewAI ID
+      const { error: updateError } = await supabase
+        .from('agent_statuses')
+        .update({
+          metadata: {
+            crewai_id: agent.id
+          }
+        })
+        .eq('id', ourAgent.id);
+        
+      if (updateError) {
+        console.error(`Error updating agent ${ourAgent.name}:`, updateError);
+      }
+    }
+
+    // Fetch all the agents for the project
+    const { data: agents, error } = await supabase
       .from('agent_statuses')
-      .update({ 
-        metadata: { 
-          crewai_id: crewAgentId 
-        }
-      })
-      .eq('id', agent.id);
+      .select('*')
+      .eq('project_id', projectId);
       
-    if (updateError) {
-      console.error("Error updating agent with CrewAI ID:", updateError);
-      toast.error(`Failed to update agent with CrewAI ID: ${updateError.message}`);
-    }
-    
-    return crewAgentId;
-  } catch (error) {
-    console.error("Exception creating CrewAI agent:", error);
-    toast.error(`Exception creating CrewAI agent: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    return null;
-  }
-};
-
-// Function to create a CrewAI task
-export const createCrewTask = async (
-  crewId: string, 
-  task: Task, 
-  crewAgentId?: string
-): Promise<string | null> => {
-  try {
-    console.log(`Creating CrewAI task in crew ${crewId}${crewAgentId ? ` for agent ${crewAgentId}` : ''}`);
-    
-    // Create the task via OpenRouter edge function
-    const { data, error } = await supabase.functions.invoke('openrouter', {
-      body: {
-        useCrewAI: true,
-        crewAction: 'create_task',
-        crewId,
-        taskData: {
-          description: task.description || task.title,
-          agent_id: crewAgentId
-        }
-      }
-    });
-    
     if (error) {
-      console.error("Error creating CrewAI task:", error);
-      toast.error(`Failed to create CrewAI task: ${error.message}`);
+      console.error('Error fetching agents:', error);
       return null;
     }
     
-    const crewTaskId = data.id;
-    console.log(`CrewAI task created with ID: ${crewTaskId}`);
-    
-    // Update task with CrewAI ID
-    const { error: updateError } = await supabase
-      .from('tasks')
-      .update({ 
-        metadata: { 
-          crewai_id: crewTaskId 
-        }
-      })
-      .eq('id', task.id);
-      
-    if (updateError) {
-      console.error("Error updating task with CrewAI ID:", updateError);
-      toast.error(`Failed to update task with CrewAI ID: ${updateError.message}`);
-    }
-    
-    return crewTaskId;
+    return agents;
   } catch (error) {
-    console.error("Exception creating CrewAI task:", error);
-    toast.error(`Exception creating CrewAI task: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error('Error in createCrewAIAgents:', error);
     return null;
   }
-};
+}
 
-// Function to run a CrewAI crew
-export const runCrewAICrew = async (crewId: string): Promise<boolean> => {
+/**
+ * Start a task with CrewAI
+ * @param projectId The project ID
+ * @param agentId The agent ID to start
+ * @param taskId Optional task ID to assign
+ * @returns Whether the task was started successfully
+ */
+export async function startCrewAITask(
+  projectId: string,
+  agentId: string,
+  taskId?: string
+): Promise<boolean> {
   try {
-    console.log(`Running CrewAI crew ${crewId}`);
-    
-    // Run the crew via OpenRouter edge function
-    const { data, error } = await supabase.functions.invoke('openrouter', {
-      body: {
-        useCrewAI: true,
-        crewAction: 'run_crew',
-        crewId
+    // If there's a task, update it to assign it to the agent
+    if (taskId) {
+      const { error: updateError } = await supabase
+        .from('tasks')
+        .update({
+          assigned_to: agentId,
+          status: 'in_progress',
+          metadata: {
+            start_time: new Date().toISOString()
+          }
+        })
+        .eq('id', taskId);
+        
+      if (updateError) {
+        console.error('Error updating task:', updateError);
+        return false;
       }
+    }
+
+    // Start the agent through the CrewAI API
+    const response = await fetch(`${window.location.origin}/api/functions/v1/crew-orchestrator`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'start',
+        projectId,
+        agentId,
+        taskId,
+      }),
     });
+
+    const result = await response.json();
     
-    if (error) {
-      console.error("Error running CrewAI crew:", error);
-      toast.error(`Failed to run CrewAI crew: ${error.message}`);
+    if (!result.success) {
+      console.error('Error starting CrewAI task:', result.message);
       return false;
     }
-    
-    console.log(`CrewAI crew ${crewId} started successfully`);
+
     return true;
   } catch (error) {
-    console.error("Exception running CrewAI crew:", error);
-    toast.error(`Exception running CrewAI crew: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error('Error in startCrewAITask:', error);
     return false;
   }
-};
+}
 
-// Function to get CrewAI crew status
-export const getCrewStatus = async (crewId: string): Promise<CrewAICrew | null> => {
+/**
+ * Stop a task with CrewAI
+ * @param projectId The project ID
+ * @param agentId The agent ID to stop
+ * @returns Whether the task was stopped successfully
+ */
+export async function stopCrewAITask(projectId: string, agentId: string): Promise<boolean> {
   try {
-    console.log(`Getting status for CrewAI crew ${crewId}`);
-    
-    // Get crew status via OpenRouter edge function
-    const { data, error } = await supabase.functions.invoke('openrouter', {
-      body: {
-        useCrewAI: true,
-        crewAction: 'get_crew',
-        crewId
-      }
+    const response = await fetch(`${window.location.origin}/api/functions/v1/crew-orchestrator`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'stop',
+        projectId,
+        agentId,
+      }),
     });
+
+    const result = await response.json();
     
-    if (error) {
-      console.error("Error getting CrewAI crew status:", error);
+    // Even if there's an error, we want to update our local state
+    // to reflect that the agent is no longer working
+    
+    // Update the agent status
+    const { error: updateError } = await supabase
+      .from('agent_statuses')
+      .update({
+        status: 'idle'
+      })
+      .eq('id', agentId);
+      
+    if (updateError) {
+      console.error('Error updating agent status:', updateError);
+    }
+    
+    if (!result.success) {
+      console.error('Error stopping CrewAI task:', result.message);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error in stopCrewAITask:', error);
+    
+    // Even if there's an error, try to update the agent status
+    try {
+      await supabase
+        .from('agent_statuses')
+        .update({
+          status: 'idle'
+        })
+        .eq('id', agentId);
+    } catch (updateError) {
+      console.error('Error updating agent status:', updateError);
+    }
+    
+    return false;
+  }
+}
+
+/**
+ * Get the CrewAI ID for a project
+ * @param projectId The project ID
+ * @returns The CrewAI ID or null
+ */
+export async function getCrewAIId(projectId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('projects')
+      .select('metadata')
+      .eq('id', projectId)
+      .single();
+      
+    if (error || !data || !data.metadata) {
       return null;
     }
     
-    return data;
+    return data.metadata.crewai_id || null;
   } catch (error) {
-    console.error("Exception getting CrewAI crew status:", error);
+    console.error('Error in getCrewAIId:', error);
     return null;
   }
-};
+}
 
-// Function to get CrewAI agent results
-export const getAgentResults = async (crewId: string, agentId: string): Promise<any | null> => {
+/**
+ * Get the CrewAI ID for an agent
+ * @param agentId The agent ID
+ * @returns The CrewAI ID or null
+ */
+export async function getAgentCrewAIId(agentId: string): Promise<string | null> {
   try {
-    console.log(`Getting results for agent ${agentId} in crew ${crewId}`);
-    
-    // Get agent results via OpenRouter edge function
-    const { data, error } = await supabase.functions.invoke('openrouter', {
-      body: {
-        useCrewAI: true,
-        crewAction: 'get_agent_results',
-        crewId,
-        agentId
-      }
-    });
-    
-    if (error) {
-      console.error("Error getting CrewAI agent results:", error);
+    const { data, error } = await supabase
+      .from('agent_statuses')
+      .select('metadata')
+      .eq('id', agentId)
+      .single();
+      
+    if (error || !data || !data.metadata) {
       return null;
     }
     
-    return data;
+    return data.metadata.crewai_id || null;
   } catch (error) {
-    console.error("Exception getting CrewAI agent results:", error);
+    console.error('Error in getAgentCrewAIId:', error);
     return null;
-  }
-};
-
-// Function to get CrewAI task result
-export const getTaskResult = async (crewId: string, taskId: string): Promise<any | null> => {
-  try {
-    console.log(`Getting results for task ${taskId} in crew ${crewId}`);
-    
-    // Get task result via OpenRouter edge function
-    const { data, error } = await supabase.functions.invoke('openrouter', {
-      body: {
-        useCrewAI: true,
-        crewAction: 'get_task_result',
-        crewId,
-        taskId
-      }
-    });
-    
-    if (error) {
-      console.error("Error getting CrewAI task result:", error);
-      return null;
-    }
-    
-    return data;
-  } catch (error) {
-    console.error("Exception getting CrewAI task result:", error);
-    return null;
-  }
-};
-
-// Utility function to get role and goal for agent types
-function getAgentRoleAndGoal(agentType: string) {
-  switch (agentType) {
-    case 'architect':
-      return {
-        role: 'Software Architect',
-        goal: 'Design the overall system architecture and coordinate the development efforts',
-        backstory: 'You are an experienced software architect with expertise in designing scalable systems. You understand the big picture and can break down complex problems into manageable components.'
-      };
-    case 'frontend':
-      return {
-        role: 'Frontend Developer',
-        goal: 'Implement user interfaces and client-side functionality',
-        backstory: 'You are a frontend developer skilled in creating intuitive and responsive user interfaces. You have a keen eye for design and user experience.'
-      };
-    case 'backend':
-      return {
-        role: 'Backend Developer',
-        goal: 'Build APIs, services, and database models',
-        backstory: 'You are a backend developer with expertise in server-side programming and database design. You know how to create efficient and secure APIs.'
-      };
-    case 'testing':
-      return {
-        role: 'QA Engineer',
-        goal: 'Ensure software quality through comprehensive testing',
-        backstory: 'You are a detail-oriented QA engineer who values software quality. You are skilled at identifying bugs and edge cases.'
-      };
-    case 'devops':
-      return {
-        role: 'DevOps Engineer',
-        goal: 'Set up deployment pipelines and infrastructure',
-        backstory: 'You are a DevOps engineer with expertise in automation, CI/CD, and cloud infrastructure. You ensure smooth deployment and operation of applications.'
-      };
-    default:
-      return {
-        role: 'Software Developer',
-        goal: 'Implement software components based on requirements',
-        backstory: 'You are a skilled software developer with experience in multiple technologies. You can adapt to different challenges and deliver quality code.'
-      };
   }
 }

@@ -1,5 +1,4 @@
 
-// Re-export supabase client from the integrated location
-// This file exists for backward compatibility
-export { supabase } from "@/integrations/supabase/client";
-export * from "@/integrations/supabase/types";
+// Re-export the supabase client from the integrations directory
+// This is to maintain backward compatibility with existing imports
+export { supabase, isSupabaseConnected } from "@/integrations/supabase/client";

@@ -1,3 +1,4 @@
+
 export type ProjectMode = "new" | "existing";
 
 export type AgentStatus = "idle" | "working" | "completed" | "failed" | "waiting" | "running";
@@ -31,6 +32,7 @@ export interface Project {
   sourceUrl?: string;
   progress?: number;
   tech_stack?: string[]; // For backward compatibility
+  metadata?: Record<string, any>; // Added metadata field for CrewAI integration
   // Additional fields needed based on API usage
   created_at?: string;
   updated_at?: string;
@@ -48,6 +50,7 @@ export interface ProjectDB {
   source_type?: string;
   source_url?: string;
   requirements?: string;
+  metadata?: Record<string, any>; // Added metadata field for CrewAI integration
 }
 
 export type AgentType = 'architect' | 'frontend' | 'backend' | 'testing' | 'devops';
@@ -61,6 +64,7 @@ export interface Agent {
   progress?: number;
   project_id?: string;
   avatar?: string;
+  metadata?: Record<string, any>; // Added metadata field for CrewAI integration
 }
 
 export interface AgentDB {
@@ -70,6 +74,7 @@ export interface AgentDB {
   description?: string;
   status: AgentStatus;
   progress: number;
+  metadata?: Record<string, any>; // Added metadata field for CrewAI integration
 }
 
 export interface GitHubConfig {
@@ -101,6 +106,7 @@ export interface Task {
   created_at?: string;
   completed_at?: string;
   dependencies?: string[];
+  metadata?: Record<string, any>; // Added metadata field for CrewAI integration
 }
 
 export interface TaskDB {
@@ -111,6 +117,7 @@ export interface TaskDB {
   assigned_to?: string;
   project_id: string;
   dependencies?: string[];
+  metadata?: Record<string, any>; // Added metadata field for CrewAI integration
 }
 
 export interface Message {
