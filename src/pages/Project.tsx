@@ -265,7 +265,10 @@ const Project: React.FC = () => {
     const task = tasks.find(t => t.id === taskId);
     const agent = agents.find(a => a.id === agentId);
     
-    if (!task || !agent || !id || !project) return;
+    if (!task || !agent || !id || !project) {
+      toast.error("Could not find task, agent, or project details");
+      return;
+    }
     
     updateTaskMutation.mutate({
       id: taskId,
@@ -295,22 +298,27 @@ const Project: React.FC = () => {
         }
       });
       
+      // Prepare the prompt for the agent
+      const prompt = `Task: ${task.title}\n\nDescription: ${task.description}\n\nPlease complete this task and provide a detailed solution.`;
+      
+      console.log(`Sending task to OpenRouter through sendAgentPrompt:`, {
+        agent,
+        prompt,
+        project
+      });
+      
       try {
-        // Use sendAgentPrompt instead of the non-existent /api/execute-task endpoint
-        const prompt = `Task: ${task.title}\n\nDescription: ${task.description}\n\nPlease complete this task and provide a detailed solution.`;
-        
-        console.log(`Sending task to OpenRouter through sendAgentPrompt:`, {
-          agent,
-          prompt,
-          project
-        });
-        
+        // Send the prompt to OpenRouter
         const result = await sendAgentPrompt(agent, prompt, project);
         
-        // Create a message with the task result
+        if (!result) {
+          throw new Error("Empty response from agent");
+        }
+        
+        // Create a message with the task result - ensure all required fields are set
         await createMessage({
           project_id: id,
-          content: result,
+          content: result || "Task completed, but no detailed response was provided.",
           sender: agent.name,
           type: "text"
         });
@@ -338,7 +346,7 @@ const Project: React.FC = () => {
       } catch (error) {
         console.error('Error executing task:', error);
         
-        // Create an error message
+        // Create an error message - ensure all required fields are set
         await createMessage({
           project_id: id,
           content: `Error completing task: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -365,6 +373,21 @@ const Project: React.FC = () => {
       }
     } catch (error) {
       console.error('Error executing task:', error);
+      
+      // Handle top-level errors
+      try {
+        // Create an error message - ensure all required fields are set
+        if (id) {
+          await createMessage({
+            project_id: id,
+            content: `Error executing task: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            sender: agent.name,
+            type: "text"
+          });
+        }
+      } catch (msgError) {
+        console.error('Failed to create error message:', msgError);
+      }
       
       updateTaskMutation.mutate({
         id: taskId,
