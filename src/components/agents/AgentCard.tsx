@@ -5,17 +5,18 @@ import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress";
 import AgentStatus from "./AgentStatus";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, PlayCircle, PauseCircle, StopCircle } from "lucide-react";
+import { MessageSquare, PlayCircle, PauseCircle, StopCircle, RefreshCw } from "lucide-react";
 
 interface AgentCardProps {
   agent: Agent;
   onChat: (agentId: string) => void;
   onStart: (agentId: string) => void;
   onStop: (agentId: string) => void;
+  onRestart?: (agentId: string) => void;
   isActive?: boolean;
 }
 
-const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, isActive = false }) => {
+const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, onRestart, isActive = false }) => {
   const [isHovered, setIsHovered] = useState(false);
 
   const getAgentColorClass = () => {
@@ -70,6 +71,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, i
           <MessageSquare className="mr-1 h-3.5 w-3.5" />
           Chat
         </Button>
+        
         {agent.status === "idle" || agent.status === "failed" ? (
           <Button
             variant="outline"
@@ -85,10 +87,10 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onChat, onStart, onStop, i
             variant="outline"
             size="sm"
             className="flex-1 text-xs text-amber-600 border-amber-200 hover:bg-amber-50"
-            disabled
+            onClick={() => onRestart && onRestart(agent.id)}
           >
-            <StopCircle className="mr-1 h-3.5 w-3.5" />
-            Done
+            <RefreshCw className="mr-1 h-3.5 w-3.5" />
+            Restart
           </Button>
         ) : (
           <Button

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -248,8 +247,72 @@ const Project: React.FC = () => {
         
         queryClient.invalidateQueries({ queryKey: ['tasks', id] });
       }
+
+      if (agent.type === 'architect') {
+        const otherAgents = agents.filter(a => a.type !== 'architect' && a.status === 'idle');
+        
+        if (otherAgents.length > 0) {
+          toast.info("Architect is activating specialized agents...");
+          
+          setTimeout(() => {
+            for (const specializedAgent of otherAgents) {
+              updateAgentMutation.mutate({
+                id: specializedAgent.id,
+                updates: {
+                  status: 'working',
+                  progress: 20
+                }
+              });
+              
+              toast.info(`${specializedAgent.name} activated by Architect`);
+            }
+          }, 1500);
+        }
+      }
     } catch (error) {
       console.error('Error starting agent:', error);
+      updateAgentMutation.mutate({
+        id: agentId,
+        updates: { 
+          status: 'failed',
+          progress: 0
+        }
+      });
+      toast.error(`${agent.name} encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleRestartAgent = async (agentId: string) => {
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent || !id) return;
+    
+    updateAgentMutation.mutate({
+      id: agentId,
+      updates: { 
+        status: 'working',
+        progress: 10
+      }
+    });
+    
+    toast.info(`Restarting ${agent.name}...`);
+    
+    try {
+      console.log(`Agent ${agent.name} restarting work`);
+      
+      setTimeout(() => {
+        updateAgentMutation.mutate({
+          id: agentId,
+          updates: { 
+            status: 'completed',
+            progress: 100
+          }
+        });
+        
+        toast.success(`${agent.name} completed analysis`);
+      }, 1500);
+      
+    } catch (error) {
+      console.error('Error restarting agent:', error);
       updateAgentMutation.mutate({
         id: agentId,
         updates: { 
@@ -298,7 +361,6 @@ const Project: React.FC = () => {
         }
       });
       
-      // Prepare the prompt for the agent
       const prompt = `Task: ${task.title}\n\nDescription: ${task.description}\n\nPlease complete this task and provide a detailed solution.`;
       
       console.log(`Sending task to OpenRouter through sendAgentPrompt:`, {
@@ -308,14 +370,12 @@ const Project: React.FC = () => {
       });
       
       try {
-        // Send the prompt to OpenRouter
         const result = await sendAgentPrompt(agent, prompt, project);
         
         if (!result) {
           throw new Error("Empty response from agent");
         }
         
-        // Create a message with the task result - ensure all required fields are set
         await createMessage({
           project_id: id,
           content: result || "Task completed, but no detailed response was provided.",
@@ -340,13 +400,11 @@ const Project: React.FC = () => {
         
         toast.success(`${agent.name} completed: ${task.title}`);
         
-        // Refresh messages
         queryClient.invalidateQueries({ queryKey: ['messages', id] });
         
       } catch (error) {
         console.error('Error executing task:', error);
         
-        // Create an error message - ensure all required fields are set
         await createMessage({
           project_id: id,
           content: `Error completing task: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -374,9 +432,7 @@ const Project: React.FC = () => {
     } catch (error) {
       console.error('Error executing task:', error);
       
-      // Handle top-level errors
       try {
-        // Create an error message - ensure all required fields are set
         if (id) {
           await createMessage({
             project_id: id,
@@ -662,6 +718,7 @@ const Project: React.FC = () => {
               activeChat={activeChat}
               onStartAgent={handleStartAgent}
               onStopAgent={handleStopAgent}
+              onRestartAgent={handleRestartAgent}
               onChatWithAgent={handleChatWithAgent}
               onSendMessage={handleSendMessage}
               onExecuteTask={handleExecuteTask}
