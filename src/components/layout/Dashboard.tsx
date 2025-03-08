@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import AgentCard from "@/components/agents/AgentCard";
 import TaskList from "@/components/ui/TaskList";
@@ -26,6 +25,7 @@ interface DashboardProps {
     name: string;
     description: string;
     mode: string;
+    id?: string;
   };
   isLoading: {
     agents: boolean;
@@ -65,14 +65,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const filteredMessages = messages.filter(m => 
-    !activeChat || // Show all messages when no agent is selected
-    m.sender === "You" || // Always show user messages
-    m.sender === getActiveAgentName() // Show only selected agent's messages
+    !activeChat || 
+    m.sender === "You" || 
+    m.sender === getActiveAgentName()
   );
 
   return (
     <div className="flex h-[calc(100vh-73px)]">
-      {/* Left sidebar with agents */}
       <div className="w-1/4 border-r bg-gray-50 p-4">
         <h2 className="text-lg font-semibold mb-3">Project</h2>
         <div className="mb-4 bg-white p-3 rounded-md border">
@@ -110,7 +109,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         )}
       </div>
 
-      {/* Main content */}
       <div className="flex-1 flex flex-col">
         <div className="border-b p-2">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -122,7 +120,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
         
         <TabsContent value="communication" className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-0 pt-0">
-          {/* Chat section */}
           <div className="border-r flex flex-col">
             <div className="border-b p-4">
               <h2 className="text-lg font-semibold">
@@ -190,7 +187,6 @@ const Dashboard: React.FC<DashboardProps> = ({
             </div>
           </div>
           
-          {/* Tasks section */}
           <div className="p-4 bg-gray-50 overflow-auto">
             {isLoading.tasks ? (
               <div className="flex justify-center py-8">
@@ -207,11 +203,10 @@ const Dashboard: React.FC<DashboardProps> = ({
         </TabsContent>
         
         <TabsContent value="orchestration" className="flex-1 p-4 pt-0">
-          {/* Orchestration section */}
           {agents.length > 0 && (
             <AgentOrchestration 
               project={{
-                id: typeof project === 'object' && 'id' in project ? project.id : '',
+                id: project.id || '',
                 name: project.name,
                 description: project.description,
               }}
