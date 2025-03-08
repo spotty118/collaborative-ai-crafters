@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, createAgents, updateAgent, createTask, updateTask } from "@/lib/api";
+import { getProject, getAgents, getTasks, getCodeFiles, createMessage, getMessages, createAgents, updateAgent, createTask, updateTask, createCodeFile } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
@@ -593,8 +593,9 @@ IMPORTANT: Be very specific about what code files need to be created. For each c
         }
       });
       
-      const filePath = task.metadata?.filePath;
-      const codeType = task.metadata?.codeType;
+      const metadata = task.metadata || {};
+      const filePath = typeof metadata === 'object' && 'filePath' in metadata ? metadata.filePath : undefined;
+      const codeType = typeof metadata === 'object' && 'codeType' in metadata ? metadata.codeType : undefined;
       
       let prompt = `Task: ${task.title}\n\nDescription: ${task.description}\n\n`;
       
@@ -641,9 +642,9 @@ Do not just provide explanations or descriptions - I need the actual code file.`
               await createCodeFile({
                 project_id: id,
                 name: filename.split('/').pop() || filename,
-                path: filename || filePath || `${agent.type}/${task.title.toLowerCase().replace(/\s+/g, '-')}.js`,
+                path: filename || (filePath as string) || `${agent.type}/${task.title.toLowerCase().replace(/\s+/g, '-')}.js`,
                 content: content,
-                language: language || codeType || 'unknown',
+                language: language || (codeType as string) || 'unknown',
                 created_by: agent.type,
                 last_modified_by: agent.type
               });
@@ -655,9 +656,9 @@ Do not just provide explanations or descriptions - I need the actual code file.`
             await createCodeFile({
               project_id: id,
               name: filePath.split('/').pop() || filePath,
-              path: filePath,
+              path: filePath as string,
               content: result,
-              language: codeType || 'unknown',
+              language: codeType as string || 'unknown',
               created_by: agent.type,
               last_modified_by: agent.type
             });
@@ -941,12 +942,12 @@ Do not just provide explanations or descriptions - I need the actual code file.`
     }
   };
 
-  const getSpecializedAgentPrompt = (agentType: string, project: Project): string => {
+  const getSpecializedAgentPrompt = (agentType: string, projectData: ProjectType): string => {
     switch (agentType) {
       case 'frontend':
-        return `As the frontend agent for the ${project.name} project, create the following React components:
+        return `As the frontend agent for the ${projectData.name} project, create the following React components:
 
-1. A main Game component for ${project.name}
+1. A main Game component for ${projectData.name}
 2. Any necessary UI components for game controls
 3. A component to display the game score and status
 
@@ -955,7 +956,7 @@ For each component, provide the COMPLETE code with ALL necessary imports. I need
 IMPORTANT: Please write out the full implementation for each file, one at a time, with appropriate filenames.`;
 
       case 'backend':
-        return `As the backend agent for the ${project.name} project, create the following files:
+        return `As the backend agent for the ${projectData.name} project, create the following files:
 
 1. Main server setup file
 2. API routes for game state management
@@ -966,7 +967,7 @@ For each file, provide the COMPLETE code with ALL necessary imports. I need enti
 IMPORTANT: Please write out the full implementation for each file, one at a time, with appropriate filenames.`;
 
       case 'testing':
-        return `As the testing agent for the ${project.name} project, create the following test files:
+        return `As the testing agent for the ${projectData.name} project, create the following test files:
 
 1. Unit tests for game logic
 2. Integration tests for API endpoints
@@ -977,7 +978,7 @@ For each test file, provide the COMPLETE code with ALL necessary imports. I need
 IMPORTANT: Please write out the full implementation for each file, one at a time, with appropriate filenames.`;
 
       case 'devops':
-        return `As the devops agent for the ${project.name} project, create the following configuration files:
+        return `As the devops agent for the ${projectData.name} project, create the following configuration files:
 
 1. Dockerfile for containerization
 2. CI/CD pipeline configuration
@@ -988,7 +989,7 @@ For each file, provide the COMPLETE code with ALL necessary configurations. I ne
 IMPORTANT: Please write out the full implementation for each file, one at a time, with appropriate filenames.`;
 
       default:
-        return `As the ${agentType} agent, analyze the requirements for project ${project.name} and generate the necessary code files.
+        return `As the ${agentType} agent, analyze the requirements for project ${projectData.name} and generate the necessary code files.
 
 IMPORTANT: Please write out the full implementation for each file, one at a time, with appropriate filenames.`;
     }
@@ -1025,7 +1026,7 @@ IMPORTANT: Please write out the full implementation for each file, one at a time
     return codeFiles;
   };
 
-  const getCodeTasksForAgent = (agent: Agent, projectId: string, project: Project): Array<{
+  const getCodeTasksForAgent = (agent: Agent, projectId: string, projectData: ProjectType): Array<{
     title: string; 
     description: string;
     metadata?: any;
@@ -1035,7 +1036,7 @@ IMPORTANT: Please write out the full implementation for each file, one at a time
         return [
           {
             title: 'Create Game Component',
-            description: `Implement the main Game component for ${project.name} with game board visualization`,
+            description: `Implement the main Game component for ${projectData.name} with game board visualization`,
             metadata: {
               filePath: 'src/components/Game.jsx',
               codeType: 'jsx'
@@ -1360,3 +1361,4 @@ IMPORTANT: Please write out the full implementation for each file, one at a time
 };
 
 export default Project;
+
