@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -289,7 +288,7 @@ const ProjectPage: React.FC = () => {
     );
   }
 
-  // Use the new DashboardUI by default, with option to toggle back to legacy view
+  // Use the new DashboardUI by default, with option to toggle to legacy view
   return (
     <>
       <div className="p-2 bg-gray-100 border-b flex justify-end">
