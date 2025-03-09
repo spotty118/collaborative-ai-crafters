@@ -146,8 +146,8 @@ Format your response as a structured JSON object.`;
       // Create OpenRouter instance
       const openRouter = new OpenRouter({ apiKey });
       
-      // Make API call - corrected method call based on OpenRouter SDK
-      const response = await openRouter.generateText({
+      // Make API call - use the completions.create method from the OpenRouter SDK
+      const response = await openRouter.completions.create({
         model: model,
         messages: messages,
         temperature: 0.3,
@@ -464,8 +464,8 @@ export const sendAgentPrompt = async (
         // Initialize the OpenRouter client with API key
         const openRouter = new OpenRouter({ apiKey });
         
-        // Call OpenRouter API using the generateText method
-        const completion = await openRouter.generateText({
+        // Call OpenRouter API using the correct method for the SDK
+        const completion = await openRouter.completions.create({
           model: model,
           messages: messages,
           temperature: 0.3,

@@ -26,8 +26,8 @@ const OpenRouterTester = () => {
       // Initialize the OpenRouter client with the API key
       const openRouter = new OpenRouter({ apiKey });
       
-      // Call the API with the correct method
-      const completion = await openRouter.generateText({
+      // Call the API with the correct method for the SDK
+      const completion = await openRouter.completions.create({
         model: 'anthropic/claude-3-opus:thinking',
         messages: [
           { role: 'user', content: prompt }
