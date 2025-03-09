@@ -23,6 +23,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/project/:projectId" element={<Project />} />
             <Route path="/sdk-dashboard" element={<SDKDashboard />} />
+            <Route path="/sdk/:view?" element={<SDKDashboard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Toaster } from 'sonner';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import SDKDashboardLayout from '@/components/sdk-dashboard/SDKDashboardLayout';
 import AgentsView from '@/components/sdk-dashboard/views/AgentsView';
 import TasksView from '@/components/sdk-dashboard/views/TasksView';
@@ -15,18 +15,22 @@ import { useOpenRouterSDK } from '@/hooks/useOpenRouterSDK';
 
 const SDKDashboard: React.FC = () => {
   const { view } = useParams<{ view?: string }>();
-  const [activeView, setActiveView] = useState<string>(view || 'dashboard');
+  const location = useLocation();
+  const [activeView, setActiveView] = useState<string>('dashboard');
   const navigate = useNavigate();
+  
+  useEffect(() => {
+    // Initialize with the view from URL params or from the path for backward compatibility
+    if (view) {
+      setActiveView(view);
+    } else if (location.pathname === '/sdk-dashboard') {
+      setActiveView('dashboard');
+    }
+  }, [view, location.pathname]);
+
   const { isApiKeySet, isChecking } = useOpenRouterSDK({ 
     redirectToSettingsIfNoApiKey: activeView !== 'settings' 
   });
-
-  useEffect(() => {
-    // Update active view based on route parameter
-    if (view) {
-      setActiveView(view);
-    }
-  }, [view]);
 
   const handleViewChange = (newView: string) => {
     setActiveView(newView);
