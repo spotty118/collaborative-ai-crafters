@@ -26,9 +26,7 @@ class AgentOrchestrator {
     // Initialize OpenRouter client if API key is available
     const apiKey = getOpenRouterApiKey();
     if (apiKey) {
-      this.openrouterClient = new OpenRouter({
-        apiKey: apiKey
-      });
+      this.openrouterClient = new OpenRouter({ apiKey });
     }
   }
 
@@ -415,9 +413,7 @@ export const sendAgentPrompt = async (
       try {
         console.log('Using OpenRouter SDK directly');
         
-        const openrouter = new OpenRouter({
-          apiKey: apiKey
-        });
+        const openrouter = new OpenRouter({ apiKey });
         
         // Construct messages for OpenRouter
         const messages = [];

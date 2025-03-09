@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -9,7 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { OPENROUTER_API_KEY } from '@/lib/env';
+import { hasOpenRouterApiKey } from '@/lib/env';
 import {
   Card,
   CardContent,
@@ -67,7 +66,7 @@ const AgentOrchestration: React.FC<AgentOrchestrationProps> = ({
         
       // Direct SDK orchestration with OpenRouter SDK
       } else if (orchestrationMethod === 'sdk') {
-        if (!OPENROUTER_API_KEY) {
+        if (!hasOpenRouterApiKey()) {
           throw new Error('OpenRouter API key is required for SDK orchestration');
         }
         
@@ -153,8 +152,8 @@ const AgentOrchestration: React.FC<AgentOrchestrationProps> = ({
                   size="sm" 
                   variant={orchestrationMethod === 'sdk' ? 'default' : 'outline'}
                   onClick={() => setOrchestrationMethod('sdk')}
-                  disabled={isOrchestrating || !OPENROUTER_API_KEY}
-                  title={!OPENROUTER_API_KEY ? "OpenRouter API key not available" : ""}
+                  disabled={isOrchestrating || !hasOpenRouterApiKey()}
+                  title={!hasOpenRouterApiKey() ? "OpenRouter API key not available" : ""}
                 >
                   OpenRouter SDK
                 </Button>
@@ -181,7 +180,7 @@ const AgentOrchestration: React.FC<AgentOrchestrationProps> = ({
           
           <Button 
             onClick={runOrchestration} 
-            disabled={isOrchestrating || !prompt.trim() || (orchestrationMethod === 'sdk' && !OPENROUTER_API_KEY)}
+            disabled={isOrchestrating || !prompt.trim() || (orchestrationMethod === 'sdk' && !hasOpenRouterApiKey())}
             className="w-full"
           >
             {isOrchestrating ? "Orchestrating..." : "Start Agent Orchestration"}
