@@ -1,5 +1,7 @@
+
 import { corsHeaders } from '../_shared/cors.ts'
-import OpenRouter from 'npm:openrouter-sdk';
+// Using direct import for Deno
+import openRouterSdk from 'npm:openrouter-sdk';
 
 // Define console.log to use Deno.stderr logic
 console.log = function() {
@@ -50,7 +52,7 @@ Deno.serve(async (req) => {
     console.log(`Using model: ${model}`);
     
     // Initialize the OpenRouter client
-    const openRouter = OpenRouter({
+    const openRouter = openRouterSdk({
       apiKey: openrouterApiKey,
       baseURL: 'https://openrouter.ai/api/v1',
       defaultHeaders: {
