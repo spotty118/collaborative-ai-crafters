@@ -1,3 +1,4 @@
+
 import { corsHeaders } from '../_shared/cors.ts'
 // Using the correct import for Deno
 import { OpenRouter } from 'npm:openrouter-sdk';
@@ -53,7 +54,7 @@ Deno.serve(async (req) => {
     // Initialize the OpenRouter client
     const openRouter = new OpenRouter({
       apiKey: openrouterApiKey,
-      baseURL: 'https://openrouter.ai/api/v1',
+      baseUrl: 'https://openrouter.ai/api/v1',
       defaultHeaders: {
         'HTTP-Referer': 'https://agent-platform-app.vercel.app', // Replace with your actual domain
         'X-Title': 'Agent Platform'

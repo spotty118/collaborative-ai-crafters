@@ -20,7 +20,7 @@ export class OpenRouterClient {
   private initClient() {
     this.openRouter = new OpenRouter({
       apiKey: this.apiKey,
-      baseURL: 'https://openrouter.ai/api/v1',
+      baseUrl: 'https://openrouter.ai/api/v1',
       defaultHeaders: {
         'HTTP-Referer': window.location.origin,
         'X-Title': 'Agent Platform'
