@@ -1,11 +1,10 @@
 
-import { embed } from 'chromadb-default-embed';
 import { supabase } from '@/integrations/supabase/client';
 
 export interface EmbeddingRecord {
   id?: string;
   content: string;
-  embedding: string; // Changed from number[] to string to match Supabase's vector type
+  embedding: string; // Stored as string to match Supabase's vector type
   metadata?: Record<string, any>;
   project_id: string;
   created_at?: string;
@@ -24,17 +23,26 @@ export interface SearchResult {
  */
 export class VectorDatabase {
   /**
-   * Generate an embedding for text content
+   * Generate a simple embedding for text content
    * @param text The text to generate an embedding for
    * @returns A vector embedding (array of floats)
    */
   static async generateEmbedding(text: string): Promise<number[]> {
     try {
-      // Use the named export 'embed' from chromadb-default-embed
-      const embedding = await embed(text);
+      // Create a simple embedding vector based on the text
+      // This is a simplified approach - in production you would use a proper embedding model
+      const embedding = new Array(1536).fill(0);
+      const textEncoder = new TextEncoder();
+      const encoded = textEncoder.encode(text);
+      
+      // Create a deterministic embedding based on character codes
+      for (let i = 0; i < encoded.length; i++) {
+        embedding[i % 1536] = encoded[i] / 255;
+      }
+      
       return embedding;
     } catch (error) {
-      console.error('Error generating embedding:', error);
+      console.error('Error generating simple embedding:', error);
       throw new Error('Failed to generate embedding');
     }
   }

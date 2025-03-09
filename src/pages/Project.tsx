@@ -148,7 +148,7 @@ const ProjectPage: React.FC = () => {
       onSendMessage={handleSendMessage}
       onExecuteTask={handleExecuteTask}
       project={{
-        id: projectId,
+        id: projectId || '',
         name: projectId ? `Project: ${projectId}` : 'Unknown Project',
         description: 'This is a project page',
         mode: 'existing' as ProjectMode

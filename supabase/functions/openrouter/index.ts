@@ -1,4 +1,3 @@
-
 import { corsHeaders } from '../_shared/cors.ts'
 // Using the correct import for Deno
 import { OpenRouter } from 'npm:openrouter-sdk';
@@ -205,18 +204,15 @@ Deno.serve(async (req) => {
  */
 async function generateEmbedding(text: string): Promise<number[]> {
   try {
-    // For this implementation, we'll use a simple hashing approach
-    // In a production environment, you'd want to use a proper embedding model
-    // or call an external API like OpenAI's embedding endpoint
-    
-    // Create a basic embedding with 1536 dimensions
+    // Create a simple embedding vector based on the text
+    // This is a simplified approach for demonstration - in production use a proper embedding model
     const embedding: number[] = new Array(1536).fill(0);
     
-    // Simple hashing to generate pseudo-embeddings
-    // This is only for demonstration and should be replaced with a real embedding API
-    const hash = new TextEncoder().encode(text);
-    for (let i = 0; i < hash.length; i++) {
-      embedding[i % 1536] = hash[i] / 255;
+    // Create a deterministic embedding based on character codes
+    const encoder = new TextEncoder();
+    const encoded = encoder.encode(text);
+    for (let i = 0; i < encoded.length; i++) {
+      embedding[i % 1536] = encoded[i] / 255;
     }
     
     return embedding;
