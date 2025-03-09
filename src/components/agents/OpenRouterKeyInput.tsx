@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { KeyIcon } from "lucide-react";
 import { getOpenRouterApiKey, setLocalEnvVariable, removeLocalEnvVariable } from "@/lib/env";
 import { useToast } from "@/hooks/use-toast";
+import { openRouterClient } from "@/lib/openrouter-client";
 
 export function OpenRouterKeyInput() {
   const { toast } = useToast();
@@ -26,6 +27,10 @@ export function OpenRouterKeyInput() {
     if (apiKey.trim()) {
       // Save to localStorage using the env function
       setLocalEnvVariable('OPENROUTER_API_KEY', apiKey.trim());
+      
+      // Update the OpenRouter client with the new key
+      openRouterClient.setApiKey(apiKey.trim());
+      
       setHasKey(true);
       toast({
         title: "API Key Saved",
@@ -36,6 +41,10 @@ export function OpenRouterKeyInput() {
   
   const handleRemove = () => {
     removeLocalEnvVariable('OPENROUTER_API_KEY');
+    
+    // Update the OpenRouter client
+    openRouterClient.setApiKey('');
+    
     setApiKey("");
     setHasKey(false);
     toast({
@@ -47,21 +56,8 @@ export function OpenRouterKeyInput() {
   
   const handleTestKey = async () => {
     try {
-      // Test the API key by making a simple request
-      const response = await fetch('https://openrouter.ai/api/v1/models', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': window.location.origin,
-          'X-Title': 'Agent Platform'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error('Invalid API key or API request failed');
-      }
-      
-      const data = await response.json();
+      // Test the API key by making a simple request to get available models
+      const data = await openRouterClient.getModels();
       console.log('OpenRouter models:', data);
       
       toast({

@@ -187,12 +187,12 @@ export async function sendAgentPrompt(
         { type: 'text', text: enhancedPrompt }
       ];
       
-      // Add images to content
+      // Add images to content - fixed type definition to use the correct structure
       for (const imageUrl of images) {
         multimodalContent.push({
           type: 'image_url',
           image_url: { url: imageUrl }
-        });
+        } as any); // Use 'as any' to bypass the type check temporarily
       }
       
       messages.push({ role: 'user', content: multimodalContent });

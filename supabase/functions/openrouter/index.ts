@@ -1,6 +1,5 @@
 
 import { corsHeaders } from '../_shared/cors.ts'
-import OpenRouter from 'npm:openrouter';
 
 // Define console.log to use Deno.stderr logic
 console.log = function() {
