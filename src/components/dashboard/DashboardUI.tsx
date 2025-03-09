@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Monitor, User, CheckSquare, GitBranch, Database, Code, Settings, Plus, Play, Edit, Trash, Search, BarChart, RefreshCw, Key } from 'lucide-react';
 import { Agent, Task, AgentStatus, TaskStatus } from '@/lib/types';
@@ -29,11 +28,6 @@ interface DashboardUIProps {
   onExecuteTask?: (taskId: string, agentId: string) => void;
 }
 
-// Small Spinner component for loading states
-const Spinner: React.FC = () => (
-  <div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-);
-
 const DashboardUI: React.FC<DashboardUIProps> = ({
   agents = [],
   tasks = [],
@@ -63,7 +57,6 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
     { id: 'settings', name: 'Settings', icon: <Settings size={18} /> },
   ];
   
-  // Sample data for tabs that aren't yet connected to real data
   const workflows = [
     {
       id: 'workflow-1',
@@ -115,7 +108,6 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
     }
   ];
   
-  // Function to format date
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { 
@@ -127,7 +119,6 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
     });
   };
 
-  // Function to handle API key saving
   const handleSaveApiKey = async () => {
     if (!apiKey) {
       toast.error('Please enter an API key');
@@ -136,13 +127,11 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
     
     setIsSavingApiKey(true);
     try {
-      // Save the API key
       const success = setOpenRouterApiKey(apiKey);
       
       if (success) {
         toast.success('API key saved successfully');
         openRouterClient.setApiKey(apiKey);
-        // Fetch models after setting the API key
         await fetchModels();
         setApiKeyDialogOpen(false);
       } else {
@@ -156,13 +145,11 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
     }
   };
 
-  // Function to handle agent execution
   const handleExecuteAgent = async (agent: Agent) => {
     setSelectedAgent(agent);
     setExecuteDialogOpen(true);
   };
 
-  // Function to submit agent execution
   const handleSubmitExecution = async () => {
     if (!selectedAgent || !executePrompt) {
       toast.error('Please provide a prompt for the agent');
@@ -181,7 +168,6 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
       setExecuteDialogOpen(false);
       setExecutePrompt('');
       
-      // Show response in a dialog or toast
       toast(
         <div className="max-w-md">
           <h3 className="font-bold">Agent Response</h3>
@@ -197,7 +183,6 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
     }
   };
   
-  // Status badge component
   const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
     let bgColor = '';
     let textColor = '';
@@ -235,7 +220,6 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
     );
   };
   
-  // Progress bar component
   const ProgressBar: React.FC<ProgressBarProps> = ({ progress }) => {
     return (
       <div className="w-full bg-gray-200 rounded-full h-2.5">
@@ -247,7 +231,6 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
     );
   };
   
-  // Map agent data to the format expected by this UI
   const mappedAgents = agents.map(agent => ({
     id: agent.id,
     name: agent.name,
@@ -256,7 +239,6 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
     status: agent.status || 'idle'
   }));
   
-  // Map task data to the format expected by this UI
   const mappedTasks = tasks.map(task => ({
     id: task.id || '',
     name: task.title || '', 
@@ -267,7 +249,6 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
   
   return (
     <div className="flex h-[calc(100vh-73px)] bg-gray-50">
-      {/* Sidebar */}
       <div className="w-64 bg-white shadow-md">
         <div className="px-6 py-4 border-b border-gray-200">
           <h1 className="text-xl font-bold text-gray-800">OpenRouter SDK</h1>
@@ -290,11 +271,9 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
         </div>
       </div>
       
-      {/* Main Content */}
       <div className="flex-1 overflow-y-auto">
         <div className="px-8 py-6">
           
-          {/* Agents Tab */}
           {activeTab === 'agents' && (
             <div>
               <div className="flex justify-between items-center mb-6">
@@ -387,7 +366,6 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
             </div>
           )}
           
-          {/* Tasks Tab */}
           {activeTab === 'tasks' && (
             <div>
               <div className="flex justify-between items-center mb-6">
@@ -468,7 +446,6 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
             </div>
           )}
           
-          {/* Workflows Tab */}
           {activeTab === 'workflows' && (
             <div>
               <div className="flex justify-between items-center mb-6">
@@ -515,7 +492,6 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
             </div>
           )}
           
-          {/* Knowledge Bases Tab */}
           {activeTab === 'knowledge' && (
             <div>
               <div className="flex justify-between items-center mb-6">
@@ -560,7 +536,6 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
             </div>
           )}
           
-          {/* Functions Tab */}
           {activeTab === 'functions' && (
             <div>
               <div className="flex justify-between items-center mb-6">
@@ -626,7 +601,6 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
             </div>
           )}
           
-          {/* Dashboard Tab */}
           {activeTab === 'dashboard' && (
             <div>
               <h2 className="text-2xl font-bold text-gray-800 mb-6">Dashboard</h2>
@@ -793,7 +767,6 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
             </div>
           )}
           
-          {/* Settings Tab */}
           {activeTab === 'settings' && (
             <div>
               <h2 className="text-2xl font-bold text-gray-800 mb-6">Settings</h2>
@@ -842,7 +815,7 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                     onClick={handleSaveApiKey}
                     disabled={isSavingApiKey}
                   >
-                    {isSavingApiKey ? <Spinner /> : 'Save Settings'}
+                    {isSavingApiKey ? <Spinner size="sm" /> : 'Save Settings'}
                   </Button>
                 </div>
               </div>
@@ -851,7 +824,6 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
         </div>
       </div>
       
-      {/* API Key Dialog */}
       <Dialog open={apiKeyDialogOpen} onOpenChange={setApiKeyDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -872,13 +844,12 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
           <DialogFooter>
             <Button variant="outline" onClick={() => setApiKeyDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSaveApiKey} disabled={isSavingApiKey}>
-              {isSavingApiKey ? <Spinner /> : 'Save API Key'}
+              {isSavingApiKey ? <Spinner size="sm" /> : 'Save API Key'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
       
-      {/* Execute Agent Dialog */}
       <Dialog open={executeDialogOpen} onOpenChange={setExecuteDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -898,7 +869,7 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
           <DialogFooter>
             <Button variant="outline" onClick={() => setExecuteDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSubmitExecution} disabled={isExecuting || !executePrompt}>
-              {isExecuting ? <Spinner /> : 'Execute'}
+              {isExecuting ? <Spinner size="sm" /> : 'Execute'}
             </Button>
           </DialogFooter>
         </DialogContent>
