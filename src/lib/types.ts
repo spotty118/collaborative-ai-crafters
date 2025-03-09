@@ -1,4 +1,3 @@
-
 import { Json } from '@/integrations/supabase/types';
 
 export type ProjectMode = "new" | "existing";
@@ -140,3 +139,14 @@ export type MessageDB = Message;
 export type CodeFileDB = Omit<CodeFile, 'id'> & {
   id?: string; // Optional for inserts
 };
+
+// Add the SendAgentPromptOptions interface to the exported types
+export interface SendAgentPromptOptions {
+  model?: string;
+  images?: string[];
+  ignoreStatus?: boolean; // Option to bypass status check
+  context?: string; // Additional context from other agents
+  task?: string; // Specific task information
+  expectCode?: boolean; // Signal that code output is expected
+  useDirectSdk?: boolean; // Signal to use the SDK directly instead of edge function
+}

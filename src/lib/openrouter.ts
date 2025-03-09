@@ -1,6 +1,6 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project } from '@/lib/types';
+import { OpenRouter } from 'openrouter-sdk';
 
 interface SendAgentPromptOptions {
   model?: string;
@@ -368,6 +368,79 @@ export const sendAgentPrompt = async (
     // Enhance the prompt with project context
     const enhancedPrompt = addProjectContextToPrompt(prompt, project, options?.expectCode);
     
+    // If using direct SDK approach without going through edge function
+    if (options?.useDirectSdk && process.env.OPENROUTER_API_KEY) {
+      try {
+        console.log('Using direct SDK approach with OpenRouter');
+        
+        const openrouter = new OpenRouter({
+          apiKey: process.env.OPENROUTER_API_KEY,
+          baseUrl: 'https://openrouter.ai/api/v1',
+          defaultHeaders: {
+            'HTTP-Referer': 'https://lovable.ai',
+            'X-Title': 'Lovable AI Agent',
+          }
+        });
+        
+        // Construct messages for OpenRouter
+        let messages = [];
+        
+        // Check if this is a multimodal prompt with images
+        if (options.images && options.images.length > 0) {
+          console.log('Processing multimodal prompt with images');
+          
+          const messageContent = [];
+          
+          // Add text content
+          messageContent.push({
+            type: 'text',
+            text: `${getAgentRole(agent.type)}\n\n${enhancedPrompt}`
+          });
+          
+          // Add image URLs
+          for (const imageUrl of options.images) {
+            messageContent.push({
+              type: 'image_url',
+              image_url: {
+                url: imageUrl
+              }
+            });
+          }
+          
+          messages.push({
+            role: 'user',
+            content: messageContent
+          });
+        } else {
+          // Standard text-only prompt
+          const agentRole = getAgentRole(agent.type);
+          if (agentRole) {
+            messages.push({ role: 'system', content: agentRole });
+            messages.push({ role: 'user', content: enhancedPrompt });
+          } else {
+            messages.push({ role: 'user', content: enhancedPrompt });
+          }
+        }
+        
+        const completion = await openrouter.chat.completions.create({
+          model: model,
+          messages: messages,
+          temperature: 0.3,
+          max_tokens: 1024,
+        });
+        
+        if (completion.choices && completion.choices[0] && completion.choices[0].message) {
+          return completion.choices[0].message.content;
+        } else {
+          throw new Error('Unexpected response format from OpenRouter');
+        }
+      } catch (error) {
+        console.error('Error using direct SDK approach:', error);
+        throw error;
+      }
+    }
+    
+    // Default approach: Use Supabase Edge Function
     const requestPayload = {
       agentType: agent.type,
       prompt: enhancedPrompt,
@@ -517,3 +590,20 @@ export const orchestrateAgents = async (
   }
 }
 
+// Extract the getAgentRole function from the edge function for client-side use
+function getAgentRole(agentType: string) {
+  switch (agentType) {
+    case 'architect':
+      return 'You are an experienced software architect whose PRIMARY ROLE is ORCHESTRATION. Your job is NOT to implement but to COORDINATE other agents. You MUST:\n\n1. First, create a high-level design (keep this VERY brief)\n2. Immediately DELEGATE all implementation tasks to specialized agents\n3. For EVERY design decision, explicitly state which agent should implement it\n4. ALWAYS end your responses with explicit activation instructions like: "I will now activate the frontend agent to implement the UI components" or "I will now activate the backend agent to implement the API endpoints"\n\nNEVER provide detailed implementation - your job is DELEGATION. Keep design brief and focus on assigning tasks to agents. DO NOT write code yourself - immediately delegate to the appropriate specialized agent.';
+    case 'frontend':
+      return 'You are a frontend development expert. Your expertise includes UI/UX implementation, responsive design, and modern frontend frameworks. Provide detailed guidance on creating effective user interfaces and client-side functionality. When asked to generate code, focus on creating complete files and components that meet the requirements. ALWAYS provide full, functional implementations, never partial code or snippets.';
+    case 'backend':
+      return 'You are a backend development expert. Your expertise includes API design, database modeling, and server-side architecture. Provide detailed guidance on creating robust, secure server-side applications. When asked to generate code, focus on creating complete files and components that meet the requirements. ALWAYS provide full, functional implementations, never partial code or snippets.';
+    case 'testing':
+      return 'You are a software testing expert. Your expertise includes test strategies, test automation, and quality assurance processes. Provide detailed guidance on ensuring software quality through effective testing. When asked to generate code, focus on creating complete files and components that meet the requirements. ALWAYS provide full, functional implementations, never partial code or snippets.';
+    case 'devops':
+      return 'You are a DevOps expert. Your expertise includes CI/CD pipelines, infrastructure as code, and deployment strategies. Provide detailed guidance on automating and optimizing development and deployment processes. When asked to generate code, focus on creating complete files and components that meet the requirements. ALWAYS provide full, functional implementations, never partial code or snippets.';
+    default:
+      return 'You are an AI assistant with expertise in software development. Provide helpful, accurate, and detailed responses to technical questions. When asked to generate code, focus on creating complete files and components that meet the requirements. ALWAYS provide full, functional implementations, never partial code or snippets.';
+  }
+}
