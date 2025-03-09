@@ -1,8 +1,6 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project, SendAgentPromptOptions } from '@/lib/types';
 import { getEnvVariable, getOpenRouterApiKey, setLocalEnvVariable } from '@/lib/env';
-import { OpenRouter } from 'openrouter-sdk';
 
 // Agent class for orchestration
 class AgentOrchestrator {
@@ -13,7 +11,7 @@ class AgentOrchestrator {
   private projectPlan: any = null;
   private agentMemory: Record<string, string[]> = {};
   private lastAgentOutput: Record<string, string> = {};
-  private openrouterClient: any = null;
+  private openrouterApiKey: string | null = null;
 
   constructor(project: Project, agents: Agent[]) {
     this.project = project;
@@ -25,10 +23,7 @@ class AgentOrchestrator {
     });
 
     // Initialize reference to use OpenRouter
-    const apiKey = getOpenRouterApiKey();
-    if (apiKey) {
-      this.openrouterClient = true; // Just indicate we have a key and can use OpenRouter
-    }
+    this.openrouterApiKey = getOpenRouterApiKey();
   }
 
   async designProject(projectDescription: string): Promise<any> {
@@ -51,7 +46,7 @@ Create a detailed breakdown of:
 Format your response as a structured JSON object.`;
 
     try {
-      // Use SDK directly to communicate with OpenRouter
+      // Use direct API call to communicate with OpenRouter
       const designThinking = await this.sendPromptToAgent(
         this.agents['architect'], 
         designPrompt,
@@ -119,8 +114,8 @@ Format your response as a structured JSON object.`;
   }
 
   async sendPromptToAgent(agent: Agent, prompt: string, options?: SendAgentPromptOptions): Promise<string> {
-    if (!this.openrouterClient) {
-      throw new Error('OpenRouter client is not initialized. Please provide an API key.');
+    if (!this.openrouterApiKey) {
+      throw new Error('OpenRouter API key is not initialized. Please provide an API key.');
     }
 
     const enhancedPrompt = addProjectContextToPrompt(prompt, this.project, options?.expectCode);
@@ -139,26 +134,34 @@ Format your response as a structured JSON object.`;
     messages.push({ role: 'user', content: enhancedPrompt });
     
     try {
-      const apiKey = getOpenRouterApiKey();
-      if (!apiKey) {
-        throw new Error('OpenRouter API key is required');
-      }
-      
-      // Create OpenRouter instance
-      const openRouter = new OpenRouter({ apiKey });
-      
-      // Make API call using the OpenRouter SDK with the correct method
-      const response = await openRouter.createChatCompletion({
-        model: model,
-        messages: messages,
-        temperature: 0.3,
-        max_tokens: 1024,
+      // Make direct API call to OpenRouter
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.openrouterApiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': window.location.origin,
+          'X-Title': 'Agent Platform'
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: messages,
+          temperature: 0.3,
+          max_tokens: 1024,
+        }),
       });
       
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`OpenRouter API error: ${JSON.stringify(errorData)}`);
+      }
+      
+      const data = await response.json();
+      
       // Extract response content
-      if (response.choices && response.choices[0] && response.choices[0].message) {
+      if (data.choices && data.choices[0] && data.choices[0].message) {
         // Ensure we return a string regardless of what's in the content
-        const content = response.choices[0].message.content;
+        const content = data.choices[0].message.content;
         return typeof content === 'string' ? content : JSON.stringify(content);
       } else {
         throw new Error('Unexpected response format from OpenRouter');
@@ -419,10 +422,10 @@ export const sendAgentPrompt = async (
     // Get the OpenRouter API key
     const apiKey = getOpenRouterApiKey();
     
-    // Use OpenRouter SDK directly (preferred approach)
+    // Use direct API call if we have an API key
     if (apiKey) {
       try {
-        console.log('Using OpenRouter SDK directly');
+        console.log('Using direct OpenRouter API call');
         
         // Construct messages for OpenRouter
         const messages = [];
@@ -464,31 +467,43 @@ export const sendAgentPrompt = async (
           }
         }
         
-        // Initialize the OpenRouter client with API key
-        const openRouter = new OpenRouter({ apiKey });
-        
-        // Call OpenRouter API using the correct method for the SDK
-        const completion = await openRouter.createChatCompletion({
-          model: model,
-          messages: messages,
-          temperature: 0.3,
-          max_tokens: 1024,
+        // Make direct API call to OpenRouter
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': window.location.origin,
+            'X-Title': 'Agent Platform'
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: messages,
+            temperature: 0.3,
+            max_tokens: 1024,
+          }),
         });
         
-        if (completion.choices && completion.choices[0] && completion.choices[0].message) {
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(`OpenRouter API error: ${JSON.stringify(errorData)}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.choices && data.choices[0] && data.choices[0].message) {
           // Ensure we return a string regardless of what's in the content
-          const content = completion.choices[0].message.content;
+          const content = data.choices[0].message.content;
           return typeof content === 'string' ? content : JSON.stringify(content);
         } else {
           throw new Error('Unexpected response format from OpenRouter');
         }
       } catch (error) {
-        console.error('Error using OpenRouter SDK:', error);
+        console.error('Error using direct OpenRouter API call:', error);
         throw error;
       }
     } else {
       // Fallback to Edge Function if API key is not available locally
-      // This will not be used if the SDK is properly configured
       console.log('Falling back to Edge Function as OpenRouter API key is not available');
       
       const requestPayload = {
@@ -562,28 +577,19 @@ function getDefaultModelForAgentType(agentType: string): string {
  * Add project context to a prompt
  */
 function addProjectContextToPrompt(prompt: string, project: Project, expectCode?: boolean): string {
-  let baseContext = `Project: ${project.name}
+  return `Project: ${project.name}
 Description: ${project.description || 'No description'}
 ${project.tech_stack && project.tech_stack.length > 0 ? `Tech Stack: ${project.tech_stack.join(', ')}` : ''}
 
-`;
-
-  if (expectCode) {
-    baseContext += `IMPORTANT: I need you to write complete, functional code files. Do not provide explanations or partial snippets.
+${expectCode ? `IMPORTANT: I need you to write complete, functional code files. Do not provide explanations or partial snippets.
 1. Start by writing the full code file including all necessary imports
 2. Make sure your code is complete and can be directly used in the project
 3. Integrate with the existing tech stack: ${project.tech_stack?.join(', ') || 'React'}
 4. Provide the entire implementation - no placeholders or TODOs
 5. If you're writing a React component, include all necessary imports and the full component code
+` : ''}
 
-`;
-  } else {
-    baseContext += `IMPORTANT: When asked to create or modify code, you MUST provide complete, functional code files that can be directly used in the project. Don't provide snippets or partial code. Always include imports and full implementation.
-
-`;
-  }
-
-  return baseContext + prompt;
+${prompt}`;
 }
 
 /**
@@ -656,10 +662,10 @@ function getAgentRole(agentType: string): string {
 }
 
 /**
- * Sets the OpenRouter API key and returns a new OpenRouter client instance
+ * Sets the OpenRouter API key for future use
  */
-export const setOpenRouterApiKey = (apiKey: string): any | null => {
-  if (!apiKey) return null;
+export const setOpenRouterApiKey = (apiKey: string): boolean => {
+  if (!apiKey) return false;
   
   try {
     // Save to localStorage
@@ -669,6 +675,6 @@ export const setOpenRouterApiKey = (apiKey: string): any | null => {
     return true;
   } catch (error) {
     console.error('Error setting OpenRouter API key:', error);
-    return null;
+    return false;
   }
 };

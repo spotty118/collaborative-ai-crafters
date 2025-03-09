@@ -1,6 +1,4 @@
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
-import { OpenRouter } from 'https://esm.sh/openrouter-sdk@1.0.0'
 import { corsHeaders } from '../_shared/cors.ts'
 
 // Define console.log to use Deno.env logic
@@ -128,19 +126,32 @@ Deno.serve(async (req) => {
     }
 
     try {
-      // Initialize OpenRouter with the API key
-      const openRouter = new OpenRouter({ apiKey: openrouterApiKey });
+      // Direct API call to OpenRouter instead of using the SDK
+      console.log('Sending request to OpenRouter API');
       
-      console.log('Sending request to OpenRouter with SDK');
-      
-      // Use the SDK to call the API with the correct method
-      const completion = await openRouter.createChatCompletion({
-        model: model,
-        messages: messages,
-        temperature: 0.3,
-        max_tokens: 1024,
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openrouterApiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://agent-platform-app.vercel.app', // Replace with your actual domain
+          'X-Title': 'Agent Platform'
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: messages,
+          temperature: 0.3,
+          max_tokens: 1024,
+        }),
       });
       
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('OpenRouter API error:', errorData);
+        throw new Error(`OpenRouter API error: ${JSON.stringify(errorData)}`);
+      }
+      
+      const completion = await response.json();
       console.log('Received response from OpenRouter');
       
       return new Response(
