@@ -75,11 +75,17 @@ export class OpenRouterClient {
     }
     
     try {
+      const headers = {
+        'HTTP-Referer': window.location.origin,
+        'X-Title': 'Agent Platform'
+      };
+      
       const response = await this.openRouter.chat.completions.create({
         model: params.model,
         messages: params.messages,
         temperature: params.temperature || 0.3,
-        max_tokens: params.max_tokens || 1024
+        max_tokens: params.max_tokens || 1024,
+        headers: headers
       });
       
       return response;
