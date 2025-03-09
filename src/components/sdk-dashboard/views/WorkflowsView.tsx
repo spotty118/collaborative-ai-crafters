@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Plus, GitBranch } from 'lucide-react';
+import { Plus, GitBranch, Play, Edit } from 'lucide-react';
 import { SDKService } from '@/services/openRouterSDK';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';

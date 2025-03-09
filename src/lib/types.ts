@@ -1,4 +1,3 @@
-
 import { Json } from '@/integrations/supabase/types';
 
 export type ProjectMode = "new" | "existing";
@@ -35,7 +34,7 @@ export interface Project {
   metadata?: Json | Record<string, any>; // Updated to accept both types
 }
 
-export type AgentType = 'architect' | 'frontend' | 'backend' | 'testing' | 'devops';
+export type AgentType = 'architect' | 'frontend' | 'backend' | 'testing' | 'devops' | 'custom';
 
 export interface Agent {
   id: string;

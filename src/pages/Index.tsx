@@ -9,9 +9,23 @@ import OpenRouterTester from '@/components/agents/OpenRouterTester';
 import { Monitor } from 'lucide-react';
 
 const Index: React.FC = () => {
+  // Add empty handlers for required props
+  const handleNewProject = () => {
+    // This would typically open a new project dialog
+    console.log('New project handler triggered');
+  };
+  
+  const handleImportProject = () => {
+    // This would typically open an import project dialog
+    console.log('Import project handler triggered');
+  };
+
   return (
     <>
-      <Header />
+      <Header 
+        onNewProject={handleNewProject} 
+        onImportProject={handleImportProject}
+      />
       <div className="container mx-auto p-6">
         <div className="flex flex-col md:flex-row gap-6">
           <div className="flex-1">

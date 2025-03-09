@@ -1,6 +1,6 @@
 
 import { openRouterClient, sendAgentPrompt, orchestrateAgents } from '@/lib/openrouter-client';
-import { Agent, Task, Project } from '@/lib/types';
+import { Agent, Task, Project, AgentType } from '@/lib/types';
 import { toast } from 'sonner';
 import { VectorDatabase } from '@/lib/vectorDb';
 
@@ -90,7 +90,7 @@ export const SDKService = {
     const newAgent: Agent = {
       id: `agent-${Date.now()}`,
       name: agent.name || 'New Agent',
-      type: agent.type || 'custom',
+      type: agent.type || 'architect',
       status: 'idle',
       progress: 0,
       description: agent.description || 'Custom agent',

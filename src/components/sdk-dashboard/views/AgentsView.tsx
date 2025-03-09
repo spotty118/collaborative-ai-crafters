@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Plus, Play, Edit, User } from 'lucide-react';
 import { SDKService } from '@/services/openRouterSDK';
-import { Agent } from '@/lib/types';
+import { Agent, AgentType } from '@/lib/types';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -20,7 +20,7 @@ const AgentsView: React.FC = () => {
   // New agent form state
   const [newAgent, setNewAgent] = useState({
     name: '',
-    type: 'architect',
+    type: 'architect' as AgentType,
     description: ''
   });
   
