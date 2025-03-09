@@ -172,7 +172,6 @@ const ProjectPage: React.FC = () => {
     }
   };
 
-  // Handlers for Dashboard props
   const handleStartAgent = (agentId: string) => {
     console.log(`Starting agent: ${agentId}`);
     // Implementation would go here
