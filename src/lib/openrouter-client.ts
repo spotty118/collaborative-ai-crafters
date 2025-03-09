@@ -1,8 +1,7 @@
-
 import { getOpenRouterApiKey } from '@/lib/env';
 import { Agent, Project, SendAgentPromptOptions } from '@/lib/types';
 import { toast } from 'sonner';
-import OpenRouter from 'openrouter-sdk';
+import * as OpenRouterSdk from 'openrouter-sdk';
 
 // OpenRouter SDK client
 export class OpenRouterClient {
@@ -19,8 +18,8 @@ export class OpenRouterClient {
   }
   
   private initClient() {
-    // Create the SDK instance - OpenRouter is not a constructor
-    this.openRouter = OpenRouter({
+    // Use the default export from the SDK
+    this.openRouter = OpenRouterSdk.default({
       apiKey: this.apiKey,
       baseURL: 'https://openrouter.ai/api/v1',
       defaultHeaders: {
@@ -43,7 +42,6 @@ export class OpenRouterClient {
     return !!this.apiKey;
   }
   
-  // Get available models
   public async getModels() {
     if (!this.apiKey || !this.openRouter) {
       throw new Error('OpenRouter API key is not set');
@@ -58,7 +56,6 @@ export class OpenRouterClient {
     }
   }
   
-  // Send chat completion request
   public async chatCompletion(params: {
     model: string;
     messages: Array<{role: string; content: string | Array<{type: string; [key: string]: any}>}>;

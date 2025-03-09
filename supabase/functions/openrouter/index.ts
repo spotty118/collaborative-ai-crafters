@@ -1,6 +1,5 @@
-
 import { corsHeaders } from '../_shared/cors.ts'
-import OpenRouter from 'npm:openrouter-sdk';
+import * as OpenRouterSdk from 'npm:openrouter-sdk';
 
 // Define console.log to use Deno.stderr logic
 console.log = function() {
@@ -50,8 +49,8 @@ Deno.serve(async (req) => {
     console.log(`Processing prompt for agent type: ${agentType}`);
     console.log(`Using model: ${model}`);
     
-    // Initialize the OpenRouter SDK client - OpenRouter is not a constructor
-    const openRouter = OpenRouter({
+    // Use the default export from the SDK
+    const openRouter = OpenRouterSdk.default({
       apiKey: openrouterApiKey,
       baseURL: 'https://openrouter.ai/api/v1',
       defaultHeaders: {
