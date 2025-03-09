@@ -149,7 +149,7 @@ const AgentsView: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Agent Type</label>
                 <Select 
                   value={newAgent.type} 
-                  onValueChange={value => setNewAgent(prev => ({ ...prev, type: value }))}
+                  onValueChange={(value: string) => setNewAgent(prev => ({ ...prev, type: value as AgentType }))}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select agent type" />
