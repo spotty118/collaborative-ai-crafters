@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
     console.log(`Processing prompt for agent type: ${agentType}`);
     console.log(`Using model: ${model}`);
     
-    // Initialize the OpenRouter client with proper instantiation
+    // Initialize the OpenRouter client
     const openRouter = new OpenAI({
       apiKey: openrouterApiKey,
       baseURL: 'https://openrouter.ai/api/v1',
