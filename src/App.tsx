@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Project from "./pages/Project";
+import SDKDashboard from "./pages/SDKDashboard";
 import { GitHubProvider } from "./contexts/GitHubContext";
 import NotFound from "./pages/NotFound";
 
@@ -20,7 +21,8 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
-            <Route path="/project/:id" element={<Project />} />
+            <Route path="/project/:projectId" element={<Project />} />
+            <Route path="/sdk-dashboard" element={<SDKDashboard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

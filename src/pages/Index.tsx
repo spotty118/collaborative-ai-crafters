@@ -1,386 +1,81 @@
-import React, { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import Header from "@/components/layout/Header";
-import { useNavigate } from "react-router-dom";
-import { createProject, getProjects, deleteProject, createAgents } from "@/lib/api";
-import ProjectSetup from "@/components/layout/ProjectSetup";
-import { Badge } from "@/components/ui/badge";
-import { Pencil, Trash, Eye, ArrowRight } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
-import { toast } from "sonner";
-import { Project, Agent, AgentType, ProjectDB } from "@/lib/types";
-import { formatDistanceToNow } from "date-fns";
-import { sendAgentPrompt } from "@/lib/openrouter";
-import { createMessage } from "@/lib/api";
 
-interface ProjectCardProps {
-  project: Project;
-  onDelete: (id: string) => void;
-}
-
-const ProjectCard: React.FC<ProjectCardProps> = ({ project, onDelete }) => {
-  const navigate = useNavigate();
-
-  return (
-    <Card className="bg-white shadow-md rounded-lg overflow-hidden">
-      <CardHeader>
-        <CardTitle className="text-lg font-semibold">{project.name}</CardTitle>
-        <CardDescription className="text-gray-500">
-          {project.description}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="p-4">
-        <div className="flex items-center space-x-2">
-          <Badge variant="secondary">
-            {project.sourceType ? "Existing Repo" : "New Project"}
-          </Badge>
-          {project.tech_stack && (
-            <Badge className="bg-blue-100 text-blue-800">
-              {project.tech_stack.join(", ")}
-            </Badge>
-          )}
-        </div>
-        <div className="mt-2 text-sm text-gray-600">
-          Updated{" "}
-          {project.updated_at &&
-            formatDistanceToNow(new Date(project.updated_at), {
-              addSuffix: true,
-            })}
-        </div>
-      </CardContent>
-      <CardFooter className="flex justify-between items-center p-4">
-        <div className="flex space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigate(`/project/${project.id}`)}
-          >
-            <Eye className="h-4 w-4 mr-2" />
-            View
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              // Logic to edit project
-            }}
-          >
-            <Pencil className="h-4 w-4 mr-2" />
-            Edit
-          </Button>
-        </div>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="destructive" size="sm">
-              <Trash className="h-4 w-4 mr-2" />
-              Delete
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete your
-                project and remove all of its data.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => {
-                  onDelete(project.id);
-                }}
-              >
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </CardFooter>
-    </Card>
-  );
-};
+import React from 'react';
+import { Link } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import Header from '@/components/layout/Header';
+import GitHubConnectTester from '@/components/GitHubConnectTester';
+import OpenRouterTester from '@/components/agents/OpenRouterTester';
+import { Monitor } from 'lucide-react';
 
 const Index: React.FC = () => {
-  const [isProjectSetupOpen, setIsProjectSetupOpen] = useState(false);
-  const [activeProject, setActiveProject] = useState<Project | null>(null);
-  const [selectedAgent, setSelectedAgent] = useState<AgentType | null>(null);
-  const [chatMessages, setChatMessages] = useState<
-    { sender: string; content: string }[]
-  >([]);
-  const [messageInput, setMessageInput] = useState("");
-  const [activeTab, setActiveTab] = useState("projects");
-  const navigate = useNavigate();
-
-  const queryClient = useQueryClient();
-
-  const {
-    data: projects,
-    isLoading,
-    error,
-  } = useQuery({
-    queryKey: ["projects"],
-    queryFn: getProjects
-  });
-
-  const createProjectMutation = useMutation({
-    mutationFn: (projectData: Omit<Project, "id">) => {
-      // Transform the project data to match ProjectDB type
-      const dbProject: ProjectDB = {
-        name: projectData.name,
-        description: projectData.description,
-        tech_stack: projectData.techStack ? 
-          [projectData.techStack.frontend, projectData.techStack.backend, projectData.techStack.database, projectData.techStack.deployment] : 
-          undefined,
-        source_type: projectData.mode === 'existing' ? 'github' : undefined,
-        source_url: projectData.repoUrl
-      };
-      
-      return createProject(dbProject);
-    },
-    onSuccess: (createdProject) => {
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
-      
-      // Create agents for the new project
-      if (createdProject && createdProject.id) {
-        createAgents(createdProject.id.toString())
-          .then(() => {
-            console.log("Agents created successfully for project:", createdProject.id);
-          })
-          .catch(error => {
-            console.error("Failed to create agents:", error);
-            toast.error(`Failed to create agents: ${error.message}`);
-          });
-      }
-      
-      setIsProjectSetupOpen(false);
-      toast.success("Project created successfully!");
-    },
-    onError: (error: any) => {
-      toast.error(`Failed to create project: ${error.message}`);
-    },
-  });
-
-  const deleteProjectMutation = useMutation({
-    mutationFn: deleteProject,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
-      toast.success("Project deleted successfully!");
-    },
-    onError: (error: any) => {
-      toast.error(`Failed to delete project: ${error.message}`);
-    },
-  });
-
-  const handleCreateProject = async (projectData: Omit<Project, "id">) => {
-    createProjectMutation.mutate(projectData);
-  };
-
-  const handleDeleteProject = async (id: string) => {
-    deleteProjectMutation.mutate(id);
-  };
-
-  const handleTabChange = (tab: string) => {
-    setActiveTab(tab);
-  };
-
-  const executeAgentTasks = async (
-    agent: AgentType,
-    activeProject: Project
-  ) => {
-    if (!activeProject) return;
-
-    createMessage({
-      project_id: activeProject.id.toString(),
-      sender: `${agent.charAt(0).toUpperCase() + agent.slice(1)} Agent`,
-      content: "I'm now analyzing the project and will help improve it. This might take a moment...",
-      type: "text",
-    });
-
-    const loadingToastId = toast.loading(`${agent} agent is analyzing the project...`);
-
-    try {
-      const response = await sendAgentPrompt(
-        {
-          id: `${agent}-agent`,
-          name: `${agent.charAt(0).toUpperCase() + agent.slice(1)} Agent`,
-          type: agent,
-        },
-        "Analyze this project and create tasks for improvements",
-        activeProject
-      );
-
-      createMessage({
-        project_id: activeProject.id.toString(),
-        sender: `${agent.charAt(0).toUpperCase() + agent.slice(1)} Agent`,
-        content: "I've analyzed the GitHub repository and created tasks for improvements. Check the task list for details.",
-        type: "text",
-      });
-
-      toast.dismiss(loadingToastId);
-      toast.success(`${agent.charAt(0).toUpperCase() + agent.slice(1)} agent completed analysis`);
-    } catch (error) {
-      toast.dismiss(loadingToastId);
-      toast.error(`Error with ${agent} agent: ${error instanceof Error ? error.message : "Unknown error"}`);
-      console.error(`Error with ${agent} agent:`, error);
-    }
-  };
-
-  const handleAgentSelect = (agent: AgentType) => {
-    setSelectedAgent(agent);
-    if (activeProject) {
-      executeAgentTasks(agent, activeProject);
-    }
-  };
-
-  const handleSendMessage = async (message: string) => {
-    if (!activeProject || !selectedAgent) return;
-    
-    createMessage({
-      project_id: activeProject.id.toString(),
-      sender: "You",
-      content: message,
-      type: "text",
-    });
-    
-    const agentName = `${selectedAgent.charAt(0).toUpperCase() + selectedAgent.slice(1)} Agent`;
-    const loadingToastId = toast.loading(`${agentName} is thinking...`);
-    
-    try {
-      const response = await sendAgentPrompt(
-        {
-          id: `${selectedAgent}-agent`,
-          name: agentName,
-          type: selectedAgent as AgentType,
-        },
-        message,
-        activeProject
-      );
-      
-      createMessage({
-        project_id: activeProject.id.toString(),
-        sender: agentName,
-        content: response || "I couldn't generate a response at this time.",
-        type: "text",
-      });
-      
-      toast.dismiss(loadingToastId);
-    } catch (error) {
-      toast.dismiss(loadingToastId);
-      toast.error(`Error getting response: ${error instanceof Error ? error.message : "Unknown error"}`);
-      console.error("Error getting agent response:", error);
-      
-      createMessage({
-        project_id: activeProject.id.toString(),
-        sender: agentName,
-        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : "Unknown error"}`,
-        type: "text",
-      });
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-gray-100">
-      <Header
-        onNewProject={() => setIsProjectSetupOpen(true)}
-        onImportProject={() => setIsProjectSetupOpen(true)}
-      />
-
-      <ProjectSetup
-        isOpen={isProjectSetupOpen}
-        onClose={() => setIsProjectSetupOpen(false)}
-        onCreateProject={handleCreateProject}
-      />
-
-      <div className="container mx-auto mt-8">
-        <Tabs value={activeTab} onValueChange={handleTabChange}>
-          <TabsList className="bg-white rounded-md shadow-sm p-2">
-            <TabsTrigger value="projects" className="data-[state=active]:bg-gray-200">
-              Projects
-            </TabsTrigger>
-            <TabsTrigger value="agents" className="data-[state=active]:bg-gray-200">
-              Agents
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value="projects" className="mt-4">
-            {isLoading ? (
-              <div className="text-center">Loading projects...</div>
-            ) : error ? (
-              <div className="text-center text-red-500">
-                Error: {(error as Error).message}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {projects && projects.map((project) => (
-                  <ProjectCard
-                    key={project.id}
-                    project={project}
-                    onDelete={handleDeleteProject}
-                  />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-          <TabsContent value="agents" className="mt-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {["architect", "frontend", "backend", "testing"].map(
-                (agent) => (
-                  <Card
-                    key={agent}
-                    className="cursor-pointer hover:shadow-md transition-shadow duration-300 ease-in-out"
-                    onClick={() => handleAgentSelect(agent as AgentType)}
-                  >
-                    <CardHeader>
-                      <CardTitle>
-                        {agent.charAt(0).toUpperCase() + agent.slice(1)} Agent
-                      </CardTitle>
-                      <CardDescription>
-                        {`The ${agent} agent is responsible for ${agent} tasks.`}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-gray-500">
-                        Click to activate this agent.
-                      </p>
-                    </CardContent>
-                  </Card>
-                )
-              )}
+    <>
+      <Header />
+      <div className="container mx-auto p-6">
+        <div className="flex flex-col md:flex-row gap-6">
+          <div className="flex-1">
+            <h1 className="text-4xl font-bold mb-2">OpenRouter SDK Platform</h1>
+            <p className="text-xl text-gray-700 mb-8">
+              Build, manage, and deploy AI agents for your projects
+            </p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Agent Projects</CardTitle>
+                  <CardDescription>Create and manage AI agent-powered projects</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p>Build applications using AI agents that work together to achieve complex tasks.</p>
+                </CardContent>
+                <CardFooter>
+                  <Link to="/project/demo">
+                    <Button>Create Project</Button>
+                  </Link>
+                </CardFooter>
+              </Card>
+              
+              <Card>
+                <CardHeader>
+                  <CardTitle>SDK Dashboard</CardTitle>
+                  <CardDescription>Manage the OpenRouter SDK</CardDescription>
+                </CardHeader>
+                <CardContent className="flex items-center justify-between">
+                  <p>Configure and monitor your OpenRouter SDK integration.</p>
+                  <Monitor className="h-8 w-8 text-blue-500" />
+                </CardContent>
+                <CardFooter>
+                  <Link to="/sdk-dashboard">
+                    <Button variant="outline">Open Dashboard</Button>
+                  </Link>
+                </CardFooter>
+              </Card>
             </div>
-          </TabsContent>
-        </Tabs>
+          </div>
+          
+          <div className="md:w-1/3">
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle>GitHub Connection</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <GitHubConnectTester />
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader>
+                <CardTitle>OpenRouter Connection</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <OpenRouterTester />
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 
