@@ -35,7 +35,7 @@ const AgentOrchestration: React.FC<AgentOrchestrationProps> = ({
   const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState('');
   const [results, setResults] = useState<any>(null);
-  const [orchestrationMethod, setOrchestrationMethod] = useState<'client' | 'function' | 'sdk' | 'integrated'>('sdk');
+  const [orchestrationMethod, setOrchestrationMethod] = useState<'sdk' | 'integrated'>('integrated');
 
   const runOrchestration = async () => {
     if (!prompt.trim()) {
@@ -62,11 +62,15 @@ const AgentOrchestration: React.FC<AgentOrchestrationProps> = ({
           throw new Error('Architect agent is required for orchestration');
         }
         
-        // Start the orchestration process with agent status check bypass
+        // Start the orchestration process
         orchestrationResults = await orchestrateAgents(project, agents, prompt);
         
       // Direct SDK orchestration with OpenRouter SDK
       } else if (orchestrationMethod === 'sdk') {
+        if (!OPENROUTER_API_KEY) {
+          throw new Error('OpenRouter API key is required for SDK orchestration');
+        }
+        
         setStage('Starting SDK orchestration with OpenRouter');
         setProgress(10);
         
@@ -84,11 +88,7 @@ const AgentOrchestration: React.FC<AgentOrchestrationProps> = ({
           architectAgent,
           `Design a comprehensive project plan for: ${prompt}`,
           project,
-          { 
-            model: 'anthropic/claude-3.5-sonnet:thinking',
-            ignoreStatus: true,
-            useDirectSdk: true
-          }
+          { model: 'anthropic/claude-3.5-sonnet:thinking', ignoreStatus: true }
         );
         
         // Parse the design and create mock results for demonstration
@@ -105,69 +105,7 @@ const AgentOrchestration: React.FC<AgentOrchestrationProps> = ({
           results: [
             { id: "sdk-1", description: "Project design", assignedTo: "architect", status: "completed", result: designResponse }
           ],
-          evaluation: "Project plan created using the OpenRouter SDK directly. To execute tasks, use the integrated orchestration method."
-        };
-      
-      // Edge function orchestration
-      } else if (orchestrationMethod === 'function') {
-        setStage('Starting orchestration in edge function');
-        setProgress(10);
-        
-        const { data, error } = await supabase.functions.invoke('agent-orchestration', {
-          body: {
-            projectDescription: prompt,
-            projectId: project.id
-          }
-        });
-        
-        if (error) {
-          throw new Error(`Edge function error: ${error.message}`);
-        }
-        
-        setProgress(100);
-        orchestrationResults = data;
-        
-      // Direct OpenRouter client-side orchestration
-      } else {
-        setStage('Starting client-side orchestration');
-        setProgress(10);
-        
-        // Simulate stages of orchestration for demonstration
-        setStage('Designing project with Architect agent');
-        setProgress(20);
-        await new Promise(r => setTimeout(r, 1000));
-        
-        setStage('Planning project architecture');
-        setProgress(30);
-        await new Promise(r => setTimeout(r, 1000));
-        
-        setStage('Delegating tasks to specialized agents');
-        setProgress(50);
-        await new Promise(r => setTimeout(r, 1000));
-        
-        setStage('Executing tasks with specialized agents');
-        setProgress(70);
-        await new Promise(r => setTimeout(r, 1000));
-        
-        setStage('Evaluating project results');
-        setProgress(90);
-        await new Promise(r => setTimeout(r, 1000));
-        
-        // Mock results for client-side implementation
-        orchestrationResults = {
-          projectPlan: {
-            name: "Mock Project Plan",
-            description: "This is a mock project plan for demonstration",
-            tasks: [
-              { id: "task-1", description: "Design UI", assignedTo: "frontend", status: "completed" },
-              { id: "task-2", description: "Implement API", assignedTo: "backend", status: "completed" }
-            ]
-          },
-          results: [
-            { id: "task-1", description: "Design UI", assignedTo: "frontend", status: "completed", result: "UI designed successfully" },
-            { id: "task-2", description: "Implement API", assignedTo: "backend", status: "completed", result: "API implemented successfully" }
-          ],
-          evaluation: "The project was completed successfully. All tasks were executed with high quality results."
+          evaluation: "Project plan created using the OpenRouter SDK. To execute tasks, use the integrated orchestration method."
         };
       }
       
@@ -213,28 +151,12 @@ const AgentOrchestration: React.FC<AgentOrchestrationProps> = ({
                 </Button>
                 <Button 
                   size="sm" 
-                  variant={orchestrationMethod === 'function' ? 'default' : 'outline'}
-                  onClick={() => setOrchestrationMethod('function')}
-                  disabled={isOrchestrating}
-                >
-                  Edge Function
-                </Button>
-                <Button 
-                  size="sm" 
                   variant={orchestrationMethod === 'sdk' ? 'default' : 'outline'}
                   onClick={() => setOrchestrationMethod('sdk')}
                   disabled={isOrchestrating || !OPENROUTER_API_KEY}
                   title={!OPENROUTER_API_KEY ? "OpenRouter API key not available" : ""}
                 >
                   OpenRouter SDK
-                </Button>
-                <Button 
-                  size="sm" 
-                  variant={orchestrationMethod === 'client' ? 'default' : 'outline'}
-                  onClick={() => setOrchestrationMethod('client')}
-                  disabled={isOrchestrating}
-                >
-                  Client-side
                 </Button>
               </div>
             </div>

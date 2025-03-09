@@ -1,3 +1,4 @@
+
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { corsHeaders } from '../_shared/cors.ts';
 import { OpenRouter } from 'npm:openrouter-sdk';
@@ -55,14 +56,9 @@ serve(async (req) => {
       // Build prompt context for the agent
       const agentRole = getAgentRole(agentType);
       
-      // Initialize the OpenRouter SDK
+      // Initialize the OpenRouter client
       const openrouter = new OpenRouter({
         apiKey: OPENROUTER_API_KEY,
-        baseUrl: 'https://openrouter.ai/api/v1',
-        defaultHeaders: {
-          'HTTP-Referer': 'https://lovable.ai',
-          'X-Title': 'Lovable AI Agent',
-        }
       });
       
       // Construct messages based on agent type and prompt
@@ -107,7 +103,7 @@ serve(async (req) => {
       console.log('Sending request to OpenRouter with SDK');
       
       // Use the SDK to call the API
-      const completion = await openrouter.chat.completions.create({
+      const completion = await openrouter.completions.create({
         model: model,
         messages: messages,
         temperature: 0.3,

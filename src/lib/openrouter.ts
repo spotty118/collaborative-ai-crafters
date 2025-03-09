@@ -1,15 +1,8 @@
-import { supabase } from '@/integrations/supabase/client';
-import { Agent, Project } from '@/lib/types';
-import { OpenRouter } from 'openrouter-sdk';
 
-interface SendAgentPromptOptions {
-  model?: string;
-  images?: string[];
-  ignoreStatus?: boolean; // Option to bypass status check
-  context?: string; // Additional context from other agents
-  task?: string; // Specific task information
-  expectCode?: boolean; // Signal that code output is expected
-}
+import { supabase } from '@/integrations/supabase/client';
+import { Agent, Project, SendAgentPromptOptions } from '@/lib/types';
+import { OpenRouter } from 'openrouter-sdk';
+import { OPENROUTER_API_KEY } from '@/lib/env';
 
 // Agent class for orchestration
 class AgentOrchestrator {
@@ -20,6 +13,7 @@ class AgentOrchestrator {
   private projectPlan: any = null;
   private agentMemory: Record<string, string[]> = {};
   private lastAgentOutput: Record<string, string> = {};
+  private openrouterClient: OpenRouter | null = null;
 
   constructor(project: Project, agents: Agent[]) {
     this.project = project;
@@ -29,6 +23,13 @@ class AgentOrchestrator {
       this.agents[agent.type] = agent;
       this.agentMemory[agent.type] = [];
     });
+
+    // Initialize OpenRouter client if API key is available
+    if (OPENROUTER_API_KEY) {
+      this.openrouterClient = new OpenRouter({
+        apiKey: OPENROUTER_API_KEY
+      });
+    }
   }
 
   async designProject(projectDescription: string): Promise<any> {
@@ -51,11 +52,10 @@ Create a detailed breakdown of:
 Format your response as a structured JSON object.`;
 
     try {
-      // Use existing sendAgentPrompt to communicate with OpenRouter
-      const designThinking = await sendAgentPrompt(
+      // Use SDK directly to communicate with OpenRouter
+      const designThinking = await this.sendPromptToAgent(
         this.agents['architect'], 
-        designPrompt, 
-        this.project,
+        designPrompt,
         { model: getDefaultModelForAgentType('architect'), ignoreStatus: true }
       );
       
@@ -117,6 +117,47 @@ Format your response as a structured JSON object.`;
       
       return allDependenciesMet;
     });
+  }
+
+  async sendPromptToAgent(agent: Agent, prompt: string, options?: SendAgentPromptOptions): Promise<string> {
+    if (!this.openrouterClient) {
+      throw new Error('OpenRouter client is not initialized. Please provide an API key.');
+    }
+
+    const enhancedPrompt = addProjectContextToPrompt(prompt, this.project, options?.expectCode);
+    const model = options?.model || getDefaultModelForAgentType(agent.type);
+    const agentRole = getAgentRole(agent.type);
+    
+    // Construct messages for the LLM
+    const messages = [];
+    
+    // Add system role if available
+    if (agentRole) {
+      messages.push({ role: 'system', content: agentRole });
+    }
+    
+    // Add the main prompt as user message
+    messages.push({ role: 'user', content: enhancedPrompt });
+    
+    try {
+      // Make API call
+      const response = await this.openrouterClient.completions.create({
+        model: model,
+        messages: messages,
+        temperature: 0.3,
+        max_tokens: 1024,
+      });
+      
+      // Extract response content
+      if (response.choices && response.choices[0] && response.choices[0].message) {
+        return response.choices[0].message.content;
+      } else {
+        throw new Error('Unexpected response format from OpenRouter');
+      }
+    } catch (error) {
+      console.error('Error communicating with OpenRouter:', error);
+      throw error;
+    }
   }
 
   async orchestrate(): Promise<any[]> {
@@ -181,11 +222,10 @@ IMPORTANT: Always provide the entire code file with imports and all implementati
 If you're writing React components, include all necessary imports and the full component implementation.
 `;
           
-          // Use existing sendAgentPrompt to execute the task
-          task.result = await sendAgentPrompt(
+          // Execute the task using OpenRouter SDK
+          task.result = await this.sendPromptToAgent(
             agent, 
-            taskPrompt, 
-            this.project,
+            taskPrompt,
             { 
               model: getDefaultModelForAgentType(agent.type),
               ignoreStatus: true, // Bypass status check for orchestration
@@ -250,10 +290,9 @@ Provide a comprehensive evaluation including:
 4. Recommendations for future iterations
 `;
 
-    return await sendAgentPrompt(
+    return await this.sendPromptToAgent(
       this.agents['architect'], 
-      resultsPrompt, 
-      this.project,
+      resultsPrompt,
       { 
         model: getDefaultModelForAgentType('architect'),
         ignoreStatus: true // Bypass status check for evaluations
@@ -368,25 +407,20 @@ export const sendAgentPrompt = async (
     // Enhance the prompt with project context
     const enhancedPrompt = addProjectContextToPrompt(prompt, project, options?.expectCode);
     
-    // If using direct SDK approach without going through edge function
-    if (options?.useDirectSdk && process.env.OPENROUTER_API_KEY) {
+    // Use OpenRouter SDK directly (preferred approach)
+    if (OPENROUTER_API_KEY) {
       try {
-        console.log('Using direct SDK approach with OpenRouter');
+        console.log('Using OpenRouter SDK directly');
         
         const openrouter = new OpenRouter({
-          apiKey: process.env.OPENROUTER_API_KEY,
-          baseUrl: 'https://openrouter.ai/api/v1',
-          defaultHeaders: {
-            'HTTP-Referer': 'https://lovable.ai',
-            'X-Title': 'Lovable AI Agent',
-          }
+          apiKey: OPENROUTER_API_KEY
         });
         
         // Construct messages for OpenRouter
-        let messages = [];
+        const messages = [];
         
         // Check if this is a multimodal prompt with images
-        if (options.images && options.images.length > 0) {
+        if (options?.images && options.images.length > 0) {
           console.log('Processing multimodal prompt with images');
           
           const messageContent = [];
@@ -422,7 +456,8 @@ export const sendAgentPrompt = async (
           }
         }
         
-        const completion = await openrouter.chat.completions.create({
+        // Call OpenRouter API
+        const completion = await openrouter.completions.create({
           model: model,
           messages: messages,
           temperature: 0.3,
@@ -435,54 +470,53 @@ export const sendAgentPrompt = async (
           throw new Error('Unexpected response format from OpenRouter');
         }
       } catch (error) {
-        console.error('Error using direct SDK approach:', error);
+        console.error('Error using OpenRouter SDK:', error);
         throw error;
       }
-    }
-    
-    // Default approach: Use Supabase Edge Function
-    const requestPayload = {
-      agentType: agent.type,
-      prompt: enhancedPrompt,
-      projectContext: {
-        id: project.id,
-        name: project.name,
-        description: project.description,
-        status: project.status,
-      },
-      model,
-      images: options?.images || [],
-      context: options?.context || '',
-      task: options?.task || '',
-      expectCode: options?.expectCode || false
-    };
-    
-    console.log('Request payload to OpenRouter function:', JSON.stringify(requestPayload));
-    
-    const { data, error } = await supabase.functions.invoke('openrouter', {
-      body: requestPayload
-    });
-
-    if (error) {
-      console.error('OpenRouter function error:', error);
-      throw new Error(`OpenRouter function error: ${error.message}`);
-    }
-
-    if (!data) {
-      console.error('No data returned from OpenRouter function');
-      throw new Error('No response received from the AI service');
-    }
-
-    console.log('Response from OpenRouter:', data);
-    
-    // Extract content from the response
-    if (data.content) {
-      return data.content;
-    } else if (data.choices && data.choices[0] && data.choices[0].message) {
-      return data.choices[0].message.content;
     } else {
-      console.warn('Unexpected response format from OpenRouter:', data);
-      return 'I received your request but encountered an issue processing it.';
+      // Fallback to Edge Function if API key is not available locally
+      // This will not be used if the SDK is properly configured
+      console.log('Falling back to Edge Function as OpenRouter API key is not available');
+      
+      const requestPayload = {
+        agentType: agent.type,
+        prompt: enhancedPrompt,
+        projectContext: {
+          id: project.id,
+          name: project.name,
+          description: project.description,
+          status: project.status,
+        },
+        model,
+        images: options?.images || [],
+        context: options?.context || '',
+        task: options?.task || '',
+        expectCode: options?.expectCode || false
+      };
+      
+      const { data, error } = await supabase.functions.invoke('openrouter', {
+        body: requestPayload
+      });
+  
+      if (error) {
+        console.error('OpenRouter function error:', error);
+        throw new Error(`OpenRouter function error: ${error.message}`);
+      }
+  
+      if (!data) {
+        console.error('No data returned from OpenRouter function');
+        throw new Error('No response received from the AI service');
+      }
+  
+      // Extract content from the response
+      if (data.content) {
+        return data.content;
+      } else if (data.choices && data.choices[0] && data.choices[0].message) {
+        return data.choices[0].message.content;
+      } else {
+        console.warn('Unexpected response format from OpenRouter:', data);
+        return 'I received your request but encountered an issue processing it.';
+      }
     }
   } catch (error) {
     console.error('Error in sendAgentPrompt:', error);
@@ -590,8 +624,8 @@ export const orchestrateAgents = async (
   }
 }
 
-// Extract the getAgentRole function from the edge function for client-side use
-function getAgentRole(agentType: string) {
+// Agent roles for system prompts
+function getAgentRole(agentType: string): string {
   switch (agentType) {
     case 'architect':
       return 'You are an experienced software architect whose PRIMARY ROLE is ORCHESTRATION. Your job is NOT to implement but to COORDINATE other agents. You MUST:\n\n1. First, create a high-level design (keep this VERY brief)\n2. Immediately DELEGATE all implementation tasks to specialized agents\n3. For EVERY design decision, explicitly state which agent should implement it\n4. ALWAYS end your responses with explicit activation instructions like: "I will now activate the frontend agent to implement the UI components" or "I will now activate the backend agent to implement the API endpoints"\n\nNEVER provide detailed implementation - your job is DELEGATION. Keep design brief and focus on assigning tasks to agents. DO NOT write code yourself - immediately delegate to the appropriate specialized agent.';
