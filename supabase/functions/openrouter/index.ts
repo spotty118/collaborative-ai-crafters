@@ -103,7 +103,7 @@ serve(async (req) => {
       console.log('Sending request to OpenRouter with SDK');
       
       // Use the SDK to call the API with the correct method
-      const completion = await openRouter.generateText({
+      const completion = await openRouter.chat.completions.create({
         model: model,
         messages: messages,
         temperature: 0.3,
