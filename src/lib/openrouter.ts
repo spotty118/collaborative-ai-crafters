@@ -106,7 +106,7 @@ export async function sendAgentPrompt(
 /**
  * Helper to extract project context from the URL
  */
-function getProjectContextFromUrl() {
+function getProjectContextFromUrl(): Project | null {
   try {
     // Get the current path
     const path = window.location.pathname;
@@ -116,10 +116,12 @@ function getProjectContextFromUrl() {
       // Extract the project ID
       const projectId = path.split('/project/')[1];
       
-      // Return a basic context object
+      // Return a Project object with required properties
       return {
         id: projectId,
-        name: 'Current Project' // We could fetch the actual name from the API
+        name: 'Current Project',
+        description: '', // Add the missing required property
+        mode: 'existing' as const // Add the missing required property and cast to the correct type
       };
     }
     
