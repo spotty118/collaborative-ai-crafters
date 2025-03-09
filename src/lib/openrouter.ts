@@ -26,7 +26,7 @@ class AgentOrchestrator {
     // Initialize OpenRouter client if API key is available
     const apiKey = getOpenRouterApiKey();
     if (apiKey) {
-      this.openrouterClient = new OpenRouter({ apiKey });
+      this.openrouterClient = OpenRouter;
     }
   }
 
@@ -138,8 +138,14 @@ Format your response as a structured JSON object.`;
     messages.push({ role: 'user', content: enhancedPrompt });
     
     try {
+      const apiKey = getOpenRouterApiKey();
+      if (!apiKey) {
+        throw new Error('OpenRouter API key is required');
+      }
+      
       // Make API call using the SDK
-      const response = await this.openrouterClient.generateText({
+      const response = await OpenRouter.generateText({
+        apiKey,
         model: model,
         messages: messages,
         temperature: 0.3,
@@ -413,8 +419,6 @@ export const sendAgentPrompt = async (
       try {
         console.log('Using OpenRouter SDK directly');
         
-        const openrouter = new OpenRouter({ apiKey });
-        
         // Construct messages for OpenRouter
         const messages = [];
         
@@ -456,7 +460,8 @@ export const sendAgentPrompt = async (
         }
         
         // Call OpenRouter API using the generateText method
-        const completion = await openrouter.generateText({
+        const completion = await OpenRouter.generateText({
+          apiKey,
           model: model,
           messages: messages,
           temperature: 0.3,
@@ -651,8 +656,8 @@ export const setOpenRouterApiKey = (apiKey: string): any | null => {
     // Save to localStorage
     setLocalEnvVariable('OPENROUTER_API_KEY', apiKey);
     
-    // Create and return a new OpenRouter client with the provided key
-    return new OpenRouter({ apiKey });
+    // OpenRouter is now correctly used without the 'new' keyword
+    return OpenRouter;
   } catch (error) {
     console.error('Error setting OpenRouter API key:', error);
     return null;
