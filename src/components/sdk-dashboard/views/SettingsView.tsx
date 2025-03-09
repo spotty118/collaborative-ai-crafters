@@ -6,12 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SDKService } from '@/services/openRouterSDK';
 import { toast } from 'sonner';
-import { Key, Check, AlertCircle } from 'lucide-react';
+import { Key, Check, AlertCircle, RefreshCw } from 'lucide-react';
 
 const SettingsView: React.FC = () => {
   const [apiKey, setApiKey] = useState('');
   const [defaultModel, setDefaultModel] = useState('anthropic/claude-3-5-sonnet');
   const [isSaving, setIsSaving] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
   const [keyStatus, setKeyStatus] = useState<'unchecked' | 'valid' | 'invalid'>('unchecked');
   
   useEffect(() => {
@@ -28,7 +29,39 @@ const SettingsView: React.FC = () => {
     }
   }, []);
   
-  const handleSaveSettings = () => {
+  const validateApiKey = async () => {
+    if (!apiKey.trim()) {
+      toast.error('API key is required');
+      setKeyStatus('invalid');
+      return false;
+    }
+
+    try {
+      setIsValidating(true);
+      // Use the executeAgent method with a simple prompt to test the API key
+      const response = await SDKService.executeAgent(
+        {
+          id: 'tester',
+          name: 'API Tester',
+          type: 'custom',
+          status: 'idle'
+        },
+        'This is a test prompt to validate the API key'
+      );
+      
+      setIsValidating(false);
+      setKeyStatus('valid');
+      return true;
+    } catch (error) {
+      console.error('Error validating API key:', error);
+      setIsValidating(false);
+      setKeyStatus('invalid');
+      toast.error('Invalid API key');
+      return false;
+    }
+  };
+  
+  const handleSaveSettings = async () => {
     try {
       setIsSaving(true);
       
@@ -44,8 +77,14 @@ const SettingsView: React.FC = () => {
         // Store default model
         localStorage.setItem('OPENROUTER_DEFAULT_MODEL', defaultModel);
         
-        toast.success('Settings saved successfully');
-        setKeyStatus('valid');
+        // Validate the key
+        const isValid = await validateApiKey();
+        
+        if (isValid) {
+          toast.success('Settings saved and API key validated successfully');
+        } else {
+          toast.warning('Settings saved but API key validation failed');
+        }
       } else {
         toast.error('Failed to save API key');
         setKeyStatus('invalid');
@@ -91,6 +130,14 @@ const SettingsView: React.FC = () => {
                   {keyStatus === 'unchecked' && <Key className="h-4 w-4 text-gray-400" />}
                 </div>
               </div>
+              <Button 
+                variant="outline" 
+                className="ml-2"
+                onClick={validateApiKey}
+                disabled={!apiKey.trim() || isValidating}
+              >
+                {isValidating ? <RefreshCw className="h-4 w-4 animate-spin" /> : 'Validate'}
+              </Button>
             </div>
             <p className="text-sm text-gray-500">
               Your OpenRouter API key is stored securely in your browser's local storage.
