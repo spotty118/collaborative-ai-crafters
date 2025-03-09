@@ -1,6 +1,6 @@
 
 import { createClient } from '@supabase/supabase-js'
-import { OpenRouter } from 'openrouter-sdk'
+import { OpenRouter } from 'https://esm.sh/openrouter-sdk@1.0.0'
 import { corsHeaders } from '../_shared/cors.ts'
 
 // Define console.log to use Deno.env logic
@@ -133,8 +133,8 @@ Deno.serve(async (req) => {
       
       console.log('Sending request to OpenRouter with SDK');
       
-      // Use the SDK to call the API
-      const completion = await openRouter.createCompletion({
+      // Use the SDK to call the API with the correct method
+      const completion = await openRouter.createChatCompletion({
         model: model,
         messages: messages,
         temperature: 0.3,

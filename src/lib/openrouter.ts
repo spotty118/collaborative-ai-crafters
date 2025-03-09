@@ -146,8 +146,8 @@ Format your response as a structured JSON object.`;
       // Create OpenRouter instance
       const openRouter = new OpenRouter({ apiKey });
       
-      // Make API call using the OpenRouter SDK
-      const response = await openRouter.createCompletion({
+      // Make API call using the OpenRouter SDK with the correct method
+      const response = await openRouter.createChatCompletion({
         model: model,
         messages: messages,
         temperature: 0.3,
@@ -465,7 +465,7 @@ export const sendAgentPrompt = async (
         const openRouter = new OpenRouter({ apiKey });
         
         // Call OpenRouter API using the correct method for the SDK
-        const completion = await openRouter.createCompletion({
+        const completion = await openRouter.createChatCompletion({
           model: model,
           messages: messages,
           temperature: 0.3,

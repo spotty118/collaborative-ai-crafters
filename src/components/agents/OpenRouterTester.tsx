@@ -1,98 +1,101 @@
 
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { OpenRouter } from "openrouter-sdk";
+import { toast } from "sonner";
 import { getOpenRouterApiKey } from '@/lib/env';
-import { OpenRouter } from 'openrouter-sdk';
 
-export const OpenRouterTester: React.FC = () => {
-  const [apiKey, setApiKey] = useState<string>(getOpenRouterApiKey() || '');
-  const [prompt, setPrompt] = useState<string>('What are the best practices for React development?');
-  const [response, setResponse] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(false);
+const OpenRouterTester: React.FC = () => {
+  const [prompt, setPrompt] = useState('Tell me about the OpenRouter API in 2 sentences.');
+  const [model, setModel] = useState('anthropic/claude-3.5-sonnet:thinking');
+  const [response, setResponse] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleTest = async () => {
-    if (!apiKey) {
-      setResponse('Please enter an OpenRouter API key first.');
-      return;
-    }
-
+  const testOpenRouter = async () => {
     setLoading(true);
-    setResponse('Loading...');
-
+    setResponse('');
+    
     try {
-      console.log('Testing OpenRouter API with key:', apiKey.substring(0, 5) + '...');
+      const apiKey = getOpenRouterApiKey();
       
-      // Initialize OpenRouter client
+      if (!apiKey) {
+        toast.error('OpenRouter API key is not set. Please add it in the settings.');
+        setLoading(false);
+        return;
+      }
+      
       const openRouter = new OpenRouter({ apiKey });
       
-      // Call the API with the SDK
-      const completion = await openRouter.createCompletion({
-        model: 'anthropic/claude-3-opus:thinking',
+      const completion = await openRouter.createChatCompletion({
+        model,
         messages: [
+          { role: 'system', content: 'You are a helpful assistant that provides concise and accurate information.' },
           { role: 'user', content: prompt }
         ],
-        temperature: 0.3,
-        max_tokens: 1024,
       });
-
+      
       if (completion.choices && completion.choices[0] && completion.choices[0].message) {
         setResponse(completion.choices[0].message.content);
       } else {
-        setResponse('Received response but in unexpected format.');
+        setResponse('Received an unexpected response format from OpenRouter.');
       }
-
     } catch (error) {
-      console.error('OpenRouter test error:', error);
+      console.error('Error testing OpenRouter:', error);
       setResponse(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error('Failed to get response from OpenRouter');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Card className="w-full max-w-3xl">
+    <Card className="w-full">
       <CardHeader>
-        <CardTitle>Test OpenRouter API</CardTitle>
+        <CardTitle>Test OpenRouter Connection</CardTitle>
         <CardDescription>
-          Test your OpenRouter API key by sending a simple prompt
+          Send a test prompt to OpenRouter to verify your API key is working
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="api-key">OpenRouter API Key</Label>
-          <Input
-            id="api-key"
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="or-..."
+          <label className="text-sm font-medium">Model</label>
+          <Input 
+            placeholder="OpenRouter model ID" 
+            value={model} 
+            onChange={(e) => setModel(e.target.value)}
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="prompt">Prompt</Label>
-          <Textarea
-            id="prompt"
-            value={prompt}
+          <label className="text-sm font-medium">Prompt</label>
+          <Textarea 
+            placeholder="Enter your prompt" 
+            rows={3}
+            value={prompt} 
             onChange={(e) => setPrompt(e.target.value)}
-            rows={4}
           />
         </div>
-        <div className="space-y-2">
-          <Label>Response</Label>
-          <div className="border rounded-md p-4 min-h-[100px] bg-gray-50 whitespace-pre-wrap">
-            {response}
-          </div>
-        </div>
-      </CardContent>
-      <CardFooter>
-        <Button onClick={handleTest} disabled={loading}>
-          {loading ? 'Testing...' : 'Test OpenRouter API'}
+        <Button 
+          onClick={testOpenRouter} 
+          disabled={loading || !prompt.trim()}
+          className="w-full"
+        >
+          {loading ? "Testing..." : "Test Connection"}
         </Button>
-      </CardFooter>
+        
+        {response && (
+          <div className="mt-4 space-y-2">
+            <label className="text-sm font-medium">Response</label>
+            <div className="p-3 bg-gray-50 rounded-md text-sm whitespace-pre-wrap">
+              {response}
+            </div>
+          </div>
+        )}
+      </CardContent>
     </Card>
   );
 };
+
+export default OpenRouterTester;
