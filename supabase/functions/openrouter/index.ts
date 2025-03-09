@@ -2,188 +2,253 @@
 import { corsHeaders } from '../_shared/cors.ts'
 // Using the correct import for Deno
 import { OpenRouter } from 'npm:openrouter-sdk';
-
-// Define console.log to use Deno.stderr logic
-console.log = function() {
-  const args = Array.prototype.slice.call(arguments);
-  Deno.stderr.writeSync(new TextEncoder().encode(args.join(' ') + '\n'));
-};
-
-// Define environment variable interface
-interface ProcessEnv {
-  OPENROUTER_API_KEY?: string;
-}
-
-// Get environment variables
-const env: ProcessEnv = {
-  OPENROUTER_API_KEY: Deno.env.get('OPENROUTER_API_KEY'),
-};
-
-// This is needed if you're planning to invoke your function from a browser.
-export const corsHeadersObj = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { supabase } from '../_shared/supabase-client.ts';
 
 Deno.serve(async (req) => {
-  // This is needed if you're planning to invoke your function from a browser.
+  // Handle CORS
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeadersObj });
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const requestData = await req.json();
-    const { agentType, prompt, model, images = [], context = '', task = '', projectContext = {}, expectCode = false } = requestData;
-
-    // Ensure we have an OpenRouter API key
-    const openrouterApiKey = env.OPENROUTER_API_KEY;
-    
-    if (!openrouterApiKey) {
-      return new Response(
-        JSON.stringify({ error: 'OpenRouter API key is not configured' }),
-        {
-          headers: { ...corsHeadersObj, 'Content-Type': 'application/json' },
-          status: 400,
-        }
-      );
+    const apiKey = Deno.env.get('OPENROUTER_API_KEY')
+    if (!apiKey) {
+      throw new Error('Missing OPENROUTER_API_KEY environment variable')
     }
 
-    console.log(`Processing prompt for agent type: ${agentType}`);
-    console.log(`Using model: ${model}`);
-    
-    // Initialize the OpenRouter client
-    const openRouter = new OpenRouter({
-      apiKey: openrouterApiKey,
-      baseUrl: 'https://openrouter.ai/api/v1',
+    const client = new OpenRouter({
+      apiKey,
+      baseURL: 'https://openrouter.ai/api/v1'
     });
+
+    // Parse request body
+    const requestData = await req.json()
     
-    // Add headers to the actual request
-    const headers = {
-      'HTTP-Referer': 'https://agent-platform-app.vercel.app', // Replace with your actual domain
-      'X-Title': 'Agent Platform'
-    };
+    // Extract parameters from request
+    const { 
+      agentType, 
+      prompt, 
+      projectContext, 
+      model, 
+      images = [],
+      expectCode = false,
+      task = '',
+      useVectorContext = false, // New parameter to use vector embeddings for context
+    } = requestData;
     
-    // Prepare messages for OpenRouter
-    const messages = [];
+    console.log(`Processing request for agent: ${agentType}, model: ${model}`);
+    console.log(`Project context: ${JSON.stringify(projectContext)}`);
     
-    // Add a system message if we have context
-    if (agentType) {
-      // Add appropriate system role based on agent type
-      let systemContent = '';
-      
-      switch (agentType) {
-        case 'architect':
-          systemContent = 'You are an experienced software architect. Provide detailed guidance on system design, architecture patterns, and technical decision-making.';
-          break;
-        case 'frontend':
-          systemContent = 'You are a frontend development expert. Provide detailed guidance on UI/UX implementation, responsive design, and modern frontend frameworks.';
-          break;
-        case 'backend':
-          systemContent = 'You are a backend development expert. Provide detailed guidance on API design, database modeling, and server-side architecture.';
-          break;
-        case 'testing':
-          systemContent = 'You are a software testing expert. Provide detailed guidance on test strategies, test automation, and quality assurance processes.';
-          break;
-        case 'devops':
-          systemContent = 'You are a DevOps expert. Provide detailed guidance on CI/CD pipelines, infrastructure as code, and deployment strategies.';
-          break;
-        default:
-          systemContent = 'You are an AI assistant with expertise in software development. Provide helpful, accurate, and detailed responses.';
-      }
-      
-      // If we expect code, add that to the system prompt
-      if (expectCode) {
-        systemContent += '\n\nIMPORTANT: When asked to generate code, provide complete, functional code files - not just snippets. Include all necessary imports and implementation details.';
-      }
-      
-      messages.push({ role: 'system', content: systemContent });
+    // Prepare messages array
+    let messages = [];
+    
+    // Add system message based on agent type if available
+    const systemMessage = getAgentSystemMessage(agentType, expectCode);
+    if (systemMessage) {
+      messages.push({ role: 'system', content: systemMessage });
     }
     
-    // Add context if provided
-    if (context) {
-      messages.push({ role: 'user', content: context });
-      messages.push({ 
-        role: 'assistant', 
-        content: 'I understand the context. What would you like me to help with now?' 
-      });
+    // If using vector context, fetch relevant content from vector database
+    let vectorContext = '';
+    if (useVectorContext && projectContext?.id) {
+      try {
+        // Get query embedding
+        const queryEmbedding = await generateEmbedding(prompt);
+        
+        // Search for similar content
+        const { data: similarContent, error: searchError } = await supabase.rpc(
+          'match_embeddings', 
+          {
+            query_embedding: queryEmbedding,
+            match_threshold: 0.7,
+            match_count: 5,
+            project_filter: projectContext.id
+          }
+        );
+        
+        if (searchError) {
+          console.error('Error searching vector database:', searchError);
+        } else if (similarContent && similarContent.length > 0) {
+          vectorContext = 'RELEVANT CONTEXT FROM PREVIOUS INTERACTIONS:\n\n' + 
+            similarContent.map(item => item.content).join('\n\n');
+          console.log(`Found ${similarContent.length} relevant context items`);
+        }
+      } catch (vectorError) {
+        console.error('Error using vector database:', vectorError);
+      }
     }
     
-    // Enhance the prompt with project context
+    // Build enhanced prompt with project context and vector context
     let enhancedPrompt = prompt;
-    if (projectContext && Object.keys(projectContext).length > 0) {
-      enhancedPrompt = `Project: ${projectContext.name || 'Unnamed'}\nDescription: ${projectContext.description || 'No description'}\n\n${prompt}`;
+    
+    if (projectContext) {
+      enhancedPrompt = `Project: ${projectContext.name}\nDescription: ${projectContext.description || 'No description'}\n\n${enhancedPrompt}`;
+    }
+    
+    if (vectorContext) {
+      enhancedPrompt = `${vectorContext}\n\n${enhancedPrompt}`;
     }
     
     if (task) {
       enhancedPrompt = `Task: ${task}\n\n${enhancedPrompt}`;
     }
     
-    // Add the main user message with the prompt
+    if (expectCode) {
+      enhancedPrompt = `${enhancedPrompt}\n\nIMPORTANT: I need complete, functional code. Do not provide explanations or partial snippets - write the full implementation with all necessary imports.`;
+    }
+    
+    // Check if this is a multimodal request with images
     if (images && images.length > 0) {
-      // Handle multimodal content
-      const multimodalContent = [
-        { type: 'text', text: enhancedPrompt }
-      ];
+      console.log('Preparing multimodal request with images');
       
-      // Add images to content
+      const messageContent = [];
+      
+      // Add text content
+      messageContent.push({
+        type: 'text',
+        text: enhancedPrompt
+      });
+      
+      // Add image URLs
       for (const imageUrl of images) {
-        multimodalContent.push({
+        messageContent.push({
           type: 'image_url',
-          image_url: { url: imageUrl }
+          image_url: {
+            url: imageUrl
+          }
         });
       }
       
-      messages.push({ role: 'user', content: multimodalContent });
+      messages.push({
+        role: 'user',
+        content: messageContent
+      });
     } else {
-      // Standard text message
+      // Standard text-only prompt
       messages.push({ role: 'user', content: enhancedPrompt });
     }
-
-    try {
-      // Use the OpenRouter SDK to make the API call
-      console.log('Sending request to OpenRouter API using SDK');
-      
-      const completion = await openRouter.chat.completions.create({
-        model: model,
-        messages: messages,
-        temperature: 0.3,
-        max_tokens: 1024,
-        headers: headers, // Add headers here for the request
-      });
-      
-      console.log('Received response from OpenRouter');
-      
-      return new Response(
-        JSON.stringify(completion),
-        { 
-          headers: { ...corsHeadersObj, 'Content-Type': 'application/json' },
-          status: 200
+    
+    // Set up headers
+    const headers = {
+      'HTTP-Referer': 'https://agent-platform-edge-function',
+      'X-Title': 'Agent Platform'
+    };
+    
+    // Make the request to OpenRouter
+    const response = await client.chat.completions.create({
+      model: model || 'anthropic/claude-3-5-sonnet',
+      messages: messages,
+      temperature: 0.3,
+      max_tokens: 1024,
+      headers: headers
+    });
+    
+    // Store the response in the vector database if it's a successful text response
+    if (response?.choices?.[0]?.message?.content && projectContext?.id) {
+      try {
+        const content = response.choices[0].message.content;
+        if (typeof content === 'string') {
+          const embedding = await generateEmbedding(content);
+          
+          const { error: insertError } = await supabase
+            .from('embeddings')
+            .insert({
+              content: content,
+              embedding: embedding,
+              metadata: { 
+                agent_type: agentType,
+                prompt: prompt,
+                model: model,
+                task: task
+              },
+              project_id: projectContext.id
+            });
+            
+          if (insertError) {
+            console.error('Error storing response in vector database:', insertError);
+          } else {
+            console.log('Successfully stored response in vector database');
+          }
         }
-      );
-    } catch (error) {
-      console.error('Error calling OpenRouter:', error);
-      
-      return new Response(
-        JSON.stringify({ 
-          error: `Error calling OpenRouter: ${error instanceof Error ? error.message : 'Unknown error'}` 
-        }),
-        { 
-          headers: { ...corsHeadersObj, 'Content-Type': 'application/json' },
-          status: 500
-        }
-      );
+      } catch (storageError) {
+        console.error('Error processing response for storage:', storageError);
+      }
     }
+    
+    // Return the response
+    return new Response(
+      JSON.stringify(response),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      },
+    )
   } catch (error) {
-    console.error('Error processing request:', error);
+    console.error('Error making request to OpenRouter:', error)
     
     return new Response(
-      JSON.stringify({ 
-        error: `Server error: ${error instanceof Error ? error.message : 'Unknown error'}` 
-      }),
-      { 
-        headers: { ...corsHeadersObj, 'Content-Type': 'application/json' },
-        status: 500
-      }
-    );
+      JSON.stringify({ error: error.message }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500,
+      },
+    )
   }
-});
+})
+
+/**
+ * Generate an embedding vector for a text string
+ * Note: Simplified implementation using a Deno-compatible library
+ */
+async function generateEmbedding(text: string): Promise<number[]> {
+  try {
+    // For this implementation, we'll use a simple hashing approach
+    // In a production environment, you'd want to use a proper embedding model
+    // or call an external API like OpenAI's embedding endpoint
+    
+    // Create a basic embedding with 1536 dimensions
+    const embedding: number[] = new Array(1536).fill(0);
+    
+    // Simple hashing to generate pseudo-embeddings
+    // This is only for demonstration and should be replaced with a real embedding API
+    const hash = new TextEncoder().encode(text);
+    for (let i = 0; i < hash.length; i++) {
+      embedding[i % 1536] = hash[i] / 255;
+    }
+    
+    return embedding;
+  } catch (error) {
+    console.error('Error generating embedding:', error);
+    throw new Error('Failed to generate embedding');
+  }
+}
+
+function getAgentSystemMessage(agentType: string, expectCode: boolean): string {
+  let baseMessage = '';
+  
+  switch (agentType) {
+    case 'architect':
+      baseMessage = 'You are an experienced software architect whose PRIMARY ROLE is ORCHESTRATION. Your job is NOT to implement but to COORDINATE other agents. You MUST:\n\n1. First, create a high-level design (keep this VERY brief)\n2. Immediately DELEGATE all implementation tasks to specialized agents\n3. For EVERY design decision, explicitly state which agent should implement it\n4. ALWAYS end your responses with explicit activation instructions like: "I will now activate the frontend agent to implement the UI components" or "I will now activate the backend agent to implement the API endpoints"\n\nNEVER provide detailed implementation - your job is DELEGATION. Keep design brief and focus on assigning tasks to agents. DO NOT write code yourself - immediately delegate to the appropriate specialized agent.';
+      break;
+    case 'frontend':
+      baseMessage = 'You are a frontend development expert. Your expertise includes UI/UX implementation, responsive design, and modern frontend frameworks. Provide detailed guidance on creating effective user interfaces and client-side functionality.';
+      break;
+    case 'backend':
+      baseMessage = 'You are a backend development expert. Your expertise includes API design, database modeling, and server-side architecture. Provide detailed guidance on creating robust, secure server-side applications.';
+      break;
+    case 'testing':
+      baseMessage = 'You are a software testing expert. Your expertise includes test strategies, test automation, and quality assurance processes. Provide detailed guidance on ensuring software quality through effective testing.';
+      break;
+    case 'devops':
+      baseMessage = 'You are a DevOps expert. Your expertise includes CI/CD pipelines, infrastructure as code, and deployment strategies. Provide detailed guidance on automating and optimizing development and deployment processes.';
+      break;
+    default:
+      baseMessage = 'You are an AI assistant with expertise in software development. Provide helpful, accurate, and detailed responses to technical questions.';
+  }
+  
+  if (expectCode) {
+    baseMessage += '\n\nWhen asked to generate code, focus on creating complete files and components that meet the requirements. ALWAYS provide full, functional implementations, never partial code or snippets.';
+  }
+  
+  return baseMessage;
+}

@@ -1,6 +1,18 @@
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project, SendAgentPromptOptions } from '@/lib/types';
 import { getEnvVariable, getOpenRouterApiKey, setLocalEnvVariable } from '@/lib/env';
+import { VectorDatabase } from "@/lib/vectorDb"; // Import the VectorDatabase
+
+export interface SendAgentPromptOptions {
+  model?: string;
+  images?: string[];
+  ignoreStatus?: boolean; // Option to bypass status check
+  context?: string; // Additional context from other agents
+  task?: string; // Specific task information
+  expectCode?: boolean; // Signal that code output is expected
+  useDirectSdk?: boolean; // Signal to use the SDK directly instead of edge function
+  useVectorContext?: boolean; // Use vector database for context-aware responses
+}
 
 // Agent class for orchestration
 class AgentOrchestrator {
@@ -162,7 +174,27 @@ Format your response as a structured JSON object.`;
       if (data.choices && data.choices[0] && data.choices[0].message) {
         // Ensure we return a string regardless of what's in the content
         const content = data.choices[0].message.content;
-        return typeof content === 'string' ? content : JSON.stringify(content);
+        const result = typeof content === 'string' ? content : JSON.stringify(content);
+        
+        // Store the response in the vector database
+        if (this.project.id && result) {
+          try {
+            await VectorDatabase.storeEmbedding(
+              this.project.id,
+              result,
+              {
+                agent_type: agent.type,
+                prompt: prompt,
+                model: model
+              }
+            );
+            console.log('Stored response in vector database');
+          } catch (vectorError) {
+            console.error('Failed to store in vector database:', vectorError);
+          }
+        }
+        
+        return result;
       } else {
         throw new Error('Unexpected response format from OpenRouter');
       }
@@ -494,7 +526,27 @@ export const sendAgentPrompt = async (
         if (data.choices && data.choices[0] && data.choices[0].message) {
           // Ensure we return a string regardless of what's in the content
           const content = data.choices[0].message.content;
-          return typeof content === 'string' ? content : JSON.stringify(content);
+          const result = typeof content === 'string' ? content : JSON.stringify(content);
+          
+          // Store the response in the vector database
+          if (project.id && result) {
+            try {
+              await VectorDatabase.storeEmbedding(
+                project.id,
+                result,
+                {
+                  agent_type: agent.type,
+                  prompt: prompt,
+                  model: model
+                }
+              );
+              console.log('Stored response in vector database');
+            } catch (vectorError) {
+              console.error('Failed to store in vector database:', vectorError);
+            }
+          }
+          
+          return result;
         } else {
           throw new Error('Unexpected response format from OpenRouter');
         }
@@ -519,7 +571,8 @@ export const sendAgentPrompt = async (
         images: options?.images || [],
         context: options?.context || '',
         task: options?.task || '',
-        expectCode: options?.expectCode || false
+        expectCode: options?.expectCode || false,
+        useVectorContext: options?.useVectorContext || false
       };
       
       const { data, error } = await supabase.functions.invoke('openrouter', {

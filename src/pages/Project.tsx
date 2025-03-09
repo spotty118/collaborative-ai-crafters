@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Dashboard from "@/components/layout/Dashboard";
 import { sendAgentPrompt, analyzeGitHubAndCreateTasks } from "@/lib/openrouter";
+import { VectorDatabase } from "@/lib/vectorDb";
 import { CodeFile, Message, Project as ProjectType, Agent, Task } from "@/lib/types";
 import { useGitHub } from "@/contexts/GitHubContext";
 import { FileEditor } from "@/components/FileEditor";
@@ -23,6 +24,7 @@ const Project: React.FC = () => {
   const [activeChat, setActiveChat] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<CodeFile | null>(null);
   const [githubToken, setGithubToken] = useState("");
+  const [useVectorContext, setUseVectorContext] = useState(true);
 
   const github = useGitHub();
   const queryClient = useQueryClient();
@@ -894,7 +896,8 @@ Do not just provide explanations or descriptions - I need the actual code file.`
         { 
           ignoreStatus: true,
           context: messageContext,
-          expectCode
+          expectCode,
+          useVectorContext
         }
       );
       
@@ -904,6 +907,22 @@ Do not just provide explanations or descriptions - I need the actual code file.`
         sender: agent.name,
         type: "text"
       });
+      
+      if (id && response) {
+        try {
+          await VectorDatabase.storeEmbedding(
+            id,
+            response,
+            {
+              agent_type: agent.type,
+              prompt: message,
+              is_response: true
+            }
+          );
+        } catch (vectorError) {
+          console.error('Failed to store response in vector database:', vectorError);
+        }
+      }
       
       if (expectCode) {
         try {
@@ -1161,6 +1180,65 @@ IMPORTANT: Please write out the full implementation for each file, one at a time
     }
   };
 
+  const handleIndexExistingContent = async () => {
+    if (!id || !project) return;
+    
+    const loadingToastId = toast.loading('Indexing project content in vector database...');
+    
+    try {
+      const projectMessages = await getMessages(id);
+      
+      let successCount = 0;
+      
+      for (const message of projectMessages) {
+        if (message.content && message.content.length > 10) {
+          try {
+            await VectorDatabase.storeEmbedding(
+              id,
+              message.content, 
+              {
+                sender: message.sender,
+                type: message.type,
+                timestamp: message.created_at
+              }
+            );
+            successCount++;
+          } catch (error) {
+            console.error('Error indexing message:', error);
+          }
+        }
+      }
+      
+      const codeFiles = await getCodeFiles(id);
+      
+      for (const file of codeFiles) {
+        if (file.content) {
+          try {
+            const content = `File: ${file.path}\n\n${file.content}`;
+            await VectorDatabase.storeEmbedding(
+              id,
+              content,
+              {
+                file_path: file.path,
+                language: file.language,
+                created_by: file.created_by
+              }
+            );
+            successCount++;
+          } catch (error) {
+            console.error('Error indexing code file:', error);
+          }
+        }
+      }
+      
+      toast.dismiss(loadingToastId);
+      toast.success(`Successfully indexed ${successCount} items in the vector database`);
+    } catch (error) {
+      toast.dismiss(loadingToastId);
+      toast.error('Failed to index content: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
   if (!id || loadingProject || projectError) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -1364,6 +1442,42 @@ IMPORTANT: Please write out the full implementation for each file, one at a time
                     </div>
                   </div>
                 )}
+                
+                <div>
+                  <h3 className="text-base font-medium mb-4">Vector Database</h3>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span>Use Context Awareness:</span>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={useVectorContext}
+                          onChange={() => setUseVectorContext(!useVectorContext)}
+                        />
+                        <div className={`w-11 h-6 rounded-full transition-colors ${
+                          useVectorContext ? 'bg-primary' : 'bg-gray-200'
+                        }`}>
+                          <div className={`w-5 h-5 rounded-full bg-white transform transition-transform ${
+                            useVectorContext ? 'translate-x-6' : 'translate-x-1'
+                          } shadow-md`}></div>
+                        </div>
+                      </label>
+                    </div>
+
+                    <Button 
+                      onClick={handleIndexExistingContent}
+                      variant="outline"
+                      className="mt-2"
+                    >
+                      Index Existing Content
+                    </Button>
+                    
+                    <p className="text-xs text-gray-500 mt-1">
+                      Indexing will add all messages and code files to the vector database for enhanced AI context awareness.
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </TabsContent>
