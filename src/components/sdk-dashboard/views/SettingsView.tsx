@@ -11,7 +11,7 @@ import { useOpenRouterSDK } from '@/hooks/useOpenRouterSDK';
 
 const SettingsView: React.FC = () => {
   const [apiKey, setApiKey] = useState('');
-  const [defaultModel, setDefaultModel] = useState('anthropic/claude-3-5-sonnet');
+  const [defaultModel, setDefaultModel] = useState('openai/gpt-4o-mini');
   const [isSaving, setIsSaving] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [keyStatus, setKeyStatus] = useState<'unchecked' | 'valid' | 'invalid'>('unchecked');
@@ -202,10 +202,10 @@ const SettingsView: React.FC = () => {
                   ))
                 ) : (
                   <>
-                    <SelectItem value="anthropic/claude-3-5-sonnet">Claude 3.5 Sonnet</SelectItem>
-                    <SelectItem value="anthropic/claude-3-opus">Claude 3 Opus</SelectItem>
                     <SelectItem value="openai/gpt-4o">GPT-4o</SelectItem>
                     <SelectItem value="openai/gpt-4o-mini">GPT-4o Mini</SelectItem>
+                    <SelectItem value="anthropic/claude-3-opus">Claude 3 Opus</SelectItem>
+                    <SelectItem value="anthropic/claude-3-sonnet">Claude 3 Sonnet</SelectItem>
                     <SelectItem value="google/gemini-1.5-pro">Gemini 1.5 Pro</SelectItem>
                   </>
                 )}

@@ -138,7 +138,7 @@ Deno.serve(async (req) => {
     
     // Make the request to OpenRouter
     const response = await client.chat.completions.create({
-      model: model || 'anthropic/claude-3-5-sonnet',
+      model: model || 'openai/gpt-4o-mini',
       messages: messages,
       temperature: 0.3,
       max_tokens: 1024,

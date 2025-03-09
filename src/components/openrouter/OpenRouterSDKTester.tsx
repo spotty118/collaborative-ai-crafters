@@ -21,7 +21,7 @@ const OpenRouterSDKTester: React.FC = () => {
   const [result, setResult] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<AgentType>('architect');
-  const [selectedModel, setSelectedModel] = useState('anthropic/claude-3-5-sonnet');
+  const [selectedModel, setSelectedModel] = useState('openai/gpt-4o-mini');
   const [models, setModels] = useState<ModelOption[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const { sdkService, isApiKeySet, isChecking } = useOpenRouterSDK();

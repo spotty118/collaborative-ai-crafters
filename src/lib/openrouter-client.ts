@@ -1,3 +1,4 @@
+
 import { getOpenRouterApiKey } from '@/lib/env';
 import { Agent, Project, SendAgentPromptOptions } from '@/lib/types';
 import { toast } from 'sonner';
@@ -292,7 +293,7 @@ export async function orchestrateAgents(
       architectAgent,
       designPrompt,
       project,
-      { model: 'anthropic/claude-3-sonnet', expectCode: false }
+      { model: 'anthropic/claude-3-opus', expectCode: false }
     );
     
     console.log('Received project design from Architect');
