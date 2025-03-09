@@ -92,7 +92,7 @@ const ProjectPage: React.FC = () => {
             id: 'architect',
             name: 'Architect',
             type: 'architect',
-            status: 'active'
+            status: 'working'  // Changed from 'active' to 'working'
           },
           `Analyze the following README content and provide a summary:\n${readmeContent}`,
           {
@@ -144,7 +144,7 @@ const ProjectPage: React.FC = () => {
     console.log(`Starting agent: ${agentId}`);
     // Implementation would go here
     setAgents(agents.map(agent => 
-      agent.id === agentId ? { ...agent, status: 'active' } : agent
+      agent.id === agentId ? { ...agent, status: 'working' } : agent  // Changed from 'active' to 'working'
     ));
   };
   
@@ -160,7 +160,7 @@ const ProjectPage: React.FC = () => {
     console.log(`Restarting agent: ${agentId}`);
     // Implementation would go here
     setAgents(agents.map(agent => 
-      agent.id === agentId ? { ...agent, status: 'active' } : agent
+      agent.id === agentId ? { ...agent, status: 'working' } : agent  // Changed from 'active' to 'working'
     ));
   };
   
