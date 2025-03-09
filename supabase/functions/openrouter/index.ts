@@ -1,9 +1,8 @@
-
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { corsHeaders } from '../_shared/cors.ts';
+import { OpenRouter } from 'npm:openrouter-sdk';
 
 const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
-const openRouterUrl = 'https://openrouter.ai/api/v1/chat/completions';
 
 serve(async (req) => {
   // CORS handling
@@ -56,6 +55,16 @@ serve(async (req) => {
       // Build prompt context for the agent
       const agentRole = getAgentRole(agentType);
       
+      // Initialize the OpenRouter SDK
+      const openrouter = new OpenRouter({
+        apiKey: OPENROUTER_API_KEY,
+        baseUrl: 'https://openrouter.ai/api/v1',
+        defaultHeaders: {
+          'HTTP-Referer': 'https://lovable.ai',
+          'X-Title': 'Lovable AI Agent',
+        }
+      });
+      
       // Construct messages based on agent type and prompt
       let messages = [];
       
@@ -95,46 +104,24 @@ serve(async (req) => {
         }
       }
       
-      console.log('Full request body to OpenRouter:', JSON.stringify({
+      console.log('Sending request to OpenRouter with SDK');
+      
+      // Use the SDK to call the API
+      const completion = await openrouter.chat.completions.create({
         model: model,
         messages: messages,
         temperature: 0.3,
         max_tokens: 1024,
-      }));
-      
-      const response = await fetch(openRouterUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'HTTP-Referer': 'https://lovable.ai',
-          'X-Title': 'Lovable AI Agent',
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: messages,
-          temperature: 0.3,
-          max_tokens: 1024,
-        }),
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`OpenRouter API error: ${response.status} ${response.statusText}`);
-        console.error(`Error details: ${errorText}`);
-        throw new Error(`OpenRouter API error: ${response.status} ${response.statusText} - ${errorText}`);
-      }
-
-      const data = await response.json();
-      console.log('OpenRouter response received successfully');
-      console.log('Response data:', JSON.stringify(data));
       
-      // Extract the actual content from the response
+      console.log('OpenRouter response received successfully');
+      
+      // Extract content from the response
       let content = '';
-      if (data?.choices?.[0]?.message?.content) {
-        content = data.choices[0].message.content;
+      if (completion.choices?.[0]?.message?.content) {
+        content = completion.choices[0].message.content;
       } else {
-        console.warn('Unexpected response format from OpenRouter:', JSON.stringify(data));
+        console.warn('Unexpected response format from OpenRouter:', JSON.stringify(completion));
         content = 'Received a response from the AI service, but the format was unexpected.';
       }
       
