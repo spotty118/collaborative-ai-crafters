@@ -1,7 +1,8 @@
+
 import { getOpenRouterApiKey } from '@/lib/env';
 import { Agent, Project, SendAgentPromptOptions } from '@/lib/types';
 import { toast } from 'sonner';
-import OpenAI from 'openrouter-sdk';
+import { OpenAI } from 'openrouter-sdk';
 
 export class OpenRouterClient {
   private apiKey: string;

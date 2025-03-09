@@ -1,7 +1,6 @@
-
 import { corsHeaders } from '../_shared/cors.ts'
 // Using the correct import for Deno
-import OpenAI from 'npm:openrouter-sdk';
+import { OpenAI } from 'npm:openrouter-sdk';
 
 // Define console.log to use Deno.stderr logic
 console.log = function() {
