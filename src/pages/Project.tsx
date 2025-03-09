@@ -25,10 +25,42 @@ const ProjectPage: React.FC = () => {
     messages: false
   });
 
+  // Load initial data
+  useEffect(() => {
+    if (!projectId) return;
+    
+    // Sample agent data for testing
+    setAgents([
+      {
+        id: 'architect',
+        name: 'Architect',
+        type: 'architect',
+        status: 'idle'
+      },
+      {
+        id: 'frontend',
+        name: 'Frontend Developer',
+        type: 'frontend',
+        status: 'idle'
+      },
+      {
+        id: 'backend',
+        name: 'Backend Developer', 
+        type: 'backend',
+        status: 'idle'
+      }
+    ]);
+  }, [projectId]);
+
   const handleAgentPrompt = async () => {
     try {
       if (!projectId) {
-        throw new Error('Project ID is missing.');
+        toast({
+          title: 'Error',
+          description: 'Project ID is missing. Please ensure you are on a valid project page.',
+          variant: 'destructive',
+        });
+        return;
       }
 
       if (!getOpenRouterApiKey()) {
@@ -49,39 +81,53 @@ const ProjectPage: React.FC = () => {
         return;
       }
 
-      const gitHubService = getGitHubService();
-      const readmeContent = await gitHubService.getFileContent('README.md');
-
-      const agentResponse = await sendAgentPrompt(
-        {
-          id: 'test-agent',
-          name: 'Test Agent',
-          type: 'architect',
-        },
-        `Analyze the following README content and provide a summary:\n${readmeContent}`,
-        {
-          id: projectId,
-          name: 'Current Project',
-          description: 'Test Project',
-          mode: 'existing' // Add the required 'mode' property
-        }
-      );
-
-      // Add the message to our messages array
-      const newMessage: Message = {
-        project_id: projectId,
-        content: agentResponse || 'No response from agent.',
-        sender: 'Test Agent',
-        type: 'message',
-        created_at: new Date().toISOString()
-      };
+      setIsLoading(prev => ({ ...prev, messages: true }));
       
-      setMessages(prev => [...prev, newMessage]);
+      try {
+        const gitHubService = getGitHubService();
+        const readmeContent = await gitHubService.getFileContent('README.md');
+        
+        const agentResponse = await sendAgentPrompt(
+          {
+            id: 'architect',
+            name: 'Architect',
+            type: 'architect',
+            status: 'active'
+          },
+          `Analyze the following README content and provide a summary:\n${readmeContent}`,
+          {
+            id: projectId,
+            name: 'Current Project',
+            description: 'Test Project',
+            mode: 'existing' as ProjectMode
+          }
+        );
 
-      toast({
-        title: 'Agent Response',
-        description: agentResponse || 'No response from agent.',
-      });
+        // Add the message to our messages array
+        const newMessage: Message = {
+          project_id: projectId,
+          content: agentResponse || 'No response from agent.',
+          sender: 'Architect',
+          type: 'message',
+          created_at: new Date().toISOString()
+        };
+        
+        setMessages(prev => [...prev, newMessage]);
+
+        toast({
+          title: 'Agent Response',
+          description: 'Agent has analyzed the README and provided a response.',
+        });
+      } catch (error: any) {
+        console.error('Error sending agent prompt:', error);
+        toast({
+          title: 'Error',
+          description: error.message || 'Failed to send agent prompt.',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(prev => ({ ...prev, messages: false }));
+      }
     } catch (error: any) {
       console.error('Error sending agent prompt:', error);
       toast({
@@ -89,6 +135,7 @@ const ProjectPage: React.FC = () => {
         description: error.message || 'Failed to send agent prompt.',
         variant: 'destructive',
       });
+      setIsLoading(prev => ({ ...prev, messages: false }));
     }
   };
 
@@ -96,16 +143,25 @@ const ProjectPage: React.FC = () => {
   const handleStartAgent = (agentId: string) => {
     console.log(`Starting agent: ${agentId}`);
     // Implementation would go here
+    setAgents(agents.map(agent => 
+      agent.id === agentId ? { ...agent, status: 'active' } : agent
+    ));
   };
   
   const handleStopAgent = (agentId: string) => {
     console.log(`Stopping agent: ${agentId}`);
     // Implementation would go here
+    setAgents(agents.map(agent => 
+      agent.id === agentId ? { ...agent, status: 'idle' } : agent
+    ));
   };
   
   const handleRestartAgent = (agentId: string) => {
     console.log(`Restarting agent: ${agentId}`);
     // Implementation would go here
+    setAgents(agents.map(agent => 
+      agent.id === agentId ? { ...agent, status: 'active' } : agent
+    ));
   };
   
   const handleChatWithAgent = (agentId: string) => {
@@ -126,14 +182,37 @@ const ProjectPage: React.FC = () => {
     
     setMessages(prev => [...prev, userMessage]);
     
-    // Here you would typically send the message to the agent
-    // and then add their response to the messages
+    // Simulate agent response
+    setTimeout(() => {
+      const agentMessage: Message = {
+        project_id: projectId,
+        content: `I received your message: "${message}"`,
+        sender: agents.find(a => a.id === activeChat)?.name || 'Agent',
+        type: 'message',
+        created_at: new Date().toISOString()
+      };
+      
+      setMessages(prev => [...prev, agentMessage]);
+    }, 1000);
   };
   
   const handleExecuteTask = (taskId: string, agentId: string) => {
     console.log(`Executing task ${taskId} with agent ${agentId}`);
     // Implementation would go here
   };
+
+  if (!projectId) {
+    return (
+      <Card className="m-4">
+        <CardHeader>
+          <CardTitle>Error: Missing Project ID</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>No project ID was provided. Please navigate to a valid project page.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Dashboard
@@ -148,8 +227,8 @@ const ProjectPage: React.FC = () => {
       onSendMessage={handleSendMessage}
       onExecuteTask={handleExecuteTask}
       project={{
-        id: projectId || '',
-        name: projectId ? `Project: ${projectId}` : 'Unknown Project',
+        id: projectId,
+        name: `Project: ${projectId}`,
         description: 'This is a project page',
         mode: 'existing' as ProjectMode
       }}
