@@ -1,7 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project, SendAgentPromptOptions } from '@/lib/types';
-import { OpenRouter } from 'openrouter-sdk';
-import { getEnvVariable, setLocalEnvVariable } from '@/lib/env';
+import OpenRouter from 'openrouter-sdk';
+import { getEnvVariable, getOpenRouterApiKey, setLocalEnvVariable } from '@/lib/env';
 
 // Agent class for orchestration
 class AgentOrchestrator {
@@ -12,7 +12,7 @@ class AgentOrchestrator {
   private projectPlan: any = null;
   private agentMemory: Record<string, string[]> = {};
   private lastAgentOutput: Record<string, string> = {};
-  private openrouterClient: OpenRouter | null = null;
+  private openrouterClient: any = null;
 
   constructor(project: Project, agents: Agent[]) {
     this.project = project;
@@ -24,9 +24,10 @@ class AgentOrchestrator {
     });
 
     // Initialize OpenRouter client if API key is available
-    if (OPENROUTER_API_KEY) {
+    const apiKey = getOpenRouterApiKey();
+    if (apiKey) {
       this.openrouterClient = new OpenRouter({
-        apiKey: OPENROUTER_API_KEY
+        apiKey: apiKey
       });
     }
   }
@@ -139,8 +140,8 @@ Format your response as a structured JSON object.`;
     messages.push({ role: 'user', content: enhancedPrompt });
     
     try {
-      // Make API call using the SDK's chat.completions method
-      const response = await this.openrouterClient.chat.completions.create({
+      // Make API call using the SDK
+      const response = await this.openrouterClient.generateText({
         model: model,
         messages: messages,
         temperature: 0.3,
@@ -407,7 +408,7 @@ export const sendAgentPrompt = async (
     const enhancedPrompt = addProjectContextToPrompt(prompt, project, options?.expectCode);
     
     // Get the OpenRouter API key
-    const apiKey = getEnvVariable('OPENROUTER_API_KEY');
+    const apiKey = getOpenRouterApiKey();
     
     // Use OpenRouter SDK directly (preferred approach)
     if (apiKey) {
@@ -458,8 +459,8 @@ export const sendAgentPrompt = async (
           }
         }
         
-        // Call OpenRouter API using the chat.completions method
-        const completion = await openrouter.chat.completions.create({
+        // Call OpenRouter API using the generateText method
+        const completion = await openrouter.generateText({
           model: model,
           messages: messages,
           temperature: 0.3,
@@ -647,7 +648,7 @@ function getAgentRole(agentType: string): string {
 /**
  * Sets the OpenRouter API key and returns a new OpenRouter client instance
  */
-export const setOpenRouterApiKey = (apiKey: string): OpenRouter | null => {
+export const setOpenRouterApiKey = (apiKey: string): any | null => {
   if (!apiKey) return null;
   
   try {

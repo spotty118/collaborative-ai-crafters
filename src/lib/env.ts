@@ -40,7 +40,10 @@ export const removeLocalEnvVariable = (key: string): void => {
   }
 };
 
-export const OPENROUTER_API_KEY = getEnvVariable('OPENROUTER_API_KEY');
+// Export the OpenRouter API key getter
+export const getOpenRouterApiKey = (): string | undefined => {
+  return getEnvVariable('OPENROUTER_API_KEY');
+};
 
 // Helper function to check if OpenRouter API key is available
 export const hasOpenRouterApiKey = (): boolean => {

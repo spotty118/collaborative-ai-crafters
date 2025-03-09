@@ -13,6 +13,7 @@ import { CodeFile, Message, Project as ProjectType, Agent, Task } from "@/lib/ty
 import { useGitHub } from "@/contexts/GitHubContext";
 import { FileEditor } from "@/components/FileEditor";
 import { toast } from "sonner";
+import { OpenRouterKeyInput } from "@/components/agents/OpenRouterKeyInput";
 
 const Project: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -1258,28 +1259,33 @@ IMPORTANT: Please write out the full implementation for each file, one at a time
           </TabsContent>
 
           <TabsContent value="dashboard" className="flex-1 mt-0">
-            <Dashboard
-              agents={agents}
-              tasks={tasks}
-              messages={messages}
-              activeChat={activeChat}
-              onStartAgent={handleStartAgent}
-              onStopAgent={handleStopAgent}
-              onRestartAgent={handleRestartAgent}
-              onChatWithAgent={handleChatWithAgent}
-              onSendMessage={handleSendMessage}
-              onExecuteTask={handleExecuteTask}
-              project={{
-                name: project.name,
-                description: project.description,
-                mode: project.sourceType ? 'existing' : 'new'
-              }}
-              isLoading={{
-                agents: loadingAgents,
-                tasks: loadingTasks,
-                messages: loadingMessages
-              }}
-            />
+            <div className="container mx-auto p-4">
+              <div className="mb-6">
+                <OpenRouterKeyInput />
+              </div>
+              <Dashboard
+                agents={agents}
+                tasks={tasks}
+                messages={messages}
+                activeChat={activeChat}
+                onStartAgent={handleStartAgent}
+                onStopAgent={handleStopAgent}
+                onRestartAgent={handleRestartAgent}
+                onChatWithAgent={handleChatWithAgent}
+                onSendMessage={handleSendMessage}
+                onExecuteTask={handleExecuteTask}
+                project={{
+                  name: project.name,
+                  description: project.description,
+                  mode: project.sourceType ? 'existing' : 'new'
+                }}
+                isLoading={{
+                  agents: loadingAgents,
+                  tasks: loadingTasks,
+                  messages: loadingMessages
+                }}
+              />
+            </div>
           </TabsContent>
 
           <TabsContent value="settings" className="flex-1 p-4">
@@ -1361,4 +1367,3 @@ IMPORTANT: Please write out the full implementation for each file, one at a time
 };
 
 export default Project;
-
