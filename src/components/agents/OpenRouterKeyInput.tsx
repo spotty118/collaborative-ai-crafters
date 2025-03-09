@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { KeyIcon } from "lucide-react";
 import { getOpenRouterApiKey, setLocalEnvVariable, removeLocalEnvVariable } from "@/lib/env";
 import { useToast } from "@/hooks/use-toast";
+import { setOpenRouterApiKey } from "@/lib/openrouter";
 
 export function OpenRouterKeyInput() {
   const { toast } = useToast();
@@ -24,7 +25,10 @@ export function OpenRouterKeyInput() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (apiKey.trim()) {
+      // Save to localStorage using the env function
       setLocalEnvVariable('OPENROUTER_API_KEY', apiKey.trim());
+      // Also initialize the OpenRouter SDK
+      setOpenRouterApiKey(apiKey.trim());
       setHasKey(true);
       toast({
         title: "API Key Saved",
