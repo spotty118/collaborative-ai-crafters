@@ -1,6 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project, SendAgentPromptOptions } from '@/lib/types';
-import OpenRouter from 'openrouter-sdk';
+import { OpenRouter } from 'openrouter-sdk';
 import { getEnvVariable, getOpenRouterApiKey, setLocalEnvVariable } from '@/lib/env';
 
 // Agent class for orchestration
@@ -23,10 +23,10 @@ class AgentOrchestrator {
       this.agentMemory[agent.type] = [];
     });
 
-    // Initialize OpenRouter client if API key is available
+    // Initialize reference to use OpenRouter
     const apiKey = getOpenRouterApiKey();
     if (apiKey) {
-      this.openrouterClient = OpenRouter;
+      this.openrouterClient = true; // Just indicate we have a key and can use OpenRouter
     }
   }
 
@@ -144,8 +144,11 @@ Format your response as a structured JSON object.`;
       }
       
       // Make API call using the SDK
-      const response = await OpenRouter.generateText({
+      const openrouter = new OpenRouter({
         apiKey,
+      });
+      
+      const response = await openrouter.completions.create({
         model: model,
         messages: messages,
         temperature: 0.3,
@@ -459,9 +462,13 @@ export const sendAgentPrompt = async (
           }
         }
         
-        // Call OpenRouter API using the generateText method
-        const completion = await OpenRouter.generateText({
+        // Initialize the OpenRouter client with API key
+        const openrouter = new OpenRouter({
           apiKey,
+        });
+        
+        // Call OpenRouter API using the completions.create method
+        const completion = await openrouter.completions.create({
           model: model,
           messages: messages,
           temperature: 0.3,
@@ -656,8 +663,8 @@ export const setOpenRouterApiKey = (apiKey: string): any | null => {
     // Save to localStorage
     setLocalEnvVariable('OPENROUTER_API_KEY', apiKey);
     
-    // OpenRouter is now correctly used without the 'new' keyword
-    return OpenRouter;
+    // Return true to indicate success
+    return true;
   } catch (error) {
     console.error('Error setting OpenRouter API key:', error);
     return null;
