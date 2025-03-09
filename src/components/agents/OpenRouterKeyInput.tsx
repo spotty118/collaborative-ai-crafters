@@ -45,6 +45,40 @@ export function OpenRouterKeyInput() {
     });
   };
   
+  const handleTestKey = async () => {
+    try {
+      // Test the API key by making a simple request
+      const response = await fetch('https://openrouter.ai/api/v1/models', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': window.location.origin,
+          'X-Title': 'Agent Platform'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Invalid API key or API request failed');
+      }
+      
+      const data = await response.json();
+      console.log('OpenRouter models:', data);
+      
+      toast({
+        title: "API Key Verified",
+        description: "Your OpenRouter API key is valid and working.",
+        variant: "default",
+      });
+    } catch (error) {
+      console.error('Error testing OpenRouter API key:', error);
+      toast({
+        title: "API Key Verification Failed",
+        description: error instanceof Error ? error.message : "Failed to verify API key",
+        variant: "destructive",
+      });
+    }
+  };
+  
   return (
     <Card className="w-full max-w-md mb-6">
       <CardHeader>
@@ -76,12 +110,24 @@ export function OpenRouterKeyInput() {
         </CardContent>
         
         <CardFooter className="flex justify-between">
-          <Button 
-            type="submit" 
-            disabled={!apiKey.trim()}
-          >
-            {hasKey ? "Update Key" : "Save Key"}
-          </Button>
+          <div className="flex space-x-2">
+            <Button 
+              type="submit" 
+              disabled={!apiKey.trim()}
+            >
+              {hasKey ? "Update Key" : "Save Key"}
+            </Button>
+            
+            {hasKey && (
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={handleTestKey}
+              >
+                Test Key
+              </Button>
+            )}
+          </div>
           
           {hasKey && (
             <Button 

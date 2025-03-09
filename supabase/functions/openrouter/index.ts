@@ -1,7 +1,8 @@
 
 import { corsHeaders } from '../_shared/cors.ts'
+import OpenRouter from 'npm:openrouter';
 
-// Define console.log to use Deno.env logic
+// Define console.log to use Deno.stderr logic
 console.log = function() {
   const args = Array.prototype.slice.call(arguments);
   Deno.stderr.writeSync(new TextEncoder().encode(args.join(' ') + '\n'));

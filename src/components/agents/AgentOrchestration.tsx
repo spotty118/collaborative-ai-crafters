@@ -1,14 +1,13 @@
+
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { Agent, Project } from '@/lib/types';
-import { orchestrateAgents, sendAgentPrompt } from '@/lib/openrouter';
-import { supabase } from '@/integrations/supabase/client';
+import { orchestrateAgents, sendAgentPrompt, openRouterClient } from '@/lib/openrouter-client';
 import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { hasOpenRouterApiKey } from '@/lib/env';
 import {
   Card,
   CardContent,
@@ -34,11 +33,16 @@ const AgentOrchestration: React.FC<AgentOrchestrationProps> = ({
   const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState('');
   const [results, setResults] = useState<any>(null);
-  const [orchestrationMethod, setOrchestrationMethod] = useState<'sdk' | 'integrated'>('integrated');
+  const [orchestrationMethod, setOrchestrationMethod] = useState<'claude' | 'gpt4'>('gpt4');
 
   const runOrchestration = async () => {
     if (!prompt.trim()) {
       toast.error('Please enter a project description');
+      return;
+    }
+
+    if (!openRouterClient.hasApiKey()) {
+      toast.error('OpenRouter API key is required. Please set it in the settings.');
       return;
     }
 
@@ -49,64 +53,27 @@ const AgentOrchestration: React.FC<AgentOrchestrationProps> = ({
 
     try {
       let orchestrationResults;
+      let model;
 
-      // Client-side orchestration using the integrated function
-      if (orchestrationMethod === 'integrated') {
-        setStage('Designing project with Architect agent');
-        setProgress(10);
-        
-        // Verify that all agents are available
-        const architectAgent = agents.find(a => a.type === 'architect');
-        if (!architectAgent) {
-          throw new Error('Architect agent is required for orchestration');
-        }
-        
-        // Start the orchestration process
-        orchestrationResults = await orchestrateAgents(project, agents, prompt);
-        
-      // Direct SDK orchestration with OpenRouter SDK
-      } else if (orchestrationMethod === 'sdk') {
-        if (!hasOpenRouterApiKey()) {
-          throw new Error('OpenRouter API key is required for SDK orchestration');
-        }
-        
-        setStage('Starting SDK orchestration with OpenRouter');
-        setProgress(10);
-        
-        // Verify architect agent is available
-        const architectAgent = agents.find(a => a.type === 'architect');
-        if (!architectAgent) {
-          throw new Error('Architect agent is required for orchestration');
-        }
-        
-        // Get project design from architect agent using SDK directly
-        setStage('Designing project with Architect agent using OpenRouter SDK');
-        setProgress(20);
-        
-        const designResponse = await sendAgentPrompt(
-          architectAgent,
-          `Design a comprehensive project plan for: ${prompt}`,
-          project,
-          { model: 'anthropic/claude-3.5-sonnet:thinking', ignoreStatus: true }
-        );
-        
-        // Parse the design and create mock results for demonstration
-        setStage('Analyzing architect design');
-        setProgress(50);
-        
-        // Process design and mock task execution
-        orchestrationResults = {
-          projectPlan: {
-            name: "Project Plan from OpenRouter SDK",
-            description: prompt,
-            design: designResponse.substring(0, 500) + "..." // truncate for display
-          },
-          results: [
-            { id: "sdk-1", description: "Project design", assignedTo: "architect", status: "completed", result: designResponse }
-          ],
-          evaluation: "Project plan created using the OpenRouter SDK. To execute tasks, use the integrated orchestration method."
-        };
+      // Select model based on orchestration method
+      if (orchestrationMethod === 'claude') {
+        model = 'anthropic/claude-3-sonnet';
+        setStage('Designing project with Architect agent using Claude');
+      } else {
+        model = 'openai/gpt-4o-mini';
+        setStage('Designing project with Architect agent using GPT-4');
       }
+      
+      setProgress(10);
+      
+      // Verify that architect agent is available
+      const architectAgent = agents.find(a => a.type === 'architect');
+      if (!architectAgent) {
+        throw new Error('Architect agent is required for orchestration');
+      }
+      
+      // Start the orchestration process with the selected model
+      orchestrationResults = await orchestrateAgents(project, agents, prompt);
       
       setStage('Orchestration completed');
       setProgress(100);
@@ -138,24 +105,23 @@ const AgentOrchestration: React.FC<AgentOrchestrationProps> = ({
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <div className="flex items-center space-x-2">
-              <div className="text-sm font-medium">Orchestration Method:</div>
+              <div className="text-sm font-medium">Model:</div>
               <div className="flex flex-wrap items-center gap-2">
                 <Button 
                   size="sm" 
-                  variant={orchestrationMethod === 'integrated' ? 'default' : 'outline'}
-                  onClick={() => setOrchestrationMethod('integrated')}
+                  variant={orchestrationMethod === 'gpt4' ? 'default' : 'outline'}
+                  onClick={() => setOrchestrationMethod('gpt4')}
                   disabled={isOrchestrating}
                 >
-                  Integrated
+                  GPT-4o
                 </Button>
                 <Button 
                   size="sm" 
-                  variant={orchestrationMethod === 'sdk' ? 'default' : 'outline'}
-                  onClick={() => setOrchestrationMethod('sdk')}
-                  disabled={isOrchestrating || !hasOpenRouterApiKey()}
-                  title={!hasOpenRouterApiKey() ? "OpenRouter API key not available" : ""}
+                  variant={orchestrationMethod === 'claude' ? 'default' : 'outline'}
+                  onClick={() => setOrchestrationMethod('claude')}
+                  disabled={isOrchestrating}
                 >
-                  OpenRouter SDK
+                  Claude 3
                 </Button>
               </div>
             </div>
@@ -180,7 +146,7 @@ const AgentOrchestration: React.FC<AgentOrchestrationProps> = ({
           
           <Button 
             onClick={runOrchestration} 
-            disabled={isOrchestrating || !prompt.trim() || (orchestrationMethod === 'sdk' && !hasOpenRouterApiKey())}
+            disabled={isOrchestrating || !prompt.trim() || !openRouterClient.hasApiKey()}
             className="w-full"
           >
             {isOrchestrating ? "Orchestrating..." : "Start Agent Orchestration"}
