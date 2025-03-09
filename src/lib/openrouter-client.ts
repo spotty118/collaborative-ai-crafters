@@ -1,11 +1,8 @@
-
 import { getOpenRouterApiKey } from '@/lib/env';
 import { Agent, Project, SendAgentPromptOptions } from '@/lib/types';
 import { toast } from 'sonner';
-// Import the SDK properly - we're destructuring the default export to get the right object
-import { OpenAI } from 'openrouter-sdk';
+import OpenAI from 'openrouter-sdk';
 
-// OpenRouter SDK client
 export class OpenRouterClient {
   private apiKey: string;
   private openRouter: any;
@@ -20,7 +17,6 @@ export class OpenRouterClient {
   }
   
   private initClient() {
-    // Initialize the OpenRouter client with our API key
     this.openRouter = new OpenAI({
       apiKey: this.apiKey,
       baseURL: 'https://openrouter.ai/api/v1',
@@ -84,10 +80,8 @@ export class OpenRouterClient {
   }
 }
 
-// Export a singleton instance
 export const openRouterClient = new OpenRouterClient();
 
-// Helper function to send prompt to an agent
 export async function sendAgentPrompt(
   agent: Agent,
   prompt: string,
@@ -108,7 +102,6 @@ export async function sendAgentPrompt(
       ignoreStatus = false
     } = options;
     
-    // Check if API key is available
     if (!openRouterClient.hasApiKey()) {
       toast.error('OpenRouter API key is required. Please set it in the settings.');
       throw new Error('OpenRouter API key is not configured');
@@ -121,10 +114,8 @@ export async function sendAgentPrompt(
     
     console.log(`Sending prompt to ${agent.type} agent using model: ${model}`);
     
-    // Prepare messages for OpenRouter
     const messages: any[] = [];
     
-    // Add system role based on agent type
     let systemContent = '';
     switch (agent.type) {
       case 'architect':
@@ -146,14 +137,12 @@ export async function sendAgentPrompt(
         systemContent = 'You are an AI assistant with expertise in software development. Provide helpful, accurate, and detailed responses.';
     }
     
-    // If code is expected, add that to the system prompt
     if (expectCode) {
       systemContent += '\n\nIMPORTANT: When asked to generate code, provide complete, functional code files - not just snippets. Include all necessary imports and implementation details.';
     }
     
     messages.push({ role: 'system', content: systemContent });
     
-    // Add context if provided
     if (context) {
       messages.push({ role: 'user', content: context });
       messages.push({ 
@@ -162,7 +151,6 @@ export async function sendAgentPrompt(
       });
     }
     
-    // Enhance the prompt with project context
     let enhancedPrompt = prompt;
     if (projectContext && Object.keys(projectContext).length > 0) {
       enhancedPrompt = `Project: ${projectContext.name || 'Unnamed'}\nDescription: ${projectContext.description || 'No description'}\n\n${prompt}`;
@@ -172,34 +160,28 @@ export async function sendAgentPrompt(
       enhancedPrompt = `Task: ${task}\n\n${enhancedPrompt}`;
     }
     
-    // Add the main user message with the prompt
     if (images && images.length > 0) {
-      // Handle multimodal content
       const multimodalContent = [
         { type: 'text', text: enhancedPrompt }
       ];
       
-      // Add images to content
       for (const imageUrl of images) {
         multimodalContent.push({
           type: 'image_url',
           image_url: { url: imageUrl }
-        } as any); // Use 'as any' to bypass the type check temporarily
+        } as any);
       }
       
       messages.push({ role: 'user', content: multimodalContent });
     } else {
-      // Standard text message
       messages.push({ role: 'user', content: enhancedPrompt });
     }
     
-    // Send the request to OpenRouter API
     const completion = await openRouterClient.chatCompletion({
       model,
       messages,
     });
     
-    // Extract the response text
     const responseText = completion.choices[0].message.content;
     return responseText;
     
@@ -209,7 +191,6 @@ export async function sendAgentPrompt(
   }
 }
 
-// Update the orchestration function to use the direct client
 export async function orchestrateAgents(
   project: Project,
   agents: Agent[],
@@ -227,7 +208,6 @@ export async function orchestrateAgents(
     
     console.log('Starting agent orchestration with Architect agent');
     
-    // Step 1: Get a project design from the architect
     const designPrompt = `I need a comprehensive project design based on this description: ${prompt}\n\n` +
       'Please provide:\n' +
       '1. A high-level architecture overview\n' +
@@ -244,8 +224,6 @@ export async function orchestrateAgents(
     
     console.log('Received project design from Architect');
     
-    // For demonstration purposes, return a mock result
-    // In a real implementation, you would continue with the orchestration flow
     return {
       projectPlan: {
         name: "Project Plan",

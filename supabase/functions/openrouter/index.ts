@@ -1,7 +1,7 @@
 
 import { corsHeaders } from '../_shared/cors.ts'
-// Using direct import for Deno with proper class import
-import { OpenAI } from 'npm:openrouter-sdk';
+// Using the correct import for Deno
+import OpenAI from 'npm:openrouter-sdk';
 
 // Define console.log to use Deno.stderr logic
 console.log = function() {
@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
     console.log(`Processing prompt for agent type: ${agentType}`);
     console.log(`Using model: ${model}`);
     
-    // Initialize the OpenRouter client with proper class instantiation
+    // Initialize the OpenRouter client with proper instantiation
     const openRouter = new OpenAI({
       apiKey: openrouterApiKey,
       baseURL: 'https://openrouter.ai/api/v1',
