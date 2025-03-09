@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { hasOpenRouterApiKey, setOpenRouterApiKey } from '@/lib/env';
+import { hasOpenRouterApiKey, getOpenRouterApiKey, setLocalEnvVariable } from '@/lib/env';
 import { toast } from 'sonner';
 import { OpenRouter } from 'openrouter-sdk';
 
@@ -22,7 +22,7 @@ const OpenRouterTester: React.FC = () => {
       return;
     }
     
-    setOpenRouterApiKey(apiKey);
+    setLocalEnvVariable('OPENROUTER_API_KEY', apiKey);
     setHasKey(true);
     toast.success('API key saved successfully');
   };
