@@ -5,20 +5,23 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { SDKService, Workflow } from '@/services/openRouterSDK';
 import { toast } from 'sonner';
 import { Plus, Play, Edit, ArrowUpRight, Clock, CheckCircle, AlertCircle, RotateCw } from 'lucide-react';
+import { Spinner } from '@/components/ui/spinner';
 
 const WorkflowsView: React.FC = () => {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
+  const [executing, setExecuting] = useState<string | null>(null);
   
   const [newWorkflow, setNewWorkflow] = useState({
     name: '',
     description: '',
-    tasks: [] as string[]
+    tasks: [] as string[],
+    project_id: 'default-project' // Default project ID
   });
 
   useEffect(() => {
@@ -48,7 +51,7 @@ const WorkflowsView: React.FC = () => {
       const workflow = await SDKService.createWorkflow(newWorkflow);
       setWorkflows(prev => [...prev, workflow]);
       setOpenDialog(false);
-      setNewWorkflow({ name: '', description: '', tasks: [] });
+      setNewWorkflow({ name: '', description: '', tasks: [], project_id: 'default-project' });
       toast.success(`Workflow "${workflow.name}" created successfully`);
     } catch (error) {
       console.error('Error creating workflow:', error);
@@ -58,6 +61,7 @@ const WorkflowsView: React.FC = () => {
 
   const handleExecuteWorkflow = async (workflowId: string) => {
     try {
+      setExecuting(workflowId);
       await SDKService.executeWorkflow(workflowId);
       toast.success('Workflow execution started');
       
@@ -73,10 +77,12 @@ const WorkflowsView: React.FC = () => {
       // Refresh workflows after a delay to get updated status
       setTimeout(() => {
         loadWorkflows();
+        setExecuting(null);
       }, 2000);
     } catch (error) {
       console.error('Error executing workflow:', error);
       toast.error('Failed to execute workflow');
+      setExecuting(null);
     }
   };
 
@@ -109,6 +115,9 @@ const WorkflowsView: React.FC = () => {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create New Workflow</DialogTitle>
+              <DialogDescription>
+                Create a workflow to automate a series of tasks.
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 mt-4">
               <div>
@@ -130,7 +139,6 @@ const WorkflowsView: React.FC = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tasks</label>
                 <p className="text-xs text-gray-500 mb-2">Tasks will be executed in the specified order.</p>
-                {/* This should be replaced with a more robust task selection component */}
                 <Select 
                   value={newWorkflow.tasks.join(',')} 
                   onValueChange={(value) => setNewWorkflow(prev => ({ ...prev, tasks: value ? value.split(',') : [] }))}
@@ -223,10 +231,19 @@ const WorkflowsView: React.FC = () => {
                       variant="outline"
                       className="flex items-center" 
                       onClick={() => handleExecuteWorkflow(workflow.id)}
-                      disabled={workflow.status === 'in_progress'}
+                      disabled={workflow.status === 'in_progress' || executing === workflow.id}
                     >
-                      <Play size={14} className="mr-1" />
-                      Execute
+                      {executing === workflow.id ? (
+                        <>
+                          <Spinner size="sm" className="mr-2" />
+                          Running...
+                        </>
+                      ) : (
+                        <>
+                          <Play size={14} className="mr-1" />
+                          Execute
+                        </>
+                      )}
                     </Button>
                     <Button 
                       variant="outline" 
