@@ -1,162 +1,179 @@
 
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { corsHeaders } from '../_shared/cors.ts';
-import { OpenRouter } from 'npm:openrouter-sdk';
+import { createClient } from '@supabase/supabase-js'
+import { OpenRouter } from 'openrouter-sdk'
+import { corsHeaders } from '../_shared/cors.ts'
 
-const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
+// Define console.log to use Deno.env logic
+console.log = function() {
+  const args = Array.prototype.slice.call(arguments);
+  Deno.stderr.writeSync(new TextEncoder().encode(args.join(' ') + '\n'));
+};
 
-serve(async (req) => {
-  // CORS handling
+// Define environment variable interface
+interface ProcessEnv {
+  OPENROUTER_API_KEY?: string;
+}
+
+// Get environment variables
+const env: ProcessEnv = {
+  OPENROUTER_API_KEY: Deno.env.get('OPENROUTER_API_KEY'),
+};
+
+// This is needed if you're planning to invoke your function from a browser.
+export const corsHeadersObj = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+Deno.serve(async (req) => {
+  // This is needed if you're planning to invoke your function from a browser.
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { headers: corsHeadersObj });
   }
 
   try {
-    console.log('Received request to OpenRouter edge function');
+    const requestData = await req.json();
+    const { agentType, prompt, model, images = [], context = '', task = '', projectContext = {}, expectCode = false } = requestData;
+
+    // Ensure we have an OpenRouter API key
+    const openrouterApiKey = env.OPENROUTER_API_KEY;
     
-    // Validate API key
-    if (!OPENROUTER_API_KEY) {
-      console.error('OPENROUTER_API_KEY is not set');
-      throw new Error('OpenRouter API key is not configured');
+    if (!openrouterApiKey) {
+      return new Response(
+        JSON.stringify({ error: 'OpenRouter API key is not configured' }),
+        {
+          headers: { ...corsHeadersObj, 'Content-Type': 'application/json' },
+          status: 400,
+        }
+      );
     }
 
-    // Parse request
-    let requestBody;
-    try {
-      requestBody = await req.json();
-      console.log('Request body received:', JSON.stringify({
-        ...requestBody,
-        prompt: requestBody.prompt ? `${requestBody.prompt.substring(0, 100)}...` : 'undefined'
-      }));
-    } catch (error) {
-      console.error('Failed to parse request JSON:', error);
-      throw new Error('Invalid request format');
-    }
-
-    const { agentType, prompt, projectContext, model = 'anthropic/claude-3.5-sonnet:thinking', images = [] } = requestBody;
-
-    if (!prompt) {
-      console.error('Missing prompt in request');
-      throw new Error('Prompt is required');
-    }
-
-    // Validate project context
-    if (!projectContext || !projectContext.id) {
-      console.error('Missing or invalid project context');
-      throw new Error('Valid project context is required');
-    }
-
-    console.log(`Processing request for agent type: ${agentType}`);
+    console.log(`Processing prompt for agent type: ${agentType}`);
     console.log(`Using model: ${model}`);
-    console.log(`Project context: ${JSON.stringify(projectContext)}`);
-    console.log(`Number of images: ${images.length}`);
-    console.log('Images included: ' + (images.length > 0 ? 'Yes' : 'No'));
+    
+    // Prepare messages for OpenRouter
+    const messages = [];
+    
+    // Add a system message if we have context
+    if (agentType) {
+      // Add appropriate system role based on agent type
+      let systemContent = '';
+      
+      switch (agentType) {
+        case 'architect':
+          systemContent = 'You are an experienced software architect. Provide detailed guidance on system design, architecture patterns, and technical decision-making.';
+          break;
+        case 'frontend':
+          systemContent = 'You are a frontend development expert. Provide detailed guidance on UI/UX implementation, responsive design, and modern frontend frameworks.';
+          break;
+        case 'backend':
+          systemContent = 'You are a backend development expert. Provide detailed guidance on API design, database modeling, and server-side architecture.';
+          break;
+        case 'testing':
+          systemContent = 'You are a software testing expert. Provide detailed guidance on test strategies, test automation, and quality assurance processes.';
+          break;
+        case 'devops':
+          systemContent = 'You are a DevOps expert. Provide detailed guidance on CI/CD pipelines, infrastructure as code, and deployment strategies.';
+          break;
+        default:
+          systemContent = 'You are an AI assistant with expertise in software development. Provide helpful, accurate, and detailed responses.';
+      }
+      
+      // If we expect code, add that to the system prompt
+      if (expectCode) {
+        systemContent += '\n\nIMPORTANT: When asked to generate code, provide complete, functional code files - not just snippets. Include all necessary imports and implementation details.';
+      }
+      
+      messages.push({ role: 'system', content: systemContent });
+    }
+    
+    // Add context if provided
+    if (context) {
+      messages.push({ role: 'user', content: context });
+      messages.push({ 
+        role: 'assistant', 
+        content: 'I understand the context. What would you like me to help with now?' 
+      });
+    }
+    
+    // Enhance the prompt with project context
+    let enhancedPrompt = prompt;
+    if (projectContext && Object.keys(projectContext).length > 0) {
+      enhancedPrompt = `Project: ${projectContext.name || 'Unnamed'}\nDescription: ${projectContext.description || 'No description'}\n\n${prompt}`;
+    }
+    
+    if (task) {
+      enhancedPrompt = `Task: ${task}\n\n${enhancedPrompt}`;
+    }
+    
+    // Add the main user message with the prompt
+    if (images && images.length > 0) {
+      // Handle multimodal content
+      const multimodalContent = [
+        { type: 'text', text: enhancedPrompt }
+      ];
+      
+      // Add images to content
+      for (const imageUrl of images) {
+        multimodalContent.push({
+          type: 'image_url',
+          image_url: { url: imageUrl }
+        });
+      }
+      
+      messages.push({ role: 'user', content: multimodalContent });
+    } else {
+      // Standard text message
+      messages.push({ role: 'user', content: enhancedPrompt });
+    }
 
     try {
-      // Build prompt context for the agent
-      const agentRole = getAgentRole(agentType);
-      
-      // Initialize the OpenRouter client
-      const openRouter = new OpenRouter({
-        apiKey: OPENROUTER_API_KEY,
-      });
-      
-      // Construct messages based on agent type and prompt
-      let messages = [];
-      
-      // Check if this is a multimodal prompt with images
-      if (images && images.length > 0) {
-        console.log('Processing multimodal prompt with images');
-        
-        const messageContent = [];
-        
-        // Add text content
-        messageContent.push({
-          type: 'text',
-          text: `${agentRole}\n\n${prompt}`
-        });
-        
-        // Add image URLs
-        for (const imageUrl of images) {
-          messageContent.push({
-            type: 'image_url',
-            image_url: {
-              url: imageUrl
-            }
-          });
-        }
-        
-        messages.push({
-          role: 'user',
-          content: messageContent
-        });
-      } else {
-        // Standard text-only prompt
-        if (agentRole) {
-          messages.push({ role: 'system', content: agentRole });
-          messages.push({ role: 'user', content: prompt });
-        } else {
-          messages.push({ role: 'user', content: prompt });
-        }
-      }
+      // Initialize OpenRouter with the API key
+      const openRouter = new OpenRouter({ apiKey: openrouterApiKey });
       
       console.log('Sending request to OpenRouter with SDK');
       
-      // Use the SDK to call the API with the correct method
-      const completion = await openRouter.completions.create({
+      // Use the SDK to call the API
+      const completion = await openRouter.createCompletion({
         model: model,
         messages: messages,
         temperature: 0.3,
         max_tokens: 1024,
       });
       
-      console.log('OpenRouter response received successfully');
+      console.log('Received response from OpenRouter');
       
-      // Extract content from the response
-      let content = '';
-      if (completion.choices?.[0]?.message?.content) {
-        content = completion.choices[0].message.content;
-      } else {
-        console.warn('Unexpected response format from OpenRouter:', JSON.stringify(completion));
-        content = 'Received a response from the AI service, but the format was unexpected.';
-      }
-      
-      return new Response(JSON.stringify({ content }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      });
+      return new Response(
+        JSON.stringify(completion),
+        { 
+          headers: { ...corsHeadersObj, 'Content-Type': 'application/json' },
+          status: 200
+        }
+      );
     } catch (error) {
-      console.error('Error calling OpenRouter API:', error);
-      throw new Error(`Failed to get response from OpenRouter: ${error.message}`);
+      console.error('Error calling OpenRouter:', error);
+      
+      return new Response(
+        JSON.stringify({ 
+          error: `Error calling OpenRouter: ${error instanceof Error ? error.message : 'Unknown error'}` 
+        }),
+        { 
+          headers: { ...corsHeadersObj, 'Content-Type': 'application/json' },
+          status: 500
+        }
+      );
     }
   } catch (error) {
-    console.error('Error in edge function:', error);
+    console.error('Error processing request:', error);
+    
     return new Response(
-      JSON.stringify({
-        error: error.message || 'An unknown error occurred',
+      JSON.stringify({ 
+        error: `Server error: ${error instanceof Error ? error.message : 'Unknown error'}` 
       }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
+      { 
+        headers: { ...corsHeadersObj, 'Content-Type': 'application/json' },
+        status: 500
       }
     );
   }
 });
-
-// Helper to get agent role based on type
-function getAgentRole(agentType) {
-  switch (agentType) {
-    case 'architect':
-      return 'You are an experienced software architect whose PRIMARY ROLE is ORCHESTRATION. Your job is NOT to implement but to COORDINATE other agents. You MUST:\n\n1. First, create a high-level design (keep this VERY brief)\n2. Immediately DELEGATE all implementation tasks to specialized agents\n3. For EVERY design decision, explicitly state which agent should implement it\n4. ALWAYS end your responses with explicit activation instructions like: "I will now activate the frontend agent to implement the UI components" or "I will now activate the backend agent to implement the API endpoints"\n\nNEVER provide detailed implementation - your job is DELEGATION. Keep design brief and focus on assigning tasks to agents. DO NOT write code yourself - immediately delegate to the appropriate specialized agent.';
-    case 'frontend':
-      return 'You are a frontend development expert. Your expertise includes UI/UX implementation, responsive design, and modern frontend frameworks. Provide detailed guidance on creating effective user interfaces and client-side functionality. When asked to generate code, focus on creating complete files and components that meet the requirements. ALWAYS provide full, functional implementations, never partial code or snippets.';
-    case 'backend':
-      return 'You are a backend development expert. Your expertise includes API design, database modeling, and server-side architecture. Provide detailed guidance on creating robust, secure server-side applications. When asked to generate code, focus on creating complete files and components that meet the requirements. ALWAYS provide full, functional implementations, never partial code or snippets.';
-    case 'testing':
-      return 'You are a software testing expert. Your expertise includes test strategies, test automation, and quality assurance processes. Provide detailed guidance on ensuring software quality through effective testing. When asked to generate code, focus on creating complete files and components that meet the requirements. ALWAYS provide full, functional implementations, never partial code or snippets.';
-    case 'devops':
-      return 'You are a DevOps expert. Your expertise includes CI/CD pipelines, infrastructure as code, and deployment strategies. Provide detailed guidance on automating and optimizing development and deployment processes. When asked to generate code, focus on creating complete files and components that meet the requirements. ALWAYS provide full, functional implementations, never partial code or snippets.';
-    default:
-      return 'You are an AI assistant with expertise in software development. Provide helpful, accurate, and detailed responses to technical questions. When asked to generate code, focus on creating complete files and components that meet the requirements. ALWAYS provide full, functional implementations, never partial code or snippets.';
-  }
-}

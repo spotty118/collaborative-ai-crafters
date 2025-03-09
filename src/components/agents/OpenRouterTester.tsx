@@ -1,33 +1,36 @@
 
 import React, { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { getOpenRouterApiKey } from '@/lib/env';
 import { OpenRouter } from 'openrouter-sdk';
 
-const OpenRouterTester = () => {
-  const [prompt, setPrompt] = useState('Explain how OpenRouter works with JavaScript');
-  const [response, setResponse] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export const OpenRouterTester: React.FC = () => {
+  const [apiKey, setApiKey] = useState<string>(getOpenRouterApiKey() || '');
+  const [prompt, setPrompt] = useState<string>('What are the best practices for React development?');
+  const [response, setResponse] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(false);
 
-  const sendTestQuery = async () => {
+  const handleTest = async () => {
+    if (!apiKey) {
+      setResponse('Please enter an OpenRouter API key first.');
+      return;
+    }
+
     setLoading(true);
-    setError(null);
-    
+    setResponse('Loading...');
+
     try {
-      const apiKey = getOpenRouterApiKey();
+      console.log('Testing OpenRouter API with key:', apiKey.substring(0, 5) + '...');
       
-      if (!apiKey) {
-        throw new Error('OpenRouter API key is required. Please add it in the settings.');
-      }
-      
-      // Initialize the OpenRouter client with the API key
+      // Initialize OpenRouter client
       const openRouter = new OpenRouter({ apiKey });
       
-      // Call the API with the correct method for the SDK
-      const completion = await openRouter.completions.create({
+      // Call the API with the SDK
+      const completion = await openRouter.createCompletion({
         model: 'anthropic/claude-3-opus:thinking',
         messages: [
           { role: 'user', content: prompt }
@@ -35,55 +38,61 @@ const OpenRouterTester = () => {
         temperature: 0.3,
         max_tokens: 1024,
       });
-      
+
       if (completion.choices && completion.choices[0] && completion.choices[0].message) {
         setResponse(completion.choices[0].message.content);
       } else {
-        throw new Error('Unexpected response format from OpenRouter');
+        setResponse('Received response but in unexpected format.');
       }
+
     } catch (error) {
-      console.error('Error testing OpenRouter:', error);
-      setError(error instanceof Error ? error.message : 'Unknown error');
+      console.error('OpenRouter test error:', error);
+      setResponse(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Card className="w-full">
+    <Card className="w-full max-w-3xl">
       <CardHeader>
-        <CardTitle>Test OpenRouter Integration</CardTitle>
+        <CardTitle>Test OpenRouter API</CardTitle>
+        <CardDescription>
+          Test your OpenRouter API key by sending a simple prompt
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div>
-          <Textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Enter your prompt here..."
-            className="min-h-[100px]"
+        <div className="space-y-2">
+          <Label htmlFor="api-key">OpenRouter API Key</Label>
+          <Input
+            id="api-key"
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="or-..."
           />
         </div>
-        
-        {error && (
-          <div className="text-red-500 text-sm">
-            Error: {error}
+        <div className="space-y-2">
+          <Label htmlFor="prompt">Prompt</Label>
+          <Textarea
+            id="prompt"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            rows={4}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Response</Label>
+          <div className="border rounded-md p-4 min-h-[100px] bg-gray-50 whitespace-pre-wrap">
+            {response}
           </div>
-        )}
-        
-        {response && (
-          <div className="border p-4 rounded-md bg-gray-50 dark:bg-gray-900">
-            <h3 className="font-medium mb-2">Response:</h3>
-            <div className="whitespace-pre-wrap text-sm">{response}</div>
-          </div>
-        )}
+        </div>
       </CardContent>
       <CardFooter>
-        <Button onClick={sendTestQuery} disabled={loading}>
-          {loading ? 'Sending...' : 'Send Test Query'}
+        <Button onClick={handleTest} disabled={loading}>
+          {loading ? 'Testing...' : 'Test OpenRouter API'}
         </Button>
       </CardFooter>
     </Card>
   );
 };
-
-export default OpenRouterTester;
