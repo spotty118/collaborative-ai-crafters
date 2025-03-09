@@ -1,4 +1,3 @@
-
 import { openRouterClient, sendAgentPrompt, orchestrateAgents } from '@/lib/openrouter-client';
 import { Agent, Task, Project, AgentType } from '@/lib/types';
 import { toast } from 'sonner';
@@ -431,9 +430,12 @@ export const SDKService = {
     }
     
     try {
-      // Use VectorDatabase to add the document
-      const vectorDb = new VectorDatabase();
-      await vectorDb.addDocuments(knowledgeBaseId, [document.text], document.metadata);
+      // Use VectorDatabase to add the document - using the correct method name
+      await VectorDatabase.storeEmbedding(
+        knowledgeBaseId, 
+        document.text,
+        document.metadata || {}
+      );
       
       toast.success('Document added successfully');
       return true;
@@ -455,9 +457,13 @@ export const SDKService = {
     }
     
     try {
-      // Use VectorDatabase to search for documents
-      const vectorDb = new VectorDatabase();
-      const results = await vectorDb.similaritySearch(knowledgeBaseId, query, 5);
+      // Use VectorDatabase to search for documents - using the correct method name
+      const results = await VectorDatabase.searchSimilar(
+        knowledgeBaseId, 
+        query, 
+        0.7, // default threshold
+        5    // default limit
+      );
       
       return results;
     } catch (error) {
