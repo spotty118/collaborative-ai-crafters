@@ -138,17 +138,23 @@ const Project: React.FC = () => {
   }, [id, agents, loadingAgents, queryClient]);
 
   const handleFileClick = async (file: CodeFile) => {
-    if (!github.isConnected) {
-      toast.error('GitHub is not connected. Please configure GitHub access in project settings.');
-      setActiveTab('settings');
-      return;
-    }
-
     try {
-      const content = await github.getFileContent(file.path);
+      if (github.isConnected) {
+        try {
+          const content = await github.getFileContent(file.path);
+          setSelectedFile({
+            ...file,
+            content
+          });
+          return;
+        } catch (error) {
+          console.warn('Failed to get file from GitHub, falling back to local content:', error);
+        }
+      }
+      
       setSelectedFile({
         ...file,
-        content
+        content: file.content || "// No content available"
       });
     } catch (error) {
       toast.error('Failed to load file content: ' + (error instanceof Error ? error.message : 'Unknown error'));

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useGitHub } from '@/contexts/GitHubContext';
 import { toast } from 'sonner';
+import { updateCodeFile } from '@/lib/api';
 
 interface FileEditorProps {
   file: {
@@ -42,7 +43,7 @@ export const FileEditor: React.FC<FileEditorProps> = ({ file, onClose }) => {
   const verifyContent = async (path: string, expectedContent: string): Promise<boolean> => {
     try {
       if (!github.isConnected) {
-        return false;
+        return true; // Skip verification if GitHub is not connected
       }
       
       const savedContent = await github.getFileContent(path);
@@ -58,39 +59,42 @@ export const FileEditor: React.FC<FileEditorProps> = ({ file, onClose }) => {
   };
 
   const handleSave = async () => {
-    if (!github.isConnected) {
-      toast.error('GitHub connection not configured. Changes will be saved locally only.');
-      // Still update the local content
-      file.content = content;
-      setLastSavedContent(content);
-      setIsEditing(false);
-      return;
-    }
-
     try {
       setIsSaving(true);
       console.log(`Saving file: ${file.path}`);
       
-      await github.createOrUpdateFile(
-        file.path,
-        content,
-        `Update ${file.path}`
-      );
+      // Update local file content in database
+      if (file.id) {
+        await updateCodeFile(file.id, {
+          content: content,
+          last_modified_by: file.created_by // Preserve the creator as modifier
+        });
+      }
+      
+      // If GitHub is connected, also update there
+      if (github.isConnected) {
+        await github.createOrUpdateFile(
+          file.path,
+          content,
+          `Update ${file.path}`
+        );
+        
+        // Verify the file was saved to GitHub
+        const verified = await verifyContent(file.path, content);
+        if (!verified) {
+          toast.warning('File saved locally but GitHub verification failed');
+        } else {
+          console.log('GitHub content verification successful');
+        }
+      }
       
       // Update local state
       file.content = content;
       setLastSavedContent(content);
       
       setIsEditing(false);
-      toast.success('File saved successfully to GitHub');
+      toast.success('File saved successfully');
       
-      // Verify the file was saved
-      const verified = await verifyContent(file.path, content);
-      if (!verified) {
-        toast.warning('File saved but content verification failed');
-      } else {
-        console.log('GitHub content verification successful');
-      }
     } catch (error) {
       console.error('Failed to save file:', error);
       toast.error('Failed to save file: ' + (error instanceof Error ? error.message : 'Unknown error'));
