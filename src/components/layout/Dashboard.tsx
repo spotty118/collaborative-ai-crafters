@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import AgentCard from "@/components/agents/AgentCard";
 import TaskList from "@/components/ui/TaskList";
@@ -80,7 +79,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     ]
   });
 
-  // Auto-scroll to bottom of chat when new messages arrive
   const chatEndRef = React.useRef<HTMLDivElement>(null);
   
   useEffect(() => {
@@ -114,29 +112,24 @@ const Dashboard: React.FC<DashboardProps> = ({
     m.sender === getActiveAgentName()
   );
 
-  // Helper to detect if a message contains code blocks
   const hasCodeBlock = (content: string): boolean => {
     return content.includes("```");
   };
 
-  // Format the message content with syntax highlighting for code blocks
   const formatMessageContent = (content: string): JSX.Element => {
     if (!hasCodeBlock(content)) {
       return <p className="whitespace-pre-wrap">{content}</p>;
     }
 
-    // Split content by code blocks and render accordingly
     const parts = content.split(/```(?:[\w-]*\s*\n)?/);
     const result: JSX.Element[] = [];
 
     for (let i = 0; i < parts.length; i++) {
       if (i % 2 === 0) {
-        // Text part
         if (parts[i].trim()) {
           result.push(<p key={`text-${i}`} className="whitespace-pre-wrap mb-2">{parts[i]}</p>);
         }
       } else {
-        // Code part
         result.push(
           <div key={`code-${i}`} className="bg-gray-900 rounded-md p-3 mb-3 overflow-x-auto">
             <pre className="text-gray-100 text-sm">
@@ -150,7 +143,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     return <>{result}</>;
   };
 
-  // Extract potential filename from a message
   const extractFilename = (content: string): string | null => {
     const filenameRegex = /(?:^|\n)([\w./-]+\.\w+)(?:\s*:|:|\n```)/;
     const match = content.match(filenameRegex);
@@ -198,202 +190,202 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       <div className="flex-1 flex flex-col">
         <div className="border-b p-2">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <Tabs defaultValue="communication" className="w-full">
             <TabsList className="grid grid-cols-2 w-full max-w-md">
               <TabsTrigger value="communication">Communication</TabsTrigger>
               <TabsTrigger value="orchestration">Orchestration</TabsTrigger>
             </TabsList>
-          </Tabs>
-        </div>
-        
-        <TabsContent value="communication" className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-0 pt-0">
-          <div className="border-r flex flex-col h-full">
-            <div className="border-b p-4">
-              <h2 className="text-lg font-semibold">
-                {activeChat 
-                  ? `Chat with ${getActiveAgentName()}`
-                  : 'Agent Communication'
-                }
-              </h2>
-            </div>
-            
-            {!activeChat ? (
-              <div className="flex-1 flex items-center justify-center p-4">
-                <div className="text-center p-6 max-w-md">
-                  <AlertCircle className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No agent selected</h3>
-                  <p className="text-gray-500 mb-4">
-                    Please select an agent from the sidebar to start a conversation.
-                  </p>
+          
+            <TabsContent value="communication" className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-0 pt-0 mt-0">
+              <div className="border-r flex flex-col h-full">
+                <div className="border-b p-4">
+                  <h2 className="text-lg font-semibold">
+                    {activeChat 
+                      ? `Chat with ${getActiveAgentName()}`
+                      : 'Agent Communication'
+                    }
+                  </h2>
                 </div>
-              </div>
-            ) : (
-              <>
-                <ScrollArea className="flex-1 p-4">
-                  <div className="space-y-4">
-                    {isLoading.messages ? (
-                      <div className="flex justify-center py-8">
-                        <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
-                      </div>
-                    ) : filteredMessages.length === 0 ? (
-                      <div className="space-y-4">
-                        <div className="text-center py-4 text-gray-500">
-                          No messages yet. Start a conversation with the agent.
-                        </div>
-                        
-                        <Alert variant="default" className="bg-blue-50 border-blue-200">
-                          <AlertCircle className="h-4 w-4 text-blue-600" />
-                          <AlertDescription className="text-blue-700">
-                            Hint: Use the quick prompt suggestions below to get started with {getActiveAgentName()}.
-                          </AlertDescription>
-                        </Alert>
-                        
-                        <div className="border rounded-md p-3">
-                          <h3 className="text-sm font-medium mb-2">Suggested prompts:</h3>
-                          <div className="space-y-2">
-                            {quickPrompts[getActiveAgentType()] ? 
-                              quickPrompts[getActiveAgentType()].map((prompt, idx) => (
-                                <Button
-                                  key={idx}
-                                  variant="outline"
-                                  size="sm"
-                                  className="mr-2 mb-2 text-xs"
-                                  onClick={() => {
-                                    setChatMessage(prompt);
-                                  }}
-                                >
-                                  {prompt}
-                                </Button>
-                              )) 
-                              : 
-                              <p className="text-sm text-gray-500">No specific prompts available for this agent.</p>
-                            }
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      filteredMessages.map((message, index) => (
-                        <div key={message.id} className={`animate-fade-in ${index === filteredMessages.length - 1 ? 'pb-4' : ''}`}>
-                          <div className="flex items-start gap-2 mb-1">
-                            <div className={`font-medium text-sm ${message.sender === 'You' ? 'text-blue-600' : 'text-green-600'}`}>
-                              {message.sender}
-                            </div>
-                            <div className="text-xs text-gray-500 pt-1">
-                              {new Date(message.created_at).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit"
-                              })}
-                            </div>
-                            {hasCodeBlock(message.content) && (
-                              <div className="text-xs bg-gray-100 px-1.5 py-0.5 rounded flex items-center">
-                                <Code2 className="h-3 w-3 mr-1" />
-                                <span>Contains code</span>
-                              </div>
-                            )}
-                          </div>
-                          <div className="pl-2 border-l-2 border-gray-200 text-sm text-gray-700">
-                            {formatMessageContent(message.content)}
-                            
-                            {hasCodeBlock(message.content) && extractFilename(message.content) && (
-                              <div className="mt-1 text-xs text-gray-500">
-                                Potential file: {extractFilename(message.content)}
-                              </div>
-                            )}
-                          </div>
-                          {index < filteredMessages.length - 1 && <Separator className="my-4" />}
-                        </div>
-                      ))
-                    )}
-                    <div ref={chatEndRef} />
-                  </div>
-                </ScrollArea>
                 
-                <div className="p-4 border-t">
-                  <div className="space-y-3">
-                    {getActiveAgentType() && quickPrompts[getActiveAgentType()] && (
-                      <div className="flex flex-wrap gap-1">
-                        {quickPrompts[getActiveAgentType()].map((prompt, idx) => (
-                          <Button
-                            key={idx}
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs py-1 h-auto"
-                            onClick={() => {
-                              setChatMessage(prompt);
-                            }}
-                          >
-                            {prompt}
-                          </Button>
-                        ))}
-                      </div>
-                    )}
-                    
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder={activeChat ? "Type a message..." : "Select an agent to chat"}
-                        value={chatMessage}
-                        onChange={(e) => setChatMessage(e.target.value)}
-                        disabled={!activeChat}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSendMessage();
-                          }
-                        }}
-                        className="flex-1"
-                      />
-                      <Button 
-                        size="icon" 
-                        disabled={!activeChat || !chatMessage.trim()}
-                        onClick={handleSendMessage}
-                      >
-                        <SendHorizontal className="h-4 w-4" />
-                      </Button>
+                {!activeChat ? (
+                  <div className="flex-1 flex items-center justify-center p-4">
+                    <div className="text-center p-6 max-w-md">
+                      <AlertCircle className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">No agent selected</h3>
+                      <p className="text-gray-500 mb-4">
+                        Please select an agent from the sidebar to start a conversation.
+                      </p>
                     </div>
                   </div>
+                ) : (
+                  <>
+                    <ScrollArea className="flex-1 p-4">
+                      <div className="space-y-4">
+                        {isLoading.messages ? (
+                          <div className="flex justify-center py-8">
+                            <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
+                          </div>
+                        ) : filteredMessages.length === 0 ? (
+                          <div className="space-y-4">
+                            <div className="text-center py-4 text-gray-500">
+                              No messages yet. Start a conversation with the agent.
+                            </div>
+                            
+                            <Alert variant="default" className="bg-blue-50 border-blue-200">
+                              <AlertCircle className="h-4 w-4 text-blue-600" />
+                              <AlertDescription className="text-blue-700">
+                                Hint: Use the quick prompt suggestions below to get started with {getActiveAgentName()}.
+                              </AlertDescription>
+                            </Alert>
+                            
+                            <div className="border rounded-md p-3">
+                              <h3 className="text-sm font-medium mb-2">Suggested prompts:</h3>
+                              <div className="space-y-2">
+                                {quickPrompts[getActiveAgentType()] ? 
+                                  quickPrompts[getActiveAgentType()].map((prompt, idx) => (
+                                    <Button
+                                      key={idx}
+                                      variant="outline"
+                                      size="sm"
+                                      className="mr-2 mb-2 text-xs"
+                                      onClick={() => {
+                                        setChatMessage(prompt);
+                                      }}
+                                    >
+                                      {prompt}
+                                    </Button>
+                                  )) 
+                                  : 
+                                  <p className="text-sm text-gray-500">No specific prompts available for this agent.</p>
+                                }
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          filteredMessages.map((message, index) => (
+                            <div key={message.id} className={`animate-fade-in ${index === filteredMessages.length - 1 ? 'pb-4' : ''}`}>
+                              <div className="flex items-start gap-2 mb-1">
+                                <div className={`font-medium text-sm ${message.sender === 'You' ? 'text-blue-600' : 'text-green-600'}`}>
+                                  {message.sender}
+                                </div>
+                                <div className="text-xs text-gray-500 pt-1">
+                                  {new Date(message.created_at).toLocaleTimeString([], {
+                                    hour: "2-digit",
+                                    minute: "2-digit"
+                                  })}
+                                </div>
+                                {hasCodeBlock(message.content) && (
+                                  <div className="text-xs bg-gray-100 px-1.5 py-0.5 rounded flex items-center">
+                                    <Code2 className="h-3 w-3 mr-1" />
+                                    <span>Contains code</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="pl-2 border-l-2 border-gray-200 text-sm text-gray-700">
+                                {formatMessageContent(message.content)}
+                                
+                                {hasCodeBlock(message.content) && extractFilename(message.content) && (
+                                  <div className="mt-1 text-xs text-gray-500">
+                                    Potential file: {extractFilename(message.content)}
+                                  </div>
+                                )}
+                              </div>
+                              {index < filteredMessages.length - 1 && <Separator className="my-4" />}
+                            </div>
+                          ))
+                        )}
+                        <div ref={chatEndRef} />
+                      </div>
+                    </ScrollArea>
+                    
+                    <div className="p-4 border-t">
+                      <div className="space-y-3">
+                        {getActiveAgentType() && quickPrompts[getActiveAgentType()] && (
+                          <div className="flex flex-wrap gap-1">
+                            {quickPrompts[getActiveAgentType()].map((prompt, idx) => (
+                              <Button
+                                key={idx}
+                                variant="ghost"
+                                size="sm"
+                                className="text-xs py-1 h-auto"
+                                onClick={() => {
+                                  setChatMessage(prompt);
+                                }}
+                              >
+                                {prompt}
+                              </Button>
+                            ))}
+                          </div>
+                        )}
+                        
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder={activeChat ? "Type a message..." : "Select an agent to chat"}
+                            value={chatMessage}
+                            onChange={(e) => setChatMessage(e.target.value)}
+                            disabled={!activeChat}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSendMessage();
+                              }
+                            }}
+                            className="flex-1"
+                          />
+                          <Button 
+                            size="icon" 
+                            disabled={!activeChat || !chatMessage.trim()}
+                            onClick={handleSendMessage}
+                          >
+                            <SendHorizontal className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+              
+              <div className="p-4 bg-gray-50 overflow-auto">
+                {isLoading.tasks ? (
+                  <div className="flex justify-center py-8">
+                    <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
+                  </div>
+                ) : (
+                  <TaskList 
+                    tasks={tasks}
+                    agents={agents}
+                    onExecuteTask={onExecuteTask}
+                  />
+                )}
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="orchestration" className="flex-1 p-4 pt-0 mt-0">
+              {agents.length > 0 ? (
+                <AgentOrchestration 
+                  project={{
+                    id: project.id || '',
+                    name: project.name,
+                    description: project.description,
+                    mode: project.mode,
+                  }}
+                  agents={agents} 
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center p-6 max-w-md">
+                    <AlertCircle className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No agents available</h3>
+                    <p className="text-gray-500">
+                      Please wait for the agents to be initialized before using the orchestration feature.
+                    </p>
+                  </div>
                 </div>
-              </>
-            )}
-          </div>
-          
-          <div className="p-4 bg-gray-50 overflow-auto">
-            {isLoading.tasks ? (
-              <div className="flex justify-center py-8">
-                <div className="h-6 w-6 border-2 border-t-primary rounded-full animate-spin"></div>
-              </div>
-            ) : (
-              <TaskList 
-                tasks={tasks}
-                agents={agents}
-                onExecuteTask={onExecuteTask}
-              />
-            )}
-          </div>
-        </TabsContent>
-        
-        <TabsContent value="orchestration" className="flex-1 p-4 pt-0">
-          {agents.length > 0 ? (
-            <AgentOrchestration 
-              project={{
-                id: project.id || '',
-                name: project.name,
-                description: project.description,
-                mode: project.mode,
-              }}
-              agents={agents} 
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center p-6 max-w-md">
-                <AlertCircle className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No agents available</h3>
-                <p className="text-gray-500">
-                  Please wait for the agents to be initialized before using the orchestration feature.
-                </p>
-              </div>
-            </div>
-          )}
-        </TabsContent>
+              )}
+            </TabsContent>
+          </Tabs>
+        </div>
       </div>
     </div>
   );

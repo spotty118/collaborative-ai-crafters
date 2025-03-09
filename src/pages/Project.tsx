@@ -1281,6 +1281,7 @@ IMPORTANT: Please write out the full implementation for each file, one at a time
                 onSendMessage={handleSendMessage}
                 onExecuteTask={handleExecuteTask}
                 project={{
+                  id: project.id,
                   name: project.name,
                   description: project.description,
                   mode: project.sourceType ? 'existing' : 'new'
