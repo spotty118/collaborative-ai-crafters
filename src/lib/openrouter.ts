@@ -1,17 +1,14 @@
 import { supabase } from '@/integrations/supabase/client';
-import { Agent, Project, SendAgentPromptOptions } from '@/lib/types';
-import { getEnvVariable, getOpenRouterApiKey, setLocalEnvVariable } from '@/lib/env';
-import { VectorDatabase } from "@/lib/vectorDb"; // Import the VectorDatabase
+import { VectorDatabase } from './vectorDb';
 
 export interface SendAgentPromptOptions {
+  prompt: string;
+  agentType?: string;
+  expectCode?: boolean;
   model?: string;
+  task?: string;
   images?: string[];
-  ignoreStatus?: boolean; // Option to bypass status check
-  context?: string; // Additional context from other agents
-  task?: string; // Specific task information
-  expectCode?: boolean; // Signal that code output is expected
-  useDirectSdk?: boolean; // Signal to use the SDK directly instead of edge function
-  useVectorContext?: boolean; // Use vector database for context-aware responses
+  useVectorContext?: boolean;
 }
 
 // Agent class for orchestration
@@ -422,190 +419,107 @@ async function saveCodeFile(projectId: string, filePath: string, content: string
 }
 
 /**
- * Send a prompt to an agent through OpenRouter
- * @param agent The agent to send the prompt to
- * @param prompt The prompt to send
- * @param project The project context
- * @param options Additional options like model, images, and status check bypass
- * @returns The response from the agent
+ * Send a prompt to an AI agent via OpenRouter
  */
-export const sendAgentPrompt = async (
-  agent: Agent,
-  prompt: string,
-  project: Project,
-  options?: SendAgentPromptOptions
-): Promise<string> => {
-  console.log(`Sending prompt to ${agent.name} (${agent.type}) agent using ${options?.model || 'default'} model`);
-  console.log(`Prompt: ${prompt.substring(0, 100)}...`);
-  
-  try {
-    // Check if agent is in a stopped state, unless ignoreStatus is true
-    if (!options?.ignoreStatus && agent.status === 'idle') {
-      console.log(`Agent ${agent.name} is in idle state, stopping the operation`);
-      throw new Error(`Agent ${agent.name} has been stopped or is idle. Please restart the agent to continue.`);
-    }
-    
-    // Choose the model based on agent type or use the one specified in options
-    const model = options?.model || getDefaultModelForAgentType(agent.type);
-    
-    // Enhance the prompt with project context
-    const enhancedPrompt = addProjectContextToPrompt(prompt, project, options?.expectCode);
-    
-    // Get the OpenRouter API key
-    const apiKey = getOpenRouterApiKey();
-    
-    // Use direct API call if we have an API key
-    if (apiKey) {
-      try {
-        console.log('Using direct OpenRouter API call');
-        
-        // Construct messages for OpenRouter
-        const messages = [];
-        
-        // Check if this is a multimodal prompt with images
-        if (options?.images && options.images.length > 0) {
-          console.log('Processing multimodal prompt with images');
-          
-          const messageContent = [];
-          
-          // Add text content
-          messageContent.push({
-            type: 'text',
-            text: `${getAgentRole(agent.type)}\n\n${enhancedPrompt}`
-          });
-          
-          // Add image URLs
-          for (const imageUrl of options.images) {
-            messageContent.push({
-              type: 'image_url',
-              image_url: {
-                url: imageUrl
-              }
-            });
-          }
-          
-          messages.push({
-            role: 'user',
-            content: messageContent
-          });
-        } else {
-          // Standard text-only prompt
-          const agentRole = getAgentRole(agent.type);
-          if (agentRole) {
-            messages.push({ role: 'system', content: agentRole });
-            messages.push({ role: 'user', content: enhancedPrompt });
-          } else {
-            messages.push({ role: 'user', content: enhancedPrompt });
-          }
-        }
-        
-        // Make direct API call to OpenRouter
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-            'HTTP-Referer': window.location.origin,
-            'X-Title': 'Agent Platform'
-          },
-          body: JSON.stringify({
-            model: model,
-            messages: messages,
-            temperature: 0.3,
-            max_tokens: 1024,
-          }),
-        });
-        
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(`OpenRouter API error: ${JSON.stringify(errorData)}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.choices && data.choices[0] && data.choices[0].message) {
-          // Ensure we return a string regardless of what's in the content
-          const content = data.choices[0].message.content;
-          const result = typeof content === 'string' ? content : JSON.stringify(content);
-          
-          // Store the response in the vector database
-          if (project.id && result) {
-            try {
-              await VectorDatabase.storeEmbedding(
-                project.id,
-                result,
-                {
-                  agent_type: agent.type,
-                  prompt: prompt,
-                  model: model
-                }
-              );
-              console.log('Stored response in vector database');
-            } catch (vectorError) {
-              console.error('Failed to store in vector database:', vectorError);
-            }
-          }
-          
-          return result;
-        } else {
-          throw new Error('Unexpected response format from OpenRouter');
-        }
-      } catch (error) {
-        console.error('Error using direct OpenRouter API call:', error);
-        throw error;
-      }
-    } else {
-      // Fallback to Edge Function if API key is not available locally
-      console.log('Falling back to Edge Function as OpenRouter API key is not available');
-      
-      const requestPayload = {
-        agentType: agent.type,
-        prompt: enhancedPrompt,
-        projectContext: {
-          id: project.id,
-          name: project.name,
-          description: project.description,
-          status: project.status,
-        },
-        model,
-        images: options?.images || [],
-        context: options?.context || '',
-        task: options?.task || '',
-        expectCode: options?.expectCode || false,
-        useVectorContext: options?.useVectorContext || false
-      };
-      
-      const { data, error } = await supabase.functions.invoke('openrouter', {
-        body: requestPayload
-      });
-  
-      if (error) {
-        console.error('OpenRouter function error:', error);
-        throw new Error(`OpenRouter function error: ${error.message}`);
-      }
-  
-      if (!data) {
-        console.error('No data returned from OpenRouter function');
-        throw new Error('No response received from the AI service');
-      }
-  
-      // Extract content from the response
-      if (data.content) {
-        return data.content;
-      } else if (data.choices && data.choices[0] && data.choices[0].message) {
-        return data.choices[0].message.content;
-      } else {
-        console.warn('Unexpected response format from OpenRouter:', data);
-        return 'I received your request but encountered an issue processing it.';
-      }
-    }
-  } catch (error) {
-    console.error('Error in sendAgentPrompt:', error);
-    throw new Error(`Failed to get response from OpenRouter: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-};
+export async function sendAgentPrompt(options: SendAgentPromptOptions) {
+  const { 
+    prompt, 
+    agentType = 'default', 
+    expectCode = false, 
+    model = 'anthropic/claude-3-5-sonnet',
+    task = '',
+    images = [],
+    useVectorContext = false
+  } = options;
 
-// Helper functions
+  try {
+    // Get current project context from URL
+    const projectContext = getProjectContextFromUrl();
+    
+    // If we have a project context and vector context is enabled, store the prompt
+    if (projectContext && useVectorContext) {
+      try {
+        await VectorDatabase.storeEmbedding(
+          projectContext.id,
+          prompt,
+          { 
+            type: 'prompt',
+            agent_type: agentType,
+            task: task
+          }
+        );
+        console.log('Stored prompt in vector database');
+      } catch (error) {
+        console.error('Failed to store prompt in vector database:', error);
+      }
+    }
+
+    // Prepare the request body
+    const requestBody = {
+      prompt,
+      agentType,
+      projectContext,
+      model,
+      expectCode,
+      task,
+      images,
+      useVectorContext
+    };
+
+    // Call the OpenRouter edge function
+    const response = await fetch('/api/openrouter', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenRouter API Error: ${errorText}`);
+    }
+
+    const data = await response.json();
+    
+    // Extract and return just the message content
+    if (data?.choices?.[0]?.message?.content) {
+      return data.choices[0].message.content;
+    }
+    
+    return 'No response content available';
+  } catch (error) {
+    console.error('Error sending prompt to agent:', error);
+    throw error;
+  }
+}
+
+/**
+ * Helper to extract project context from the URL
+ */
+function getProjectContextFromUrl() {
+  try {
+    // Get the current path
+    const path = window.location.pathname;
+    
+    // Check if we're on a project page
+    if (path.includes('/project/')) {
+      // Extract the project ID
+      const projectId = path.split('/project/')[1];
+      
+      // Return a basic context object
+      return {
+        id: projectId,
+        name: 'Current Project' // We could fetch the actual name from the API
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error getting project context from URL:', error);
+    return null;
+  }
+}
 
 /**
  * Get the default model for an agent type

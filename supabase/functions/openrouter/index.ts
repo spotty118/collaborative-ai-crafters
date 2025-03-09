@@ -54,12 +54,14 @@ Deno.serve(async (req) => {
       try {
         // Get query embedding
         const queryEmbedding = await generateEmbedding(prompt);
+        // Convert to string for the match_embeddings function
+        const queryEmbeddingString = JSON.stringify(queryEmbedding);
         
         // Search for similar content
         const { data: similarContent, error: searchError } = await supabase.rpc(
           'match_embeddings', 
           {
-            query_embedding: queryEmbedding,
+            query_embedding: queryEmbeddingString,
             match_threshold: 0.7,
             match_count: 5,
             project_filter: projectContext.id
@@ -149,12 +151,13 @@ Deno.serve(async (req) => {
         const content = response.choices[0].message.content;
         if (typeof content === 'string') {
           const embedding = await generateEmbedding(content);
+          const embeddingString = JSON.stringify(embedding);
           
           const { error: insertError } = await supabase
             .from('embeddings')
             .insert({
               content: content,
-              embedding: embedding,
+              embedding: embeddingString,
               metadata: { 
                 agent_type: agentType,
                 prompt: prompt,
@@ -198,7 +201,7 @@ Deno.serve(async (req) => {
 
 /**
  * Generate an embedding vector for a text string
- * Note: Simplified implementation using a Deno-compatible library
+ * Note: Simplified implementation using a Deno-compatible approach
  */
 async function generateEmbedding(text: string): Promise<number[]> {
   try {

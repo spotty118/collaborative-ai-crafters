@@ -1,11 +1,11 @@
 
 import { supabase } from '@/integrations/supabase/client';
-import { chromaEmbedDefault } from 'chromadb-default-embed';
+import { default as chromaEmbedModule } from 'chromadb-default-embed';
 
 export interface EmbeddingRecord {
   id?: string;
   content: string;
-  embedding: number[];
+  embedding: string; // Changed from number[] to string to match Supabase's vector type
   metadata?: Record<string, any>;
   project_id: string;
   created_at?: string;
@@ -30,8 +30,8 @@ export class VectorDatabase {
    */
   static async generateEmbedding(text: string): Promise<number[]> {
     try {
-      // Use chromadb-default-embed to generate an embedding
-      const embedding = await chromaEmbedDefault(text);
+      // Use the default export from chromadb-default-embed
+      const embedding = await chromaEmbedModule(text);
       return embedding;
     } catch (error) {
       console.error('Error generating embedding:', error);
@@ -52,13 +52,15 @@ export class VectorDatabase {
     metadata: Record<string, any> = {}
   ): Promise<EmbeddingRecord> {
     try {
-      const embedding = await this.generateEmbedding(content);
+      const embeddingArray = await this.generateEmbedding(content);
+      // Convert the number[] to a string for Supabase's vector type
+      const embeddingString = JSON.stringify(embeddingArray);
       
       const { data, error } = await supabase
         .from('embeddings')
         .insert({
           content,
-          embedding,
+          embedding: embeddingString,
           metadata,
           project_id: projectId
         })
@@ -91,11 +93,12 @@ export class VectorDatabase {
     limit = 5
   ): Promise<SearchResult[]> {
     try {
-      const queryEmbedding = await this.generateEmbedding(queryText);
+      const queryEmbeddingArray = await this.generateEmbedding(queryText);
+      const queryEmbeddingString = JSON.stringify(queryEmbeddingArray);
       
       const { data, error } = await supabase
         .rpc('match_embeddings', {
-          query_embedding: queryEmbedding,
+          query_embedding: queryEmbeddingString,
           match_threshold: threshold,
           match_count: limit,
           project_filter: projectId
