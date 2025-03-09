@@ -10,6 +10,7 @@ import { getOpenRouterApiKey } from '@/lib/env';
 import { sendAgentPrompt } from '@/lib/openrouter';
 import { getGitHubService, isGitHubServiceInitialized } from '@/lib/services/GitHubService';
 import { Agent, Message, Task, ProjectMode } from '@/lib/types';
+import { useOpenRouterModels } from '@/hooks/useOpenRouterModels';
 
 const ProjectPage: React.FC = () => {
   const { toast } = useToast();
@@ -26,6 +27,9 @@ const ProjectPage: React.FC = () => {
     tasks: false,
     messages: false
   });
+
+  // Get OpenRouter models
+  const { models, isLoading: isLoadingModels } = useOpenRouterModels();
 
   // Load initial data
   useEffect(() => {
@@ -63,20 +67,20 @@ const ProjectPage: React.FC = () => {
     setTasks([
       {
         id: 'task-1',
-        title: 'Initialize project structure', // Changed from name to title to match Task type
-        description: 'Set up initial project structure and configuration', // Added required description field
+        title: 'Initialize project structure',
+        description: 'Set up initial project structure and configuration',
         agent_id: 'architect',
         status: 'completed',
-        project_id: projectId, // Added required project_id field
+        project_id: projectId,
         created_at: new Date().toISOString()
       },
       {
         id: 'task-2',
-        title: 'Design component system', // Changed from name to title to match Task type
-        description: 'Create reusable component library', // Added required description field
+        title: 'Design component system',
+        description: 'Create reusable component library',
         agent_id: 'frontend',
         status: 'in_progress',
-        project_id: projectId, // Added required project_id field
+        project_id: projectId,
         created_at: new Date().toISOString()
       }
     ]);
@@ -176,6 +180,10 @@ const ProjectPage: React.FC = () => {
     setAgents(agents.map(agent => 
       agent.id === agentId ? { ...agent, status: 'working' } : agent
     ));
+    toast({
+      title: 'Agent Started',
+      description: `Agent ${agents.find(a => a.id === agentId)?.name} is now working.`,
+    });
   };
   
   const handleStopAgent = (agentId: string) => {
@@ -184,6 +192,10 @@ const ProjectPage: React.FC = () => {
     setAgents(agents.map(agent => 
       agent.id === agentId ? { ...agent, status: 'idle' } : agent
     ));
+    toast({
+      title: 'Agent Stopped',
+      description: `Agent ${agents.find(a => a.id === agentId)?.name} is now idle.`,
+    });
   };
   
   const handleRestartAgent = (agentId: string) => {
@@ -192,10 +204,18 @@ const ProjectPage: React.FC = () => {
     setAgents(agents.map(agent => 
       agent.id === agentId ? { ...agent, status: 'working' } : agent
     ));
+    toast({
+      title: 'Agent Restarted',
+      description: `Agent ${agents.find(a => a.id === agentId)?.name} has been restarted.`,
+    });
   };
   
   const handleChatWithAgent = (agentId: string) => {
     setActiveChat(agentId);
+    toast({
+      title: 'Editing Agent',
+      description: `Now editing ${agents.find(a => a.id === agentId)?.name}.`,
+    });
   };
   
   const handleSendMessage = (message: string) => {
@@ -228,7 +248,28 @@ const ProjectPage: React.FC = () => {
   
   const handleExecuteTask = (taskId: string, agentId: string) => {
     console.log(`Executing task ${taskId} with agent ${agentId}`);
+    
     // Implementation would go here
+    setTasks(tasks.map(task => 
+      task.id === taskId ? { ...task, status: 'in_progress' } : task
+    ));
+    
+    toast({
+      title: 'Task Execution Started',
+      description: `Task ${tasks.find(t => t.id === taskId)?.title} is now being executed by ${agents.find(a => a.id === agentId)?.name}.`,
+    });
+    
+    // Simulate task completion after 3 seconds
+    setTimeout(() => {
+      setTasks(tasks.map(task => 
+        task.id === taskId ? { ...task, status: 'completed' } : task
+      ));
+      
+      toast({
+        title: 'Task Completed',
+        description: `Task ${tasks.find(t => t.id === taskId)?.title} has been completed.`,
+      });
+    }, 3000);
   };
 
   const toggleDashboard = () => {

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { SDKService } from '@/services/openRouterSDK';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { openRouterClient } from '@/lib/openrouter-client';
 
 interface UseOpenRouterSDKProps {
   redirectToSettingsIfNoApiKey?: boolean;
@@ -29,6 +30,8 @@ export function useOpenRouterSDK({ redirectToSettingsIfNoApiKey = true }: UseOpe
       toast.error('OpenRouter API key is not set. Please configure your settings.');
       navigate('/sdk/settings');
     } else if (hasApiKey) {
+      // Set the API key for the client
+      openRouterClient.setApiKey(apiKey);
       fetchModels();
     }
     
@@ -39,7 +42,7 @@ export function useOpenRouterSDK({ redirectToSettingsIfNoApiKey = true }: UseOpe
   const fetchModels = async () => {
     try {
       setIsLoadingModels(true);
-      const fetchedModels = await SDKService.getModels();
+      const fetchedModels = await openRouterClient.getModels();
       setModels(fetchedModels);
       setIsLoadingModels(false);
     } catch (error) {
