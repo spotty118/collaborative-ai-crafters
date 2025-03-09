@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Monitor, User, CheckSquare, GitBranch, Database, Code, Settings, Plus, Play, Edit, Trash, Search, BarChart } from 'lucide-react';
-import { Agent, Task } from '@/lib/types';
+import { Agent, Task, AgentStatus, TaskStatus } from '@/lib/types';
 
 interface StatusBadgeProps {
   status: string;
@@ -108,7 +108,6 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
     let textColor = '';
     
     switch(status) {
-      case 'active':
       case 'working':
       case 'completed':
         bgColor = 'bg-green-100';
@@ -159,13 +158,13 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
     name: agent.name,
     model: agent.type,
     description: agent.description || `${agent.name} agent for your project`,
-    status: agent.status
+    status: agent.status || 'idle'
   }));
   
   // Map task data to the format expected by this UI
   const mappedTasks = tasks.map(task => ({
     id: task.id || '',
-    name: task.name || '',
+    name: task.title || '', // Changed from name to title to match Task type
     agent: task.agent_id || '',
     status: task.status || 'pending',
     createdAt: task.created_at || new Date().toISOString()
@@ -449,7 +448,7 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-gray-500">Active Agents</p>
-                      <p className="text-3xl font-bold text-gray-800">{mappedAgents.filter(a => a.status === 'working' || a.status === 'active').length}</p>
+                      <p className="text-3xl font-bold text-gray-800">{mappedAgents.filter(a => a.status === 'working').length}</p>
                     </div>
                     <div className="bg-blue-100 p-3 rounded-full">
                       <User size={24} className="text-blue-600" />
@@ -461,7 +460,7 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-gray-500">Tasks in Progress</p>
-                      <p className="text-3xl font-bold text-gray-800">{mappedTasks.filter(t => t.status === 'in_progress' || t.status === 'working').length}</p>
+                      <p className="text-3xl font-bold text-gray-800">{mappedTasks.filter(t => t.status === 'in_progress').length}</p>
                     </div>
                     <div className="bg-green-100 p-3 rounded-full">
                       <CheckSquare size={24} className="text-green-600" />
@@ -514,7 +513,7 @@ const DashboardUI: React.FC<DashboardUIProps> = ({
                         <div key={agent.id} className="flex items-center justify-between pb-2 border-b border-gray-100">
                           <div className="flex items-center">
                             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                              agent.status === 'working' || agent.status === 'active' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'
+                              agent.status === 'working' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'
                             } mr-3`}>
                               <User size={16} />
                             </div>

@@ -63,16 +63,20 @@ const ProjectPage: React.FC = () => {
     setTasks([
       {
         id: 'task-1',
-        name: 'Initialize project structure',
+        title: 'Initialize project structure', // Changed from name to title to match Task type
+        description: 'Set up initial project structure and configuration', // Added required description field
         agent_id: 'architect',
         status: 'completed',
+        project_id: projectId, // Added required project_id field
         created_at: new Date().toISOString()
       },
       {
         id: 'task-2',
-        name: 'Design component system',
+        title: 'Design component system', // Changed from name to title to match Task type
+        description: 'Create reusable component library', // Added required description field
         agent_id: 'frontend',
         status: 'in_progress',
+        project_id: projectId, // Added required project_id field
         created_at: new Date().toISOString()
       }
     ]);
@@ -118,7 +122,7 @@ const ProjectPage: React.FC = () => {
             id: 'architect',
             name: 'Architect',
             type: 'architect',
-            status: 'working'  // Changed from 'active' to 'working'
+            status: 'working'
           },
           `Analyze the following README content and provide a summary:\n${readmeContent}`,
           {
@@ -170,7 +174,7 @@ const ProjectPage: React.FC = () => {
     console.log(`Starting agent: ${agentId}`);
     // Implementation would go here
     setAgents(agents.map(agent => 
-      agent.id === agentId ? { ...agent, status: 'working' } : agent  // Changed from 'active' to 'working'
+      agent.id === agentId ? { ...agent, status: 'working' } : agent
     ));
   };
   
@@ -186,7 +190,7 @@ const ProjectPage: React.FC = () => {
     console.log(`Restarting agent: ${agentId}`);
     // Implementation would go here
     setAgents(agents.map(agent => 
-      agent.id === agentId ? { ...agent, status: 'working' } : agent  // Changed from 'active' to 'working'
+      agent.id === agentId ? { ...agent, status: 'working' } : agent
     ));
   };
   
