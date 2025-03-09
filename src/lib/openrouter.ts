@@ -1,8 +1,7 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project, SendAgentPromptOptions } from '@/lib/types';
 import { OpenRouter } from 'openrouter-sdk';
-import { OPENROUTER_API_KEY } from '@/lib/env';
+import { getEnvVariable, setLocalEnvVariable } from '@/lib/env';
 
 // Agent class for orchestration
 class AgentOrchestrator {
@@ -140,8 +139,8 @@ Format your response as a structured JSON object.`;
     messages.push({ role: 'user', content: enhancedPrompt });
     
     try {
-      // Make API call
-      const response = await this.openrouterClient.completions.create({
+      // Make API call using the SDK's chat.completions method
+      const response = await this.openrouterClient.chat.completions.create({
         model: model,
         messages: messages,
         temperature: 0.3,
@@ -407,13 +406,16 @@ export const sendAgentPrompt = async (
     // Enhance the prompt with project context
     const enhancedPrompt = addProjectContextToPrompt(prompt, project, options?.expectCode);
     
+    // Get the OpenRouter API key
+    const apiKey = getEnvVariable('OPENROUTER_API_KEY');
+    
     // Use OpenRouter SDK directly (preferred approach)
-    if (OPENROUTER_API_KEY) {
+    if (apiKey) {
       try {
         console.log('Using OpenRouter SDK directly');
         
         const openrouter = new OpenRouter({
-          apiKey: OPENROUTER_API_KEY
+          apiKey: apiKey
         });
         
         // Construct messages for OpenRouter
@@ -456,8 +458,8 @@ export const sendAgentPrompt = async (
           }
         }
         
-        // Call OpenRouter API
-        const completion = await openrouter.completions.create({
+        // Call OpenRouter API using the chat.completions method
+        const completion = await openrouter.chat.completions.create({
           model: model,
           messages: messages,
           temperature: 0.3,
@@ -641,3 +643,21 @@ function getAgentRole(agentType: string): string {
       return 'You are an AI assistant with expertise in software development. Provide helpful, accurate, and detailed responses to technical questions. When asked to generate code, focus on creating complete files and components that meet the requirements. ALWAYS provide full, functional implementations, never partial code or snippets.';
   }
 }
+
+/**
+ * Sets the OpenRouter API key and returns a new OpenRouter client instance
+ */
+export const setOpenRouterApiKey = (apiKey: string): OpenRouter | null => {
+  if (!apiKey) return null;
+  
+  try {
+    // Save to localStorage
+    setLocalEnvVariable('OPENROUTER_API_KEY', apiKey);
+    
+    // Create and return a new OpenRouter client with the provided key
+    return new OpenRouter({ apiKey });
+  } catch (error) {
+    console.error('Error setting OpenRouter API key:', error);
+    return null;
+  }
+};
