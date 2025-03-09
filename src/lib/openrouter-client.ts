@@ -17,10 +17,16 @@ export class OpenRouterClient {
   }
   
   private initClient() {
-    this.openRouter = new OpenRouter({
-      apiKey: this.apiKey,
-      baseUrl: 'https://openrouter.ai/api/v1',
-    });
+    try {
+      this.openRouter = new OpenRouter({
+        apiKey: this.apiKey,
+        baseUrl: 'https://openrouter.ai/api/v1',
+      });
+      console.log('OpenRouter client initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize OpenRouter client:', error);
+      this.openRouter = null;
+    }
   }
   
   public setApiKey(apiKey: string) {
@@ -37,7 +43,7 @@ export class OpenRouterClient {
   }
   
   public async getModels() {
-    if (!this.apiKey || !this.openRouter) {
+    if (!this.apiKey) {
       throw new Error('OpenRouter API key is not set');
     }
     
@@ -70,8 +76,22 @@ export class OpenRouterClient {
     temperature?: number;
     max_tokens?: number;
   }) {
-    if (!this.apiKey || !this.openRouter) {
+    if (!this.apiKey) {
       throw new Error('OpenRouter API key is not set');
+    }
+    
+    // Check if OpenRouter client is properly initialized
+    if (!this.openRouter || !this.openRouter.chat) {
+      console.error('OpenRouter client is not properly initialized');
+      
+      // Try to reinitialize
+      this.initClient();
+      
+      // If still not initialized, use fetch API as fallback
+      if (!this.openRouter || !this.openRouter.chat) {
+        console.log('Using fetch API fallback for chat completion');
+        return this.fallbackChatCompletion(params);
+      }
     }
     
     try {
@@ -90,7 +110,44 @@ export class OpenRouterClient {
       
       return response;
     } catch (error) {
-      console.error('Failed to get chat completion from OpenRouter:', error);
+      console.error('Failed to get chat completion from OpenRouter SDK:', error);
+      console.log('Falling back to direct API call');
+      return this.fallbackChatCompletion(params);
+    }
+  }
+  
+  // Fallback method using direct fetch API call
+  private async fallbackChatCompletion(params: {
+    model: string;
+    messages: Array<{role: string; content: string | Array<{type: string; [key: string]: any}>}>;
+    temperature?: number;
+    max_tokens?: number;
+  }) {
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': window.location.origin,
+          'X-Title': 'Agent Platform'
+        },
+        body: JSON.stringify({
+          model: params.model,
+          messages: params.messages,
+          temperature: params.temperature || 0.3,
+          max_tokens: params.max_tokens || 1024
+        })
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OpenRouter API Error: ${response.status} - ${errorText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Fallback chat completion also failed:', error);
       throw error;
     }
   }
