@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import AgentCard from "@/components/agents/AgentCard";
 import TaskList from "@/components/ui/TaskList";
@@ -32,7 +33,8 @@ interface DashboardProps {
     agents: boolean;
     tasks: boolean;
     messages: boolean;
-  }
+  };
+  children?: React.ReactNode; // Add children prop to the interface
 }
 
 const Dashboard: React.FC<DashboardProps> = ({
@@ -47,7 +49,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   onSendMessage,
   onExecuteTask,
   project,
-  isLoading
+  isLoading,
+  children // Add children to destructuring
 }) => {
   const [chatMessage, setChatMessage] = useState("");
   const [activeTab, setActiveTab] = useState<string>("communication");
@@ -386,6 +389,13 @@ const Dashboard: React.FC<DashboardProps> = ({
             </TabsContent>
           </Tabs>
         </div>
+        
+        {/* Render children at the bottom of the dashboard */}
+        {children && (
+          <div className="p-4">
+            {children}
+          </div>
+        )}
       </div>
     </div>
   );
