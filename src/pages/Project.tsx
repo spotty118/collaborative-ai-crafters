@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import Dashboard from '@/components/layout/Dashboard';
+import DashboardUI from '@/components/dashboard/DashboardUI';
 import { useToast } from '@/hooks/use-toast';
 import { getOpenRouterApiKey } from '@/lib/env';
 import { sendAgentPrompt } from '@/lib/openrouter';
@@ -14,11 +15,12 @@ const ProjectPage: React.FC = () => {
   const { toast } = useToast();
   const { projectId } = useParams<{ projectId: string }>();
   
-  // Initialize state for the Dashboard component
+  // State for the Dashboard component
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeChat, setActiveChat] = useState<string | null>(null);
+  const [useLegacyDashboard, setUseLegacyDashboard] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState({
     agents: false,
     tasks: false,
@@ -35,19 +37,43 @@ const ProjectPage: React.FC = () => {
         id: 'architect',
         name: 'Architect',
         type: 'architect',
-        status: 'idle'
+        status: 'idle',
+        progress: 0,
+        description: 'Designs the system architecture and components'
       },
       {
         id: 'frontend',
         name: 'Frontend Developer',
         type: 'frontend',
-        status: 'idle'
+        status: 'idle',
+        progress: 0,
+        description: 'Builds user interfaces and components'
       },
       {
         id: 'backend',
         name: 'Backend Developer', 
         type: 'backend',
-        status: 'idle'
+        status: 'idle',
+        progress: 0,
+        description: 'Implements server-side logic and APIs'
+      }
+    ]);
+    
+    // Sample task data
+    setTasks([
+      {
+        id: 'task-1',
+        name: 'Initialize project structure',
+        agent_id: 'architect',
+        status: 'completed',
+        created_at: new Date().toISOString()
+      },
+      {
+        id: 'task-2',
+        name: 'Design component system',
+        agent_id: 'frontend',
+        status: 'in_progress',
+        created_at: new Date().toISOString()
       }
     ]);
   }, [projectId]);
@@ -201,6 +227,10 @@ const ProjectPage: React.FC = () => {
     // Implementation would go here
   };
 
+  const toggleDashboard = () => {
+    setUseLegacyDashboard(!useLegacyDashboard);
+  };
+
   if (!projectId) {
     return (
       <Card className="m-4">
@@ -214,35 +244,54 @@ const ProjectPage: React.FC = () => {
     );
   }
 
+  // Use the new DashboardUI by default, with option to toggle back to legacy view
   return (
-    <Dashboard
-      agents={agents}
-      tasks={tasks}
-      messages={messages}
-      activeChat={activeChat}
-      onStartAgent={handleStartAgent}
-      onStopAgent={handleStopAgent}
-      onRestartAgent={handleRestartAgent}
-      onChatWithAgent={handleChatWithAgent}
-      onSendMessage={handleSendMessage}
-      onExecuteTask={handleExecuteTask}
-      project={{
-        id: projectId,
-        name: `Project: ${projectId}`,
-        description: 'This is a project page',
-        mode: 'existing' as ProjectMode
-      }}
-      isLoading={isLoading}
-    >
-      <Card className="mb-4">
-        <CardHeader>
-          <CardTitle>Project: {projectId}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Button onClick={handleAgentPrompt}>Send Agent Prompt</Button>
-        </CardContent>
-      </Card>
-    </Dashboard>
+    <>
+      <div className="p-2 bg-gray-100 border-b flex justify-end">
+        <Button variant="outline" onClick={toggleDashboard}>
+          {useLegacyDashboard ? "Switch to Modern UI" : "Switch to Legacy UI"}
+        </Button>
+      </div>
+      
+      {useLegacyDashboard ? (
+        <Dashboard
+          agents={agents}
+          tasks={tasks}
+          messages={messages}
+          activeChat={activeChat}
+          onStartAgent={handleStartAgent}
+          onStopAgent={handleStopAgent}
+          onRestartAgent={handleRestartAgent}
+          onChatWithAgent={handleChatWithAgent}
+          onSendMessage={handleSendMessage}
+          onExecuteTask={handleExecuteTask}
+          project={{
+            id: projectId,
+            name: `Project: ${projectId}`,
+            description: 'This is a project page',
+            mode: 'existing' as ProjectMode
+          }}
+          isLoading={isLoading}
+        >
+          <Card className="mb-4">
+            <CardHeader>
+              <CardTitle>Project: {projectId}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={handleAgentPrompt}>Send Agent Prompt</Button>
+            </CardContent>
+          </Card>
+        </Dashboard>
+      ) : (
+        <DashboardUI 
+          agents={agents}
+          tasks={tasks}
+          onStartAgent={handleStartAgent}
+          onEditAgent={handleChatWithAgent}
+          onExecuteTask={handleExecuteTask}
+        />
+      )}
+    </>
   );
 };
 
