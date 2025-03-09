@@ -1,4 +1,3 @@
-
 import { corsHeaders } from '../_shared/cors.ts'
 // Using the correct import for Deno
 import { OpenRouter } from 'npm:openrouter-sdk';
@@ -55,11 +54,13 @@ Deno.serve(async (req) => {
     const openRouter = new OpenRouter({
       apiKey: openrouterApiKey,
       baseUrl: 'https://openrouter.ai/api/v1',
-      defaultHeaders: {
-        'HTTP-Referer': 'https://agent-platform-app.vercel.app', // Replace with your actual domain
-        'X-Title': 'Agent Platform'
-      }
     });
+    
+    // Add headers to the actual request
+    const headers = {
+      'HTTP-Referer': 'https://agent-platform-app.vercel.app', // Replace with your actual domain
+      'X-Title': 'Agent Platform'
+    };
     
     // Prepare messages for OpenRouter
     const messages = [];
@@ -146,6 +147,7 @@ Deno.serve(async (req) => {
         messages: messages,
         temperature: 0.3,
         max_tokens: 1024,
+        headers: headers, // Add headers here for the request
       });
       
       console.log('Received response from OpenRouter');

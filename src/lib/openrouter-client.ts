@@ -21,10 +21,6 @@ export class OpenRouterClient {
     this.openRouter = new OpenRouter({
       apiKey: this.apiKey,
       baseUrl: 'https://openrouter.ai/api/v1',
-      defaultHeaders: {
-        'HTTP-Referer': window.location.origin,
-        'X-Title': 'Agent Platform'
-      }
     });
   }
   
@@ -47,8 +43,21 @@ export class OpenRouterClient {
     }
     
     try {
-      const response = await this.openRouter.models.list();
-      return response;
+      // Direct API call for models as the SDK might not support models.list()
+      const response = await fetch('https://openrouter.ai/api/v1/models', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'HTTP-Referer': window.location.origin,
+          'X-Title': 'Agent Platform'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
     } catch (error) {
       console.error('Failed to fetch OpenRouter models:', error);
       throw error;
