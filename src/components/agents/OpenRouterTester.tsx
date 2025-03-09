@@ -24,12 +24,10 @@ const OpenRouterTester = () => {
       }
       
       // Initialize the OpenRouter client with the API key
-      const openrouter = new OpenRouter({
-        apiKey,
-      });
+      const openRouter = new OpenRouter({ apiKey });
       
-      // Call the API
-      const completion = await openrouter.completions.create({
+      // Call the API with the correct method
+      const completion = await openRouter.generateText({
         model: 'anthropic/claude-3-opus:thinking',
         messages: [
           { role: 'user', content: prompt }

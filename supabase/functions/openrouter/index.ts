@@ -57,7 +57,7 @@ serve(async (req) => {
       const agentRole = getAgentRole(agentType);
       
       // Initialize the OpenRouter client
-      const openrouter = new OpenRouter({
+      const openRouter = new OpenRouter({
         apiKey: OPENROUTER_API_KEY,
       });
       
@@ -102,8 +102,8 @@ serve(async (req) => {
       
       console.log('Sending request to OpenRouter with SDK');
       
-      // Use the SDK to call the API
-      const completion = await openrouter.completions.create({
+      // Use the SDK to call the API with the correct method
+      const completion = await openRouter.generateText({
         model: model,
         messages: messages,
         temperature: 0.3,

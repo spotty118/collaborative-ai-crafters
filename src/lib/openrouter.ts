@@ -1,7 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project, SendAgentPromptOptions } from '@/lib/types';
-import { OpenRouter } from 'openrouter-sdk';
 import { getEnvVariable, getOpenRouterApiKey, setLocalEnvVariable } from '@/lib/env';
+import { OpenRouter } from 'openrouter-sdk';
 
 // Agent class for orchestration
 class AgentOrchestrator {
@@ -143,12 +143,11 @@ Format your response as a structured JSON object.`;
         throw new Error('OpenRouter API key is required');
       }
       
-      // Make API call using the SDK
-      const openrouter = new OpenRouter({
-        apiKey,
-      });
+      // Create OpenRouter instance
+      const openRouter = new OpenRouter({ apiKey });
       
-      const response = await openrouter.completions.create({
+      // Make API call - corrected method call based on OpenRouter SDK
+      const response = await openRouter.generateText({
         model: model,
         messages: messages,
         temperature: 0.3,
@@ -463,12 +462,10 @@ export const sendAgentPrompt = async (
         }
         
         // Initialize the OpenRouter client with API key
-        const openrouter = new OpenRouter({
-          apiKey,
-        });
+        const openRouter = new OpenRouter({ apiKey });
         
-        // Call OpenRouter API using the completions.create method
-        const completion = await openrouter.completions.create({
+        // Call OpenRouter API using the generateText method
+        const completion = await openRouter.generateText({
           model: model,
           messages: messages,
           temperature: 0.3,
