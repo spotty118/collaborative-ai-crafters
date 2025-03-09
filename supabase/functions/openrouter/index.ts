@@ -50,8 +50,8 @@ Deno.serve(async (req) => {
     console.log(`Processing prompt for agent type: ${agentType}`);
     console.log(`Using model: ${model}`);
     
-    // Initialize the OpenRouter SDK client
-    const openRouter = new OpenRouter({
+    // Initialize the OpenRouter SDK client - OpenRouter is not a constructor
+    const openRouter = OpenRouter({
       apiKey: openrouterApiKey,
       baseURL: 'https://openrouter.ai/api/v1',
       defaultHeaders: {

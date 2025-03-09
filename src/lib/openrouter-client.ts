@@ -1,3 +1,4 @@
+
 import { getOpenRouterApiKey } from '@/lib/env';
 import { Agent, Project, SendAgentPromptOptions } from '@/lib/types';
 import { toast } from 'sonner';
@@ -18,7 +19,8 @@ export class OpenRouterClient {
   }
   
   private initClient() {
-    this.openRouter = new OpenRouter({
+    // Create the SDK instance - OpenRouter is not a constructor
+    this.openRouter = OpenRouter({
       apiKey: this.apiKey,
       baseURL: 'https://openrouter.ai/api/v1',
       defaultHeaders: {
