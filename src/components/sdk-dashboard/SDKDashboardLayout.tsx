@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Monitor, User, CheckSquare, GitBranch, Database, Code, Settings } from 'lucide-react';
+import { Monitor, User, CheckSquare, GitBranch, Database, Code, Settings, Beaker } from 'lucide-react';
 
 interface SDKDashboardLayoutProps {
   children: React.ReactNode;
@@ -20,6 +20,7 @@ const SDKDashboardLayout: React.FC<SDKDashboardLayoutProps> = ({
     { id: 'workflows', name: 'Workflows', icon: <GitBranch size={18} /> },
     { id: 'knowledge', name: 'Knowledge Bases', icon: <Database size={18} /> },
     { id: 'functions', name: 'Functions', icon: <Code size={18} /> },
+    { id: 'tester', name: 'SDK Tester', icon: <Beaker size={18} /> },
     { id: 'settings', name: 'Settings', icon: <Settings size={18} /> },
   ];
 
