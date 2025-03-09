@@ -1,22 +1,40 @@
-
 import { getOpenRouterApiKey } from '@/lib/env';
 import { Agent, Project, SendAgentPromptOptions } from '@/lib/types';
 import { toast } from 'sonner';
+import OpenRouter from 'openrouter-sdk';
 
-// Direct API client for OpenRouter
+// OpenRouter SDK client
 export class OpenRouterClient {
   private apiKey: string;
-  private baseUrl = 'https://openrouter.ai/api/v1';
+  private openRouter: any;
   
   constructor(apiKey?: string) {
     this.apiKey = apiKey || getOpenRouterApiKey() || '';
-    if (!this.apiKey) {
+    if (this.apiKey) {
+      this.initClient();
+    } else {
       console.warn('OpenRouter client initialized without API key');
     }
   }
   
+  private initClient() {
+    this.openRouter = new OpenRouter({
+      apiKey: this.apiKey,
+      baseURL: 'https://openrouter.ai/api/v1',
+      defaultHeaders: {
+        'HTTP-Referer': window.location.origin,
+        'X-Title': 'Agent Platform'
+      }
+    });
+  }
+  
   public setApiKey(apiKey: string) {
     this.apiKey = apiKey;
+    if (apiKey) {
+      this.initClient();
+    } else {
+      this.openRouter = null;
+    }
   }
   
   public hasApiKey(): boolean {
@@ -25,21 +43,13 @@ export class OpenRouterClient {
   
   // Get available models
   public async getModels() {
-    if (!this.apiKey) {
+    if (!this.apiKey || !this.openRouter) {
       throw new Error('OpenRouter API key is not set');
     }
     
     try {
-      const response = await fetch(`${this.baseUrl}/models`, {
-        method: 'GET',
-        headers: this.getHeaders()
-      });
-      
-      if (!response.ok) {
-        throw new Error(`OpenRouter API error: ${response.status} ${response.statusText}`);
-      }
-      
-      return await response.json();
+      const response = await this.openRouter.models.list();
+      return response;
     } catch (error) {
       console.error('Failed to fetch OpenRouter models:', error);
       throw error;
@@ -53,42 +63,23 @@ export class OpenRouterClient {
     temperature?: number;
     max_tokens?: number;
   }) {
-    if (!this.apiKey) {
+    if (!this.apiKey || !this.openRouter) {
       throw new Error('OpenRouter API key is not set');
     }
     
     try {
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify({
-          model: params.model,
-          messages: params.messages,
-          temperature: params.temperature || 0.3,
-          max_tokens: params.max_tokens || 1024
-        })
+      const response = await this.openRouter.chat.completions.create({
+        model: params.model,
+        messages: params.messages,
+        temperature: params.temperature || 0.3,
+        max_tokens: params.max_tokens || 1024
       });
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`OpenRouter API error: ${JSON.stringify(errorData)}`);
-      }
-      
-      return await response.json();
+      return response;
     } catch (error) {
       console.error('Failed to get chat completion from OpenRouter:', error);
       throw error;
     }
-  }
-  
-  // Helper to get the common headers
-  private getHeaders() {
-    return {
-      'Authorization': `Bearer ${this.apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': window.location.origin,
-      'X-Title': 'Agent Platform'
-    };
   }
 }
 
@@ -187,7 +178,7 @@ export async function sendAgentPrompt(
         { type: 'text', text: enhancedPrompt }
       ];
       
-      // Add images to content - fixed type definition to use the correct structure
+      // Add images to content
       for (const imageUrl of images) {
         multimodalContent.push({
           type: 'image_url',
