@@ -1,6 +1,6 @@
 
+import { embed } from 'chromadb-default-embed';
 import { supabase } from '@/integrations/supabase/client';
-import chromaEmbedModule from 'chromadb-default-embed';
 
 export interface EmbeddingRecord {
   id?: string;
@@ -30,8 +30,8 @@ export class VectorDatabase {
    */
   static async generateEmbedding(text: string): Promise<number[]> {
     try {
-      // Use the default export from chromadb-default-embed
-      const embedding = await chromaEmbedModule(text);
+      // Use the named export 'embed' from chromadb-default-embed
+      const embedding = await embed(text);
       return embedding;
     } catch (error) {
       console.error('Error generating embedding:', error);
