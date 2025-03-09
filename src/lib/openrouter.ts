@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 import { Agent, Project, SendAgentPromptOptions } from '@/lib/types';
 import { getEnvVariable, getOpenRouterApiKey, setLocalEnvVariable } from '@/lib/env';
@@ -156,7 +157,9 @@ Format your response as a structured JSON object.`;
       
       // Extract response content
       if (response.choices && response.choices[0] && response.choices[0].message) {
-        return response.choices[0].message.content;
+        // Ensure we return a string regardless of what's in the content
+        const content = response.choices[0].message.content;
+        return typeof content === 'string' ? content : JSON.stringify(content);
       } else {
         throw new Error('Unexpected response format from OpenRouter');
       }
@@ -473,7 +476,9 @@ export const sendAgentPrompt = async (
         });
         
         if (completion.choices && completion.choices[0] && completion.choices[0].message) {
-          return completion.choices[0].message.content;
+          // Ensure we return a string regardless of what's in the content
+          const content = completion.choices[0].message.content;
+          return typeof content === 'string' ? content : JSON.stringify(content);
         } else {
           throw new Error('Unexpected response format from OpenRouter');
         }
