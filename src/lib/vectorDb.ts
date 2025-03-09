@@ -1,6 +1,6 @@
 
 import { supabase } from '@/integrations/supabase/client';
-import { default as chromaEmbedModule } from 'chromadb-default-embed';
+import chromaEmbedModule from 'chromadb-default-embed';
 
 export interface EmbeddingRecord {
   id?: string;
