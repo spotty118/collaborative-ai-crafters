@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SDKService } from '@/services/openRouterSDK';
 import { toast } from 'sonner';
-import { Key, Check, AlertCircle, RefreshCw } from 'lucide-react';
+import { Key, Check, AlertCircle, RefreshCw, ExternalLink } from 'lucide-react';
+import { useOpenRouterSDK } from '@/hooks/useOpenRouterSDK';
 
 const SettingsView: React.FC = () => {
   const [apiKey, setApiKey] = useState('');
@@ -14,6 +15,9 @@ const SettingsView: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [keyStatus, setKeyStatus] = useState<'unchecked' | 'valid' | 'invalid'>('unchecked');
+  const [availableModels, setAvailableModels] = useState<any[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const { checkApiKey, sdkService } = useOpenRouterSDK({ redirectToSettingsIfNoApiKey: false });
   
   useEffect(() => {
     // Load existing settings if available
@@ -21,6 +25,7 @@ const SettingsView: React.FC = () => {
     if (storedApiKey) {
       setApiKey(storedApiKey);
       setKeyStatus('valid');
+      fetchAvailableModels();
     }
     
     const storedModel = localStorage.getItem('OPENROUTER_DEFAULT_MODEL');
@@ -28,6 +33,18 @@ const SettingsView: React.FC = () => {
       setDefaultModel(storedModel);
     }
   }, []);
+  
+  const fetchAvailableModels = async () => {
+    try {
+      setIsLoadingModels(true);
+      const models = await SDKService.getModels();
+      setAvailableModels(models);
+      setIsLoadingModels(false);
+    } catch (error) {
+      console.error('Error fetching models:', error);
+      setIsLoadingModels(false);
+    }
+  };
   
   const validateApiKey = async () => {
     if (!apiKey.trim()) {
@@ -38,25 +55,26 @@ const SettingsView: React.FC = () => {
 
     try {
       setIsValidating(true);
-      // Use the executeAgent method with a simple prompt to test the API key
-      const response = await SDKService.executeAgent(
-        {
-          id: 'tester',
-          name: 'API Tester',
-          type: 'custom',
-          status: 'idle'
-        },
-        'This is a test prompt to validate the API key'
-      );
       
-      setIsValidating(false);
-      setKeyStatus('valid');
-      return true;
+      // First save the API key temporarily
+      SDKService.setApiKey(apiKey);
+      
+      // Try to fetch models to validate the key
+      const models = await SDKService.getModels();
+      
+      if (models && models.length > 0) {
+        setAvailableModels(models);
+        setIsValidating(false);
+        setKeyStatus('valid');
+        return true;
+      } else {
+        throw new Error('Could not fetch models with this API key');
+      }
     } catch (error) {
       console.error('Error validating API key:', error);
       setIsValidating(false);
       setKeyStatus('invalid');
-      toast.error('Invalid API key');
+      toast.error('Invalid API key: ' + (error instanceof Error ? error.message : 'Unknown error'));
       return false;
     }
   };
@@ -82,6 +100,8 @@ const SettingsView: React.FC = () => {
         
         if (isValid) {
           toast.success('Settings saved and API key validated successfully');
+          // Refresh the API key status to confirm it's set correctly
+          checkApiKey();
         } else {
           toast.warning('Settings saved but API key validation failed');
         }
@@ -146,19 +166,49 @@ const SettingsView: React.FC = () => {
           </div>
           
           <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">
-              Default Model
-            </label>
-            <Select value={defaultModel} onValueChange={setDefaultModel}>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-gray-700">
+                Default Model
+              </label>
+              {keyStatus === 'valid' && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={fetchAvailableModels}
+                  disabled={isLoadingModels}
+                >
+                  {isLoadingModels ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <span className="flex items-center text-xs">Refresh Models</span>
+                  )}
+                </Button>
+              )}
+            </div>
+            <Select 
+              value={defaultModel} 
+              onValueChange={setDefaultModel}
+              disabled={isLoadingModels}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Select a model" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="anthropic/claude-3-5-sonnet">Claude 3.5 Sonnet</SelectItem>
-                <SelectItem value="anthropic/claude-3-opus">Claude 3 Opus</SelectItem>
-                <SelectItem value="openai/gpt-4o">GPT-4o</SelectItem>
-                <SelectItem value="openai/gpt-4o-mini">GPT-4o Mini</SelectItem>
-                <SelectItem value="google/gemini-1.5-pro">Gemini 1.5 Pro</SelectItem>
+                {availableModels.length > 0 ? (
+                  availableModels.map((model) => (
+                    <SelectItem key={model.id} value={model.id}>
+                      {model.name} ({model.context_length} tokens)
+                    </SelectItem>
+                  ))
+                ) : (
+                  <>
+                    <SelectItem value="anthropic/claude-3-5-sonnet">Claude 3.5 Sonnet</SelectItem>
+                    <SelectItem value="anthropic/claude-3-opus">Claude 3 Opus</SelectItem>
+                    <SelectItem value="openai/gpt-4o">GPT-4o</SelectItem>
+                    <SelectItem value="openai/gpt-4o-mini">GPT-4o Mini</SelectItem>
+                    <SelectItem value="google/gemini-1.5-pro">Gemini 1.5 Pro</SelectItem>
+                  </>
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -188,8 +238,9 @@ const SettingsView: React.FC = () => {
                 View the complete documentation for the OpenRouter SDK.
               </p>
               <Button variant="outline" className="mt-2">
-                <a href="https://openrouter.ai/docs" target="_blank" rel="noreferrer">
+                <a href="https://openrouter.ai/docs" target="_blank" rel="noreferrer" className="flex items-center">
                   View Documentation
+                  <ExternalLink className="ml-2 h-4 w-4" />
                 </a>
               </Button>
             </div>
@@ -199,6 +250,11 @@ const SettingsView: React.FC = () => {
                 <div className={`w-3 h-3 rounded-full mr-2 ${keyStatus === 'valid' ? 'bg-green-500' : 'bg-gray-300'}`}></div>
                 <span className="text-sm">{keyStatus === 'valid' ? 'Connected' : 'Not Connected'}</span>
               </div>
+              {keyStatus === 'valid' && availableModels.length > 0 && (
+                <p className="text-sm text-gray-500 mt-1">
+                  {availableModels.length} models available
+                </p>
+              )}
             </div>
           </div>
         </CardContent>

@@ -1,4 +1,3 @@
-
 import { getOpenRouterApiKey } from '@/lib/env';
 import { Agent, Project, SendAgentPromptOptions } from '@/lib/types';
 import { toast } from 'sonner';
@@ -43,7 +42,7 @@ export class OpenRouterClient {
     }
     
     try {
-      // Direct API call for models as the SDK might not support models.list()
+      // Direct API call for models
       const response = await fetch('https://openrouter.ai/api/v1/models', {
         method: 'GET',
         headers: {
@@ -57,7 +56,8 @@ export class OpenRouterClient {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
-      return await response.json();
+      const data = await response.json();
+      return data.data;
     } catch (error) {
       console.error('Failed to fetch OpenRouter models:', error);
       throw error;

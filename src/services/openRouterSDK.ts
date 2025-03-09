@@ -1,3 +1,4 @@
+
 import { openRouterClient, sendAgentPrompt, orchestrateAgents } from '@/lib/openrouter-client';
 import { Agent, Task, Project, AgentType } from '@/lib/types';
 import { toast } from 'sonner';
@@ -54,6 +55,24 @@ export const SDKService = {
 
   getApiKey: (): string | null => {
     return localStorage.getItem('OPENROUTER_API_KEY');
+  },
+  
+  // Model Management
+  getModels: async (): Promise<any[]> => {
+    try {
+      const apiKey = localStorage.getItem('OPENROUTER_API_KEY');
+      if (!apiKey) {
+        toast.error('API key is not set. Please configure your API key in settings.');
+        return [];
+      }
+      
+      const models = await openRouterClient.getModels();
+      return models;
+    } catch (error) {
+      console.error('Error fetching models:', error);
+      toast.error('Failed to fetch models: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      return [];
+    }
   },
 
   // Agent Management

@@ -11,6 +11,8 @@ interface UseOpenRouterSDKProps {
 export function useOpenRouterSDK({ redirectToSettingsIfNoApiKey = true }: UseOpenRouterSDKProps = {}) {
   const [isApiKeySet, setIsApiKeySet] = useState<boolean>(false);
   const [isChecking, setIsChecking] = useState<boolean>(true);
+  const [models, setModels] = useState<any[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState<boolean>(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -26,16 +28,33 @@ export function useOpenRouterSDK({ redirectToSettingsIfNoApiKey = true }: UseOpe
     if (!hasApiKey && redirectToSettingsIfNoApiKey) {
       toast.error('OpenRouter API key is not set. Please configure your settings.');
       navigate('/sdk/settings');
+    } else if (hasApiKey) {
+      fetchModels();
     }
     
     setIsChecking(false);
     return hasApiKey;
+  };
+  
+  const fetchModels = async () => {
+    try {
+      setIsLoadingModels(true);
+      const fetchedModels = await SDKService.getModels();
+      setModels(fetchedModels);
+      setIsLoadingModels(false);
+    } catch (error) {
+      console.error('Error fetching models:', error);
+      setIsLoadingModels(false);
+    }
   };
 
   return {
     sdkService: SDKService,
     isApiKeySet,
     isChecking,
-    checkApiKey
+    checkApiKey,
+    models,
+    isLoadingModels,
+    fetchModels
   };
 }

@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -9,6 +9,12 @@ import { SDKService } from '@/services/openRouterSDK';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Agent, AgentType } from '@/lib/types';
 import { Loader2 } from 'lucide-react';
+import { useOpenRouterSDK } from '@/hooks/useOpenRouterSDK';
+
+interface ModelOption {
+  id: string;
+  name: string;
+}
 
 const OpenRouterSDKTester: React.FC = () => {
   const [prompt, setPrompt] = useState('');
@@ -16,6 +22,39 @@ const OpenRouterSDKTester: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<AgentType>('architect');
   const [selectedModel, setSelectedModel] = useState('anthropic/claude-3-5-sonnet');
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const { sdkService, isApiKeySet, isChecking } = useOpenRouterSDK();
+  
+  useEffect(() => {
+    if (isApiKeySet) {
+      fetchModels();
+    }
+  }, [isApiKeySet]);
+  
+  const fetchModels = async () => {
+    try {
+      setIsLoadingModels(true);
+      const openRouterModels = await sdkService.getModels();
+      
+      const formattedModels = openRouterModels.map((model: any) => ({
+        id: model.id,
+        name: `${model.name} (${model.context_length} tokens)`
+      }));
+      
+      setModels(formattedModels);
+      
+      // If no model is selected yet, select the first one
+      if (formattedModels.length > 0 && !selectedModel) {
+        setSelectedModel(formattedModels[0].id);
+      }
+    } catch (error) {
+      console.error('Error fetching models:', error);
+      toast.error('Failed to fetch models: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setIsLoadingModels(false);
+    }
+  };
   
   const handleSendPrompt = async () => {
     if (!prompt.trim()) {
@@ -23,8 +62,7 @@ const OpenRouterSDKTester: React.FC = () => {
       return;
     }
     
-    const apiKey = SDKService.getApiKey();
-    if (!apiKey) {
+    if (!isApiKeySet) {
       toast.error('API key is not set. Please configure your settings first.');
       return;
     }
@@ -70,6 +108,39 @@ const OpenRouterSDKTester: React.FC = () => {
     setResult('');
   };
   
+  const handleRefreshModels = () => {
+    fetchModels();
+  };
+  
+  if (isChecking) {
+    return (
+      <Card className="w-full h-full">
+        <CardContent className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+          <span className="ml-2 text-gray-600">Checking API key...</span>
+        </CardContent>
+      </Card>
+    );
+  }
+  
+  if (!isApiKeySet) {
+    return (
+      <Card className="w-full h-full">
+        <CardHeader>
+          <CardTitle>OpenRouter SDK Tester</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center h-64 space-y-4">
+          <p className="text-center text-gray-600">
+            API key is not set. Please configure your settings first.
+          </p>
+          <Button onClick={() => window.location.href = '/sdk/settings'}>
+            Go to Settings
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+  
   return (
     <Card className="w-full h-full">
       <CardHeader>
@@ -106,22 +177,49 @@ const OpenRouterSDKTester: React.FC = () => {
           
           <TabsContent value="model" className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm font-medium text-gray-700">Model</label>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={handleRefreshModels}
+                  disabled={isLoadingModels}
+                  className="h-8 px-2"
+                >
+                  {isLoadingModels ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <span className="flex items-center text-xs">Refresh Models</span>
+                  )}
+                </Button>
+              </div>
               <Select 
                 value={selectedModel} 
                 onValueChange={setSelectedModel}
+                disabled={isLoadingModels}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select a model" />
+                  <SelectValue placeholder={isLoadingModels ? "Loading models..." : "Select a model"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="anthropic/claude-3-5-sonnet">Claude 3.5 Sonnet</SelectItem>
-                  <SelectItem value="anthropic/claude-3-opus">Claude 3 Opus</SelectItem>
-                  <SelectItem value="openai/gpt-4o">GPT-4o</SelectItem>
-                  <SelectItem value="openai/gpt-4o-mini">GPT-4o Mini</SelectItem>
-                  <SelectItem value="google/gemini-1.5-pro">Gemini 1.5 Pro</SelectItem>
+                  {models.length > 0 ? (
+                    models.map((model) => (
+                      <SelectItem key={model.id} value={model.id}>
+                        {model.name}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="loading" disabled>
+                      {isLoadingModels ? "Loading models..." : "No models available"}
+                    </SelectItem>
+                  )}
                 </SelectContent>
               </Select>
+              {models.length === 0 && !isLoadingModels && (
+                <p className="text-sm text-amber-600 mt-1">
+                  No models loaded. Click refresh to load available models.
+                </p>
+              )}
             </div>
           </TabsContent>
         </Tabs>
